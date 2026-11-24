@@ -1,0 +1,206 @@
+short: Safe deploys and GitOps
+title: Shipping safely, rolling, blue green, canary and GitOps
+time: about 50 minutes
+tags: [deploys, canary, feature flags, GitOps]
+lede: Most outages start with a change. Learn the deploy strategies that limit the damage of a bad release, how feature flags separate deploy from release, and how GitOps keeps clusters in sync with Git.
+
+idea: |
+  A **deploy** puts new code on servers. A **release** shows the new behavior to users. Good teams keep these two apart, so they can deploy often and release carefully.
+
+  There are a few main ways to deploy.
+
+  - **Rolling.** Replace servers a few at a time.
+  - **Blue green.** Run the new version next to the old one, then switch all traffic at once. Switch back if needed.
+  - **Canary.** Send a small share of traffic, such as 5 percent, to the new version. Watch the metrics. Increase step by step.
+
+  **GitOps** means the desired state of your system lives in Git, and a tool in the cluster keeps the cluster equal to Git.
+
+  !eli5 A canary deploy is like tasting a new recipe with five friends before you serve it at a party of a hundred. If the five friends make a face, only five people had a bad bite.
+
+scenes:
+  - title: A canary release with automatic rollback
+    stats: [Step, Traffic to new, Error rate]
+    nodes:
+      users: {label: Users, x: 0, y: 1, kind: box}
+      lb: {label: Load balancer, x: 2, y: 1, kind: raised, tag: weighted}
+      old: {label: Version 1.4, x: 4, y: 0, kind: def}
+      new: {label: Version 1.5, x: 4, y: 2, kind: ok}
+      mon: {label: Metrics, x: 6, y: 2, kind: raised, tag: errors and latency}
+    links: [[users, lb], [lb, old], [lb, new], [new, mon]]
+    steps:
+      - title: Start small
+        text: Deploy 1.5 next to 1.4. Send 5 percent of traffic to it.
+        on: [lb, new]
+        flow: [[users, lb, ink], [lb, old, ink], [lb, new, def]]
+        stats: [Canary, 5 percent, "0.2 percent"]
+      - title: Compare
+        text: Compare errors and latency of 1.5 with 1.4 for 10 minutes. They match.
+        on: [new, mon]
+        flow: [[new, mon, ink]]
+        stats: [Watch, 5 percent, "0.2 percent"]
+      - title: Grow
+        text: Move to 25 percent, then 50 percent, checking the metrics at every step.
+        on: [lb, new]
+        flow: [[lb, new, def], [lb, old, ink]]
+        stats: [Grow, 50 percent, "0.2 percent"]
+      - title: Errors jump
+        text: At 50 percent the error rate of 1.5 jumps to 4 percent. The rollout tool sees the bad metric.
+        on: [new, mon]
+        flow: [[new, mon, atk]]
+        mark: {new: bad}
+        stats: [Alarm, 50 percent, "4 percent"]
+      - title: Roll back
+        text: Traffic goes back to 1.4 at once. Half the users saw errors for a short time, not all of them for a long time.
+        on: [lb, old]
+        flow: [[lb, old, def]]
+        mark: {old: ok}
+        stats: [Rollback, 0 percent, "0.2 percent"]
+
+terms:
+  - [Deploy, "Putting a new version on servers."]
+  - [Release, "Turning the new behavior on for users."]
+  - [Rolling update, "Replacing instances a few at a time."]
+  - [Blue green, "Two full environments. Switch traffic from blue to green at once, and back if needed."]
+  - [Canary, "Sending a small share of traffic to the new version first."]
+  - [Feature flag, "A switch in the code that turns a feature on or off without a deploy."]
+  - [Rollback, "Going back to the previous version."]
+  - [GitOps, "Git holds the desired state. An agent in the cluster pulls it and applies it."]
+  - [Expand and contract, "Changing a database in steps, add the new thing, move to it, then remove the old thing, so old and new code both work."]
+
+how: |
+  ### Compare the strategies
+
+  | Strategy | Speed of rollback | Extra cost | Risk during deploy |
+  | --- | --- | --- | --- |
+  | Rolling | Medium, roll forward or back again | Low | Two versions run at once |
+  | Blue green | Very fast, switch back | Double capacity for a while | All users switch at once |
+  | Canary | Fast, shift traffic back | Low | Small share of users affected |
+
+  ### Feature flags
+
+  ```
+  if flags.enabled("new_checkout", user):
+      return new_checkout(cart)
+  return old_checkout(cart)
+  ```
+
+  Deploy the code with the flag off. Turn it on for staff, then 1 percent of users, then everyone. If something breaks, turn the flag off in seconds, without a deploy. Remove old flags after the release, or the code fills with dead branches.
+
+  ### Database changes without downtime
+
+  Old and new code run at the same time during a rollout. So database changes must work with both.
+
+  1. **Expand.** Add the new column. Old code ignores it.
+  2. **Migrate.** New code writes both columns. Copy old data across.
+  3. **Contract.** When no old code is left, stop using the old column, then drop it.
+
+  ### GitOps
+
+  ```
+  repo: deploy-config
+    apps/shop/values-prod.yaml   image: shop:1.5
+  ```
+
+  A tool like Argo CD or Flux runs in the cluster. It watches this repository. When you merge a change to the image tag, it pulls the change and applies it. If someone edits the cluster by hand, it notices the difference and puts it back. Git is the single source of truth, and its history is your audit log.
+
+  !key Deploy small changes often. A small change is easy to understand, easy to test and easy to roll back.
+
+diagrams:
+  - type: flow
+    title: GitOps loop
+    nodes: [["Merge config change", "box"], ["Git repository", "raised"], ["Argo CD pulls", "def"], ["Cluster updated", "def"], ["Drift corrected", "def"]]
+    edges: ["", "watch", "apply", "compare"]
+    caption: The cluster pulls from Git. Nobody pushes to production by hand.
+
+life:
+  - ["A canary that saved a launch", "A team rolled out a new search version to 5 percent of users. Latency doubled for that group. The automatic analysis rolled it back within minutes, and most users never noticed."]
+  - ["The column that broke the old pods", "A deploy renamed a database column. Old pods, still running during the rolling update, failed on every request. The team switched to expand and contract migrations."]
+
+tradeoffs:
+  - ["Rolling", "Simple, built into Kubernetes.", "Slower rollback, mixed versions."]
+  - ["Blue green", "Instant switch and switch back.", "Double infrastructure during the switch."]
+  - ["Canary", "Limits damage, real traffic tests.", "Needs good metrics and traffic splitting."]
+  - ["Feature flags", "Release without deploy, instant off switch.", "Flag debt if old flags are never removed."]
+  - ["GitOps", "Audit trail, drift correction, easy rollback with git revert.", "Another tool to run, secrets need extra care."]
+
+mistakes:
+  - Deploying large changes rarely.
+  - No automatic rollback based on metrics.
+  - Database changes that break the old version.
+  - Leaving hundreds of old feature flags in the code.
+  - Hand editing production while GitOps keeps reverting it.
+
+quiz:
+  - q: Which strategy sends a small share of real traffic to the new version first?
+    opts: ["Blue green", "Canary", "Big bang"]
+    a: 1
+    why: Canary limits how many users see a bad version.
+  - type: fill
+    q: A switch in the code that turns a feature on or off without a deploy is a feature ____.
+    a: ["flag", "toggle"]
+    why: Flags separate deploy from release.
+  - q: You must rename a column during a rolling update. What is the safe way?
+    opts: ["Rename it in one step", "Add the new column, write both, move data, then remove the old column later", "Stop the site"]
+    a: 1
+    why: Expand and contract keeps old and new code working.
+  - type: fill
+    q: In GitOps, the single source of truth for the desired state is ____.
+    a: ["git", "the git repository", "a git repository"]
+    why: The agent in the cluster pulls from Git.
+  - q: What does this Argo CD setting do?
+    info: |
+      ```
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+      ```
+    opts: ["Deletes the cluster", "Applies Git changes automatically and undoes manual changes in the cluster", "Turns off syncing"]
+    a: 1
+    why: selfHeal reverts drift. prune deletes resources removed from Git.
+
+interview:
+  - q: How would you roll out a risky change to a service with millions of users?
+    keys:
+      - ["Ship behind a feature flag or deploy separately from release", [flag, toggle, separate, release]]
+      - ["Canary or gradual rollout with traffic percentages", [canary, gradual, percent, small share, progressive]]
+      - ["Watch metrics and SLOs, compare to baseline", [metric, error, latency, slo, compare, baseline]]
+      - ["Automatic or fast rollback", [rollback, roll back, revert, undo, automatic]]
+      - ["Backward compatible database changes", [database, migration, expand, contract, compatible]]
+    a: |
+      I deploy the code with the change behind a feature flag that is off, and I make any database changes backward compatible with expand and contract. Then I release gradually. First staff, then 1 percent of users, then 5, 25, 50 and 100, holding at each step. At every step I compare error rate, latency and business metrics, like checkout success, between the new and old paths. A progressive delivery tool or simple automation rolls back, or turns the flag off, when a metric crosses a threshold. I avoid starting on a Friday or right before a big event.
+    fb: Comparing the new version with the old one at the same time, not with yesterday, is the precise detail interviewers like.
+
+desk:
+  title: Plan a release for a payments change
+  lede: A payment provider switch must go live without hurting customers. Plan the rollout.
+  situation: |
+    **Tillpoint** is moving card payments from provider A to provider B. A bug could make every checkout fail. The code also adds a new column `provider` to the payments table.
+  rounds:
+    - title: Round 1. Choose the tools
+      items:
+        - type: sort
+          q: Which technique handles each need?
+          rows:
+            - ["Turn provider B off in seconds if it fails", "Feature flag"]
+            - ["Send only 2 percent of payments to provider B first", "Canary or percentage rollout"]
+            - ["Add the provider column without breaking old pods", "Expand and contract migration"]
+          opts: ["Feature flag", "Canary or percentage rollout", "Expand and contract migration"]
+          why: Each technique reduces a different risk.
+    - title: Round 2. Decide
+      items:
+        - type: open
+          q: Which metrics decide whether to go from 2 percent to 10 percent?
+          a: "Payment success rate for provider B compared with provider A at the same time, payment latency, error and decline rates by reason, and refunds or support tickets. Hold for long enough to see real traffic, such as a few hours that include a busy period."
+  card: |
+    - Deploy is not release.
+    - Rolling, blue green, canary.
+    - Feature flags for instant off.
+    - Expand and contract for databases.
+    - GitOps, Git is the truth.
+
+refs:
+  - "Martin Fowler. [Blue green deployment](https://martinfowler.com/bliki/BlueGreenDeployment.html) and [Canary release](https://martinfowler.com/bliki/CanaryRelease.html)."
+  - "Pete Hodgson. [Feature toggles](https://martinfowler.com/articles/feature-toggles.html)."
+  - "Argo CD. [Automated sync policy](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/)."
+  - "OpenGitOps. [GitOps principles](https://opengitops.dev/)."

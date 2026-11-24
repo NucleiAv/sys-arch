@@ -1,0 +1,210 @@
+slug: l00
+short: Design versus architecture
+title: System design versus system architecture
+time: about 40 minutes
+tags: [architecture, HLD, LLD, C4]
+lede: People often use the two words as if they mean the same thing. They overlap, but they are not the same. Learn what each word means, where one stops and the other starts, and how architects draw both.
+
+idea: |
+  **System architecture** is the big shape of a system. It names the main parts, the job of each part, and how the parts connect. It also records the big decisions that are hard to change later.
+
+  **System design** is the more detailed work inside that shape. It decides how each part does its job. It picks the data model, the API, the algorithms and the exact tools.
+
+  The two overlap. A "system design interview" asks for both. You draw the architecture first, then you design the important parts in detail.
+
+  !eli5 Think of a new school building. The architecture says "two floors, classrooms on the left, a hall in the middle, the kitchen next to the hall". The design says "this classroom has 30 desks, the kitchen has two ovens, the doors open outward". You need both. You do the architecture first, because it is hard to move a wall after you build it.
+
+scenes:
+  - title: From architecture to design, for a food delivery app
+    stats: [Level, Question]
+    nodes:
+      ctx: {label: Users and app, x: 0, y: 1, kind: box, tag: context}
+      api: {label: Order service, x: 2, y: 0, kind: def, tag: container}
+      pay: {label: Payment service, x: 2, y: 2, kind: def, tag: container}
+      db: {label: Orders database, x: 4, y: 0, kind: raised}
+      q: {label: Event queue, x: 4, y: 2, kind: raised}
+      tbl: {label: orders table, x: 6, y: 0, kind: atk, tag: detail}
+    links: [[ctx, api], [ctx, pay], [api, db], [api, q], [pay, q], [db, tbl]]
+    steps:
+      - title: Context
+        text: Start with the people and the outside systems. Customers, restaurants, riders and a payment provider use the app.
+        show: [ctx]
+        on: [ctx]
+        stats: [Architecture, Who uses it]
+      - title: Main parts
+        text: Choose the main parts and their jobs. An order service, a payment service, a database and an event queue. This is the **architecture**.
+        on: [api, pay, db, q]
+        flow: [[ctx, api, ink], [ctx, pay, ink], [api, db, ink], [api, q, def], [pay, q, def]]
+        stats: [Architecture, Which parts, which links]
+      - title: Big decisions
+        text: Write down the hard to change choices. Services talk with events through the queue. Each service owns its own data.
+        on: [q]
+        mark: {q: ok}
+        stats: [Architecture, Which rules]
+      - title: Detailed design
+        text: Now zoom into one part. Design the orders table, its indexes, the API calls and what happens on a retry. This is the **design**.
+        on: [db, tbl]
+        flow: [[db, tbl, pen]]
+        mark: {tbl: ok}
+        stats: [Design, How one part works]
+
+terms:
+  - [Architecture, "The main parts of a system, their jobs, their connections, and the rules and decisions that are hard to change."]
+  - [Design, "The detailed decisions about how each part works, such as data models, APIs and algorithms."]
+  - [High level design, "HLD. The boxes and arrows view of the whole system. Mostly architecture."]
+  - [Low level design, "LLD. The detail of one part, such as classes, tables and functions."]
+  - [Quality attribute, "A property the whole system must have, such as speed, availability or security. Also called a non-functional requirement."]
+  - [Architectural style, "A known pattern for the big shape, such as client server, monolith, microservices or event driven."]
+  - [ADR, "Architecture decision record. A short document that records one decision, the reason for it and what you gave up."]
+  - [C4 model, "A way to draw software at four zoom levels. Context, containers, components and code."]
+
+how: |
+  ### A formal definition
+
+  The standard ISO/IEC/IEEE 42010 says that architecture is the fundamental concepts or properties of a system in its environment. These show in its elements, its relationships and the principles of its design and change. In simple words, architecture is about the parts, the links and the rules.
+
+  ### Where one stops and the other starts
+
+  | Question | Architecture | Design |
+  | --- | --- | --- |
+  | Which main parts do we have? | Yes | |
+  | How do the parts talk, calls or events? | Yes | |
+  | Which part owns which data? | Yes | |
+  | What are the columns of the orders table? | | Yes |
+  | Which cache keys do we use, with which TTL? | | Yes |
+  | Which algorithm makes short codes? | | Yes |
+  | How fast and how available must the whole system be? | Yes | It must meet it |
+
+  !key A simple test. If a choice is expensive to change later and affects many parts, it is architecture. If you can change it inside one part without telling the other teams, it is design.
+
+  ### Common architectural styles
+
+  - **Client server.** Clients ask, servers answer. Almost every app uses it.
+  - **Layered.** Presentation, business logic and data access sit in separate layers.
+  - **Monolith.** One program that you deploy as one unit.
+  - **Microservices.** Many small services. Each service owns one business area and its data. See lesson 4.4.
+  - **Event driven.** Parts publish events and other parts react. See lesson 3.2.
+  - **Serverless.** You give the cloud small functions and it runs them on demand.
+
+  ### Draw it at four zoom levels, the C4 model
+
+  1. **Context.** Your system as one box, with its users and the outside systems.
+  2. **Containers.** The apps and data stores inside, such as a web app, an API and a database.
+  3. **Components.** The main pieces inside one container.
+  4. **Code.** Classes and functions. Draw this only when it helps.
+
+  ### Record decisions
+
+  Write one short ADR for each big decision. Use four parts. The context, the decision, the options you rejected, and the results you accept. Later, new team members can read why the system looks the way it does.
+
+diagrams:
+  - type: layers
+    title: The C4 zoom levels
+    attack: zoom in
+    layers:
+      - ["1. Context", "The system as one box, with people and outside systems", "pass"]
+      - ["2. Containers", "Apps and data stores, such as web app, API, database", "pass"]
+      - ["3. Components", "The main pieces inside one container", "pass"]
+      - ["4. Code", "Classes and functions, only when useful", "stop"]
+    caption: Architecture lives mostly in levels 1 and 2. Design lives mostly in levels 3 and 4.
+  - type: flow
+    title: The order of work
+    nodes: [["Requirements", "def"], ["Architecture, parts and rules", "def"], ["Design of each part", "raised"], ["Build", "box"], ["Measure and change", "box"]]
+    edges: ["", "", "", ""]
+    caption: Do the architecture before the design. Measure the real system and go back when the numbers change.
+
+life:
+  - ["A startup that skipped architecture", "Three teams built features in one shared database. Each team changed tables that other teams used. Every release broke something. The fix was an architecture decision. Each area got its own data and a clear API. After that, the teams could release on their own."]
+  - ["An ADR saves a long meeting", "A new engineer asked, \"Why do we use a queue between orders and email?\" The team showed ADR 7. It said the email provider was often slow and the queue stopped it from slowing checkout. The question took two minutes instead of a long debate."]
+  - ["The same architecture, two designs", "Two shops both use a web app, an API and a database. One shop keeps carts in the database. The other keeps carts in Redis. The architecture is the same. The design is different."]
+
+tradeoffs:
+  - ["Spend more time on architecture", "Fewer expensive changes later.", "Slower start. Some decisions are guesses."]
+  - ["Start coding fast, design as you go", "Quick first version.", "Big structural problems appear later and cost more to fix."]
+  - ["Detailed design up front for every part", "Fewer surprises.", "Wasted work when requirements change."]
+  - ["Light architecture with ADRs", "Clear direction and recorded reasons.", "Needs discipline to keep the records current."]
+
+mistakes:
+  - Starting with database tables before you know the main parts.
+  - Calling a list of tools, such as "React, Node, Postgres", an architecture. Tools are design choices inside the architecture.
+  - Drawing one huge diagram with every detail. Use zoom levels.
+  - Making big decisions and not writing down why.
+
+quiz:
+  - q: Which choice is architecture, not detailed design?
+    opts: ["The TTL of one cache key", "Services talk with events through a queue, and each service owns its data", "The name of a column in a table"]
+    a: 1
+    why: This choice affects every service and is expensive to change. That makes it architecture.
+  - type: fill
+    q: A short document that records one big decision and its reason is an architecture decision ____.
+    a: ["record", "records", "adr"]
+    why: An ADR keeps the reason with the decision, so people do not argue about it again later.
+  - type: sort
+    q: Is each item architecture or design?
+    rows:
+      - ["Split the app into an order service and a payment service", "Architecture"]
+      - ["Use cursor paging on the orders list", "Design"]
+      - ["The system must be available 99.9 percent of the time", "Architecture"]
+      - ["Index orders on customer_id and created_at", "Design"]
+    opts: ["Architecture", "Design"]
+    why: Whole system shape and qualities are architecture. Details inside one part are design.
+  - type: fill
+    q: The first zoom level of the C4 model, which shows the system with its users, is the ____ view.
+    a: ["context", "system context"]
+    why: Context, containers, components, code.
+
+interview:
+  - q: What is the difference between system architecture and system design?
+    keys:
+      - ["Architecture is the big structure, main parts, links and rules", [structure, parts, components, links, rules, high level, big]]
+      - ["Design is how each part works in detail", [detail, how each, data model, api, algorithm, low level]]
+      - ["Architecture decisions are expensive to change", [expensive, hard to change, costly, change later]]
+      - ["They overlap and you usually do architecture first", [overlap, first, then, both]]
+      - ["A concrete example", [example, such as, like, for instance]]
+    a: |
+      Architecture is the high level structure. It names the main components, their responsibilities, how they communicate and the rules that are hard to change, such as "each service owns its data" or "services talk with events". Design is the detailed work inside that structure. It decides the data model, the API, the algorithms and the exact technologies for each part. For example, choosing a separate payment service that talks to orders through a queue is architecture. Choosing the payments table columns and the retry rules is design. They overlap, and in practice you do the architecture first, then design the risky parts in detail.
+    fb: The "expensive to change" test is the clearest way to separate them. Add one small example and the answer becomes memorable.
+  - q: How would you document the architecture of a new system for a team?
+    keys:
+      - ["Diagrams at several zoom levels, such as C4", [c4, context, container, zoom, diagram, level]]
+      - ["Record key decisions with ADRs", [adr, decision record, decision]]
+      - ["State quality attributes and requirements", [quality, non-functional, requirement, slo, availability]]
+      - ["Keep it short, versioned and close to the code", [short, version, repo, git, current, update]]
+    a: |
+      I would draw a context diagram and a container diagram, the first two C4 levels, and add component diagrams only for complex parts. I would list the quality goals, such as latency and availability targets. For every big decision I would write a short ADR with the context, the decision, the rejected options and the consequences. I would keep all of it in the code repository, so it changes with the code and people review it in pull requests.
+    fb: Keeping the documents in the repository is the detail that makes the answer practical.
+
+desk:
+  title: Sort the decisions for a library app
+  lede: A city library is building an app to borrow books. Sort the team's notes into architecture and design.
+  situation: |
+    **ShelfShare** lets members search the catalog, reserve books and get reminders. The team wrote many notes in one long document. You must separate them.
+  rounds:
+    - title: Round 1. Sort the notes
+      items:
+        - type: sort
+          q: Architecture or design?
+          rows:
+            - ["A mobile app, an API, a search service and a database", "Architecture"]
+            - ["Reminders go through a queue so a slow email provider cannot slow the app", "Architecture"]
+            - ["The reservations table has book_id, member_id and expires_at", "Design"]
+            - ["Search results show 20 books per page with a cursor", "Design"]
+            - ["The app must work for 50 branches and 2 million members", "Architecture"]
+          opts: ["Architecture", "Design"]
+          why: Parts, links, rules and system wide goals are architecture. Inside one part, it is design.
+    - title: Round 2. Record a decision
+      items:
+        - type: open
+          q: Write a short ADR for "reminders go through a queue".
+          a: "Context. Reminder emails use an outside provider that is sometimes slow. Decision. The API puts a reminder message on a queue and a worker sends it. Rejected. Calling the provider inside the reservation request. Consequences. Reservations stay fast. Reminders can arrive a few minutes late. We must run and monitor a queue."
+  card: |
+    - Architecture is parts, links and hard to change rules.
+    - Design is how each part works.
+    - Draw at zoom levels. Context, containers, components, code.
+    - Write an ADR for every big decision.
+
+refs:
+  - "ISO/IEC/IEEE. [42010, architecture description](https://www.iso.org/standard/74393.html)."
+  - "Simon Brown. [The C4 model for visualising software architecture](https://c4model.com/)."
+  - "Michael Nygard. [Documenting architecture decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)."
+  - "Martin Fowler. [Software architecture guide](https://martinfowler.com/architecture/)."

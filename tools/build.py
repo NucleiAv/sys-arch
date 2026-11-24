@@ -3,9 +3,10 @@
 Run from anywhere:
     python tools/build.py
 
-Reads   content/*.yaml, content/learn/*.yaml, content/design/*.yaml
+Reads   content/*.yaml, content/{learn,infra,design,protocols}/*.yaml
 Writes  index.html, basics.html, plan.html, interview.html, library.html,
-        learn/*.html, design/*.html
+        protocols.html, learn/*.html, infra/*.html, design/*.html,
+        assets/js/protocol-data.js
 
 No third-party packages except PyYAML.
 """
@@ -20,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261124a"
+V = "20261125b"
 E = lambda s: html.escape(str(s), quote=True)
 
 
@@ -282,9 +283,11 @@ def scenes_block(items):
 # ---------------------------------------------------------------- questions
 def prep_q(it):
     it = dict(it)
-    for k in ("q", "why", "info"):
+    for k in ("q", "why"):
         if k in it and isinstance(it[k], str):
             it[k] = inline(it[k])
+    if isinstance(it.get("info"), str):
+        it["info"] = md(it["info"])
     t = it.get("type")
     if t in ("open", "iv") and isinstance(it.get("a"), str):
         it["a"] = md(it["a"])
@@ -334,17 +337,17 @@ HEAD = """<!doctype html>
 TAIL = """<footer id="foot"></footer>
 <script src="{r}assets/js/site.js?v={v}"></script>
 <script src="{r}assets/js/learn.js?v={v}"></script>
-<script src="{r}assets/js/scene.js?v={v}"></script>
+<script src="{r}assets/js/scene.js?v={v}"></script>{extra}
 </body>
 </html>
 """
 
 
-def write(path, title, desc, track, main, r=""):
+def write(path, title, desc, track, main, r="", extra=""):
     d = os.path.dirname(path)
     if d:
         os.makedirs(d, exist_ok=True)
-    out = HEAD.format(title=E(title), desc=E(desc), track=track, r=r, v=V) + main + TAIL.format(r=r, v=V)
+    out = HEAD.format(title=E(title), desc=E(desc), track=track, r=r, v=V) + main + TAIL.format(r=r, v=V, extra=extra)
     open(path, "w", encoding="utf-8", newline="\n").write(out)
 
 
@@ -375,8 +378,11 @@ def checkbox(cid, label=""):
 
 
 # ---------------------------------------------------------------- sidebars
+DOTS = {"learn": "def", "infra": "pen", "design": "atk"}
+
+
 def side_wrap(track, label, inner):
-    dot = {"learn": "def", "design": "atk"}.get(track, "def")
+    dot = DOTS.get(track, "def")
     return (f'<aside class="side" id="side" aria-label="{E(label)}">'
             f'<button class="side-btn" type="button" aria-expanded="false" aria-controls="side-nav">{E(label)}, all pages</button>'
             f'<nav id="side-nav"><p class="side-h"><span class="dot {dot}"></span>{E(label)}</p>{inner}</nav></aside>')
@@ -390,17 +396,17 @@ def side_group(num, title, href, cur, items, done=None):
 
 
 # ---------------------------------------------------------------- tracks
-LEVELS = {1: "Level 1. Foundations", 2: "Level 2. Data", 3: "Level 3. Many machines", 4: "Level 4. Running it for real", 5: "Level 5. Mastery"}
-
+LESSON_PARTS = [("idea", "The idea in one minute", "idea"), ("watch", "Watch it, step by step", "scenes"), ("words", "Words you need", "terms"),
+                ("how", "How it works", "how"), ("life", "Real life scenarios", "life"), ("trade", "Trade-offs", "tradeoffs"),
+                ("mistakes", "Common mistakes", "mistakes"), ("quiz", "Practice. Check yourself", "quiz"), ("interview", "Practice. Interview questions", "interview"),
+                ("practice", "Practice desk", "desk"), ("refs", "Go deeper", "refs")]
 PARTS = {
-    "learn": [("idea", "The idea in one minute", "idea"), ("watch", "Watch it, step by step", "scenes"), ("words", "Words you need", "terms"),
-              ("how", "How it works", "how"), ("life", "Real life scenarios", "life"), ("trade", "Trade-offs", "tradeoffs"),
-              ("mistakes", "Common mistakes", "mistakes"), ("quiz", "Check yourself", "quiz"), ("interview", "Interview questions", "interview"),
-              ("practice", "Practice desk", "desk"), ("refs", "Go deeper", "refs")],
+    "learn": LESSON_PARTS,
+    "infra": LESSON_PARTS,
     "design": [("ask", "The ask", "ask"), ("reqs", "Pin down the requirements", "reqs"), ("estimate", "Do the math", "estimate"),
                ("api", "The API", "api"), ("data", "The data model", "data"), ("watch", "Watch it work", "scenes"),
                ("hld", "The big picture", "hld"), ("deep", "Deep dives", "deep"), ("trade", "Trade-offs you must name", "tradeoffs"),
-               ("task", "Your turn", "task"), ("interview", "Follow-up questions", "interview"), ("practice", "Practice desk", "desk"),
+               ("task", "Practice. Your turn", "task"), ("interview", "Practice. Follow-up questions", "interview"), ("practice", "Practice desk", "desk"),
                ("refs", "Go deeper", "refs")],
 }
 
@@ -409,11 +415,10 @@ def render_part(kind, L, sid):
     v = L.get(kind)
     if not v:
         return ""
-    if kind in ("idea", "how", "ask", "api", "data", "hld"):
-        extra = "".join(diagram(d) for d in L.get(kind + "_diagrams", [])) if kind != "how" else "".join(diagram(d) for d in L.get("diagrams", []))
-        if kind == "hld":
-            extra = "".join(diagram(d) for d in L.get("diagrams", []))
-        return md(v) + extra
+    if kind in ("idea", "ask", "api", "data"):
+        return md(v) + "".join(diagram(d) for d in L.get(kind + "_diagrams", []))
+    if kind in ("how", "hld"):
+        return md(v) + "".join(diagram(d) for d in L.get("diagrams", []))
     if kind == "scenes":
         return scenes_block(v)
     if kind == "terms":
@@ -447,56 +452,108 @@ def render_part(kind, L, sid):
     return ""
 
 
-def desk_body(dk, sid, crumbs, eyebrow, kind):
+def rounds_html(dk, sid):
     inner = md(dk.get("situation"))
     for r_i, rnd in enumerate(dk["rounds"]):
-        inner += f'<section class="block round" id="r{r_i + 1}"><h2>{E(rnd["title"])}</h2>{md(rnd.get("info"))}{qset(rnd["items"], f"{sid}-desk-r{r_i + 1}")}</section>'
+        inner += f'<section class="block round" id="r{r_i + 1}"><h2>{E(rnd["title"])}</h2>{md(rnd.get("info"))}{qset(rnd["items"], f"{sid}-r{r_i + 1}")}</section>'
     if dk.get("card"):
         inner += section("card", "Pocket card. Keep this", md(dk["card"]))
+    return inner
+
+
+def desk_body(dk, sid, crumbs, eyebrow, kind):
     return (crumbs + f'<header class="doc-head"><div class="eyebrow"><span class="tag {kind}"><span class="dot {kind}"></span>{E(eyebrow)}</span></div>'
             f'<h1>{E(dk["title"])}</h1><p class="lede">{inline(dk["lede"])}</p></header>'
             + '<nav class="doc-toc" aria-label="Rounds">' + "".join(f'<a href="#r{i + 1}">{E(r["title"])}</a>' for i, r in enumerate(dk["rounds"])) + "</nav>"
-            + inner)
+            + rounds_html(dk, sid + "-desk"))
 
 
 TRACKS = {
     "learn": dict(label="Concepts", crumb="Concepts", kind="def", eyebrow="Lesson",
                   ov_title="System design concepts, from zero to mastery",
-                  ov_lede="Twenty two lessons in five levels. Each one explains a single idea in plain words, shows it moving step by step, gives you real life scenarios, a quiz with fill-ups, interview questions with feedback and a practice desk."),
+                  ov_lede="Twenty seven lessons in five levels. Each lesson explains one idea in plain words, shows it step by step and ends with practice. Each level ends with a practice page that mixes all its lessons."),
+    "infra": dict(label="Infra", crumb="Infra", kind="pen", eyebrow="Lesson",
+                  ov_title="Infrastructure, from your first commit to the cloud",
+                  ov_lede="Git, GitHub, GitHub Actions, Linux, Docker, Kubernetes, AWS, Terraform and safe deploys. Each lesson ends with practice that includes real commands and config files. Each level ends with a practice page."),
     "design": dict(label="Design it", crumb="Design it", kind="atk", eyebrow="Design",
                    ov_title="Design real systems, one at a time",
-                   ov_lede="Each page is a full design task. You pin down the requirements, do the math, sketch the API and data, watch the system work, dig into the hard parts and then design it yourself with feedback."),
+                   ov_lede="Each page is a full design task. You pin down the requirements, do the math, sketch the API and data, watch the system work, study the hard parts and then design it yourself with feedback."),
 }
 
 
-def track_side(lessons, cur, track):
+def load_track(track):
+    """Read the lessons of a track in the order the _order.yaml file gives, and number them per level."""
+    files = {f[:-5]: load(f"content/{track}/{f}") for f in os.listdir(f"content/{track}") if f.endswith(".yaml") and not f.startswith("_")}
+    order_p = f"content/{track}/_order.yaml"
+    if not os.path.exists(order_p):
+        ls = [files[k] for k in sorted(files)]
+        for L in ls:
+            L.setdefault("short", L["title"])
+        return ls, []
+    O = load(order_p)
+    ls = []
+    for lv in O["levels"]:
+        for i, slug in enumerate(lv["items"]):
+            L = files.pop(slug)
+            L["slug"], L["level"], L["num"] = slug, lv["n"], f'{lv["n"]}.{i + 1}'
+            L.setdefault("short", L["title"])
+            if L.get("kind") == "practice":
+                L["short"] = f'Level {lv["n"]} practice'
+            ls.append(L)
+    if files:
+        sys.exit(f"{track}: files missing from _order.yaml: {sorted(files)}")
+    return ls, O["levels"]
+
+
+def lvl_name(levels, n):
+    for lv in levels:
+        if lv["n"] == n:
+            return f'Level {n}. {lv["t"]}'
+    return ""
+
+
+def track_side(lessons, levels, cur, track):
     T = TRACKS[track]
-    out = [f'<a class="side-top" href="index.html"' + (' aria-current="page"' if cur == "index" else "") + '><span class="mono">00</span>Track overview</a>']
+    out = [f'<a class="side-top" href="index.html"' + (' aria-current="page"' if cur == "index" else "") + '><span class="mono">0</span>Track overview</a>']
     last = None
     for L in lessons:
-        if track == "learn" and L.get("level") != last:
+        if levels and L.get("level") != last:
             last = L.get("level")
-            out.append(f'<p class="side-lvl mono">{E(LEVELS.get(last, ""))}</p>')
+            out.append(f'<p class="side-lvl mono">{E(lvl_name(levels, last))}</p>')
         here = cur in (L["slug"], L["slug"] + "-desk")
         base = "" if cur == L["slug"] else f'{L["slug"]}.html'
-        items = [(f"{base}#{a}", t, "#", False) for a, t, k in PARTS[track] if L.get(k) and k != "desk"]
+        if L.get("kind") == "practice":
+            items = [(f"{base}#r{i + 1}", r["title"], "Q", False) for i, r in enumerate(L["rounds"])]
+        else:
+            items = [(f"{base}#{a}", (L.get("headings") or {}).get(a, t), "#", False) for a, t, k in PARTS[track] if L.get(k) and k != "desk"]
         if L.get("desk"):
             items.append((f'{L["slug"]}-desk.html', "Practice desk", "Q", cur == L["slug"] + "-desk"))
         out.append(side_group(L["num"], L["short"], f'{L["slug"]}.html', "page" if cur == L["slug"] else here, items, f'{track}.{L["slug"]}'))
     return side_wrap(track, T["label"], "".join(out))
 
 
+def donebox(track, sid, label="Mark this page done"):
+    return f'<div class="doc-meta"><label class="donebox"><span class="check"><input type="checkbox" data-id="{track}.{sid}">{TICKSVG}</span>{label}</label></div>'
+
+
 def build_track(track):
     T = TRACKS[track]
-    files = sorted(f for f in os.listdir(f"content/{track}") if f.endswith(".yaml"))
-    lessons = [load(f"content/{track}/{f}") for f in files]
-    for L in lessons:
-        L.setdefault("short", L["title"])
+    lessons, levels = load_track(track)
     crumb, kind = T["crumb"], T["kind"]
     for i, L in enumerate(lessons):
         sid = L["slug"]
         prev = (f'{lessons[i - 1]["slug"]}.html', lessons[i - 1]["title"]) if i else ("index.html", "Track overview")
         nxt = (f'{lessons[i + 1]["slug"]}.html', lessons[i + 1]["title"]) if i + 1 < len(lessons) else None
+        lvl = f'<span>{E(lvl_name(levels, L["level"]))}</span>' if L.get("level") else ""
+        crumbs = f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><a href="index.html">{crumb}</a><span>/</span><span>{E(L["num"])}</span></nav>'
+        side = track_side(lessons, levels, sid, track)
+        if L.get("kind") == "practice":
+            body = (crumbs + f'<header class="doc-head"><div class="eyebrow"><span class="tag {kind}"><span class="dot {kind}"></span>{crumb} · Level {L["level"]} practice</span>{lvl}<span>{E(L.get("time", ""))}</span></div>'
+                    f'<h1>{E(L["title"])}</h1><p class="lede">{inline(L["lede"])}</p>{donebox(track, sid, "Mark this practice done")}</header>'
+                    + '<nav class="doc-toc" aria-label="Rounds">' + "".join(f'<a href="#r{j + 1}">{E(r["title"])}</a>' for j, r in enumerate(L["rounds"])) + "</nav>"
+                    + rounds_html(L, sid) + pager(prev, nxt))
+            page(f"{track}/{sid}.html", jt(L["title"], f'{crumb} level {L["level"]} practice'), L["lede"][:155], track, side, body)
+            continue
         parts, toc = [], []
         for pid, title, k in PARTS[track]:
             inner = render_part(k, L, sid)
@@ -504,29 +561,29 @@ def build_track(track):
                 title = (L.get("headings") or {}).get(pid, title)
                 toc.append((pid, title))
                 parts.append(section(pid, title, inner))
-        lvl = f'<span>{E(LEVELS[L["level"]])}</span>' if L.get("level") else ""
-        head = (f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><a href="index.html">{crumb}</a><span>/</span><span>{E(L["num"])}</span></nav>'
-                f'<header class="doc-head"><div class="eyebrow"><span class="tag {kind}"><span class="dot {kind}"></span>{crumb} · {T["eyebrow"]} {E(L["num"])}</span>{lvl}<span>{E(L.get("time", ""))}</span></div>'
-                f'<h1>{E(L["title"])}</h1><p class="lede">{inline(L["lede"])}</p>'
-                f'<div class="doc-meta"><label class="donebox"><span class="check"><input type="checkbox" data-id="{track}.{sid}">{TICKSVG}</span>Mark this page done</label></div></header>'
+        head = (crumbs + f'<header class="doc-head"><div class="eyebrow"><span class="tag {kind}"><span class="dot {kind}"></span>{crumb} · {T["eyebrow"]} {E(L["num"])}</span>{lvl}<span>{E(L.get("time", ""))}</span></div>'
+                f'<h1>{E(L["title"])}</h1><p class="lede">{inline(L["lede"])}</p>{donebox(track, sid)}</header>'
                 + '<nav class="doc-toc" aria-label="On this page">' + "".join(f'<a href="#{a}">{E(b)}</a>' for a, b in toc) + "</nav>")
         dnext = (f'{sid}-desk.html', f'{L["short"]}, practice desk') if L.get("desk") else nxt
-        page(f"{track}/{sid}.html", jt(L["title"], f'{T["eyebrow"]} {L["num"]}'), L["lede"][:155], track, track_side(lessons, sid, track),
-             head + "".join(parts) + pager(prev, dnext))
+        page(f"{track}/{sid}.html", jt(L["title"], f'{T["eyebrow"]} {L["num"]}'), L["lede"][:155], track, side, head + "".join(parts) + pager(prev, dnext))
         if L.get("desk"):
-            crumbs = f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><a href="index.html">{crumb}</a><span>/</span><a href="{sid}.html">{E(L["num"])}</a><span>/</span><span>Practice desk</span></nav>'
+            dcr = f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><a href="index.html">{crumb}</a><span>/</span><a href="{sid}.html">{E(L["num"])}</a><span>/</span><span>Practice desk</span></nav>'
             page(f"{track}/{sid}-desk.html", jt(L["desk"]["title"], "Practice desk"), L["desk"]["lede"][:155], track,
-                 track_side(lessons, sid + "-desk", track),
-                 desk_body(L["desk"], sid, crumbs, f'{crumb} · {T["eyebrow"]} {L["num"]} · Practice desk', kind) + pager((f"{sid}.html", L["title"]), nxt))
+                 track_side(lessons, levels, sid + "-desk", track),
+                 desk_body(L["desk"], sid, dcr, f'{crumb} · {T["eyebrow"]} {L["num"]} · Practice desk', kind) + pager((f"{sid}.html", L["title"]), nxt))
 
     # overview
     rows, last = "", None
     for L in lessons:
-        if track == "learn" and L.get("level") != last:
+        if levels and L.get("level") != last:
             last = L.get("level")
-            rows += f'<h2 class="lvl-h">{E(LEVELS[last])}</h2>'
-        tg = "".join(f'<span class="tag">{E(t)}</span>' for t in L.get("tags", []))
-        rows += (f'<a class="lesson-row" href="{L["slug"]}.html" data-done="{track}.{L["slug"]}"><span class="mono">{L["num"]}</span>'
+            lv = next(x for x in levels if x["n"] == last)
+            rows += f'<h2 class="lvl-h">{E(lvl_name(levels, last))}</h2><p class="lvl-d">{inline(lv.get("d", ""))}</p>'
+        if L.get("kind") == "practice":
+            tg = '<span class="tag new">practice</span>'
+        else:
+            tg = "".join(f'<span class="tag">{E(t)}</span>' for t in L.get("tags", []))
+        rows += (f'<a class="lesson-row{" is-practice" if L.get("kind") == "practice" else ""}" href="{L["slug"]}.html" data-done="{track}.{L["slug"]}"><span class="mono">{L["num"]}</span>'
                  f'<span><b>{E(L["title"])}</b><small>{inline(L["lede"])}</small></span><span class="tags">{tg}</span></a>')
     intro = f"content/{track}/_intro.md"
     body = (f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><span>{crumb}</span></nav>'
@@ -534,8 +591,8 @@ def build_track(track):
             f'<h1>{E(T["ov_title"])}</h1><p class="lede">{inline(T["ov_lede"])}</p></header>'
             + md(open(intro, encoding="utf-8").read() if os.path.exists(intro) else "")
             + f'<div class="lesson-list">{rows}</div>')
-    page(f"{track}/index.html", jt(T["label"], T["ov_title"]), T["ov_lede"][:155], track, track_side(lessons, "index", track), body)
-    return lessons
+    page(f"{track}/index.html", jt(T["label"], T["ov_title"]), T["ov_lede"][:155], track, track_side(lessons, levels, "index", track), body)
+    return lessons, levels
 
 
 # ---------------------------------------------------------------- basics
@@ -555,7 +612,7 @@ def build_basics():
         if s.get("terms"):
             inner += '<dl class="terms">' + "".join(f"<dt>{E(a)}</dt><dd>{inline(b)}</dd>" for a, b in s["terms"]) + "</dl>"
         if s.get("quiz"):
-            inner += '<h3>Quick check</h3>' + qset(s["quiz"], f"basics-{n}")
+            inner += f'<h3>{"Practice" if s.get("practice") else "Practice. Quick check"}</h3>' + qset(s["quiz"], f"basics-{n}")
         steps += (f'<section class="step" id="step-{n}"><span class="mono k">Step {n:02d}</span><h2>{E(s["title"])}</h2>'
                   f'<div class="prose">{inner}</div><div class="step-end" data-for="step-{n}"></div></section>')
     main = (f'<main id="main"><section class="page-head"><div class="wrap"><div class="eyebrow">Start here · {len(B["steps"])} steps · about 2 hours</div>'
@@ -586,11 +643,12 @@ SIM = """<div class="sim scale-sim" id="scale-sim">
 
 
 # ---------------------------------------------------------------- interview bank
-def build_interview(learn, design):
+def build_interview(tracks, design):
     groups = []
-    for L in learn:
-        if L.get("interview"):
-            groups.append(("learn", L, LEVELS.get(L.get("level"), "")))
+    for track, (ls, levels) in tracks.items():
+        for L in ls:
+            if L.get("interview"):
+                groups.append((track, L, f'{TRACKS[track]["label"]} level {L["level"]}'))
     for L in design:
         if L.get("interview"):
             groups.append(("design", L, "Design it"))
@@ -598,13 +656,15 @@ def build_interview(learn, design):
     body = ""
     for track, L, lvl in groups:
         body += (f'<section class="block iv-group" data-lvl="{E(lvl)}" id="{track}-{L["slug"]}"><h2><a href="{track}/{L["slug"]}.html">{E(L["short"])}</a></h2>'
-                 f'<p class="small muted">{E(lvl)} · from {"lesson" if track == "learn" else "design"} {E(L["num"])}</p>'
+                 f'<p class="small muted">{E(lvl)} · {TRACKS[track]["eyebrow"].lower()} {E(L["num"])}</p>'
                  + qset(iv_items(L["interview"]), f'bank-{track}-{L["slug"]}') + "</section>")
-    lvls = ["All"] + [v for v in LEVELS.values()] + ["Design it"]
+    chips = ["All"]
+    for _, _, lvl in groups:
+        if lvl not in chips:
+            chips.append(lvl)
     filt = '<div class="chips" id="iv-filter" role="group" aria-label="Filter">' + "".join(
-        f'<button type="button" data-lvl="{"" if l == "All" else E(l)}" aria-pressed="{"true" if l == "All" else "false"}">{E(l)}</button>' for l in lvls) + "</div>"
+        f'<button type="button" data-lvl="{"" if l == "All" else E(l)}" aria-pressed="{"true" if l == "All" else "false"}">{E(l)}</button>' for l in chips) + "</div>"
     I = load("content/interview.yaml")
-    tips = md(I.get("intro"))
     beh = ""
     if I.get("framework"):
         beh = section("method", "The answer method", md(I["framework"]) + "".join(diagram(d) for d in I.get("diagrams", [])))
@@ -613,32 +673,33 @@ def build_interview(learn, design):
     main = (f'<main id="main"><section class="page-head"><div class="wrap"><div class="eyebrow">Interview prep · {total + len(I.get("general", []))} questions with feedback</div>'
             f'<h1>Interview questions, answered and explained</h1><p class="lede">{inline(I["lede"])}</p>'
             f'<div class="actions"><button class="btn btn-primary" id="iv-random" type="button">Give me a random question</button></div></div></section>'
-            f'<div class="wrap narrow doc iv-page">{tips}{beh}<section class="block" id="bank"><h2>The question bank</h2>{filt}</section>{body}</div></main>')
+            f'<div class="wrap narrow doc iv-page">{md(I.get("intro"))}{beh}<section class="block" id="bank"><h2>The question bank</h2>{filt}</section>{body}</div></main>')
     write("interview.html", "Interview questions. System design", I["lede"][:155], "", main)
-    return total
+    return total + len(I.get("general", []))
 
 
 # ---------------------------------------------------------------- plan
-def build_plan(learn, design):
+def build_plan(all_pages):
     P = load("content/plan.yaml")
-    titles = {f"learn/{L['slug']}.html": L["title"] for L in learn}
-    titles.update({f"design/{L['slug']}.html": L["title"] for L in design})
     weeks = ""
     for w in P["weeks"]:
         tasks = ""
         for j, t in enumerate(w["tasks"]):
             cid = f'plan.{w["n"]}.{j}'
-            link = f' <a href="{t["page"]}">{E(titles.get(t["page"], t.get("label", "Open")))}</a>' if t.get("page") else ""
+            pg = t.get("page")
+            if pg and pg not in all_pages:
+                sys.exit(f"plan.yaml week {w['n']}: unknown page {pg}")
+            link = f' <a href="{pg}">{E(t.get("label") or all_pages[pg])}</a>' if pg else ""
             tasks += (f'<div class="task">{checkbox(cid, t["t"])}<div class="k">{E(t.get("k", "Do"))}<small>{E(t.get("time", ""))}</small></div>'
                       f'<div class="body"><p>{inline(t["t"])}{link}</p></div></div>')
         weeks += (f'<article class="week" id="week-{w["n"]}"><div class="week-num"><b>{w["n"]:02d}</b>Week</div>'
                   f'<div><h3>{E(w["t"])}</h3><p class="small muted">{inline(w.get("d", ""))}</p>{tasks}</div></article>')
     main = (f'<div class="plan-bar" id="plan-bar"><div class="wrap"><div class="score"><b id="pts">0</b><span class="mono muted">of <span id="pmax">0</span> tasks</span></div>'
             f'<div class="meter" aria-hidden="true"><i id="meter"></i></div><div class="level" id="level"></div><button class="btn btn-quiet btn-sm" id="reset" type="button">Reset</button></div></div>'
-            f'<main id="main"><section class="page-head"><div class="wrap"><div class="eyebrow">The plan · {len(P["weeks"])} weeks · about 5 hours a week</div>'
+            f'<main id="main"><section class="page-head"><div class="wrap"><div class="eyebrow">The plan · {len(P["weeks"])} weeks · about 6 hours a week</div>'
             f'<h1>{E(P["title"])}</h1><p class="lede">{inline(P["lede"])}</p></div></section>'
             f'<section class="pmod"><div class="wrap">{weeks}</div></section></main>')
-    write("plan.html", "The plan. System design in 10 weeks", P["lede"][:155], "", main)
+    write("plan.html", "The plan. System design, step by step", P["lede"][:155], "", main)
 
 
 # ---------------------------------------------------------------- library
@@ -654,31 +715,125 @@ def build_library():
     write("library.html", "Library. System design resources", Lb["lede"][:155], "", main)
 
 
+# ---------------------------------------------------------------- protocols
+PCATS = {"core": "Core", "app": "Application", "security": "Security", "data": "Data and admin"}
+PKINDS = {"req", "res", "ctl", "sec", "data", "bad"}
+
+
+def build_protocols():
+    protos = []
+    for f in sorted(os.listdir("content/protocols")):
+        if f.endswith(".yaml") and not f.startswith("_"):
+            for p in load(f"content/protocols/{f}"):
+                protos.append(p)
+    ids = set()
+    out = []
+    for p in protos:
+        pid = p["id"]
+        if pid in ids:
+            sys.exit(f"duplicate protocol id {pid}")
+        ids.add(pid)
+        if p["cat"] not in PCATS:
+            sys.exit(f"{pid}: bad cat {p['cat']}")
+        nodes = {}
+        for k, v in p["nodes"].items():
+            label, sub, icon, x, y = v
+            nodes[k] = {"label": label, "sub": sub, "icon": icon, "x": x, "y": y}
+        links = [list(l) for l in p.get("links", [])]
+        steps = []
+        for si, st in enumerate(p["steps"]):
+            pk = []
+            for q in st.get("p", []):
+                a, b, lab, kind = q[0], q[1], q[2], q[3]
+                if a not in nodes or b not in nodes:
+                    sys.exit(f"{pid} step {si + 1}: unknown node in {q}")
+                if kind not in PKINDS:
+                    sys.exit(f"{pid} step {si + 1}: bad packet kind {kind}")
+                extra = q[4] if len(q) > 4 else {}
+                pk.append({"f": a, "t": b, "m": lab, "k": kind,
+                           "fields": [[str(x), str(y)] for x, y in (extra.get("fields") or {}).items()] if isinstance(extra, dict) else [],
+                           "raw": extra.get("raw") if isinstance(extra, dict) else None})
+            for n in st.get("on", []):
+                if n not in nodes:
+                    sys.exit(f"{pid} step {si + 1}: unknown node {n}")
+            steps.append({"t": st["t"], "tag": st.get("tag", ""), "d": md(st["d"]), "f": [[str(x), str(y)] for x, y in (st.get("f") or {}).items()],
+                          "p": pk, "on": st.get("on", []), "good": inline(st["good"]) if st.get("good") else "", "bad": st.get("bad", [])})
+        quiz = [prep_q(q) for q in p.get("quiz", [])]
+        out.append({"id": pid, "name": p["name"], "full": p["full"], "layer": p["layer"], "cat": p["cat"], "title": p["title"],
+                    "port": p.get("port", ""), "transport": p.get("transport", ""), "lede": inline(p["lede"]),
+                    "overview": md(p.get("overview", "")), "nodes": nodes, "links": links, "steps": steps, "quiz": quiz,
+                    "refs": [inline(r) for r in p.get("refs", [])]})
+    js = "window.PROTOCOLS=" + json.dumps(out, ensure_ascii=False).replace("</", "<\\/") + ";window.PCATS=" + json.dumps(PCATS) + ";"
+    open("assets/js/protocol-data.js", "w", encoding="utf-8", newline="\n").write(js)
+    intro = load("content/protocols/_page.yaml") if os.path.exists("content/protocols/_page.yaml") else {}
+    main = f"""<div class="px" id="px">
+  <aside class="px-list" id="px-list" aria-label="Protocols">
+    <div class="px-list-head"><h2>All protocols <span class="mono" id="px-count">{len(out)}</span></h2><button class="px-close btn btn-quiet btn-sm" type="button" aria-label="Close the list">Close</button></div>
+    <label class="px-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg><input type="search" id="px-q" placeholder="Search protocols" aria-label="Search protocols" autocomplete="off"></label>
+    <div class="px-tabs" role="group" aria-label="Filter"><button type="button" data-cat="" aria-pressed="true">All</button>{"".join(f'<button type="button" data-cat="{k}" aria-pressed="false">{v}</button>' for k, v in PCATS.items())}</div>
+    <div class="px-rows" id="px-rows"></div>
+  </aside>
+  <main id="main" class="px-main">
+    <div class="px-bar"><button class="btn btn-quiet btn-sm px-open" type="button" id="px-open">All protocols</button><nav class="crumbs" id="px-crumbs"></nav></div>
+    <header class="px-head"><div class="eyebrow mono" id="px-eyebrow"></div><h1 id="px-title"></h1><p class="lede" id="px-lede"></p><div class="px-facts" id="px-facts"></div></header>
+    <section class="px-stage-card">
+      <div class="px-stage-top"><div class="seg px-views" role="group" aria-label="View"><button type="button" data-view="net" aria-pressed="true">Network</button><button type="button" data-view="seq" aria-pressed="false">Sequence</button></div><span class="mono px-stepno" id="px-stepno"></span></div>
+      <div class="px-stats" id="px-stats"></div>
+      <div class="px-stage" id="px-stage"></div>
+      <div class="px-legend small" id="px-legend"></div>
+      <div class="px-controls">
+        <button class="px-play" type="button" id="px-play" aria-label="Play">Play</button>
+        <button class="btn btn-quiet btn-sm" type="button" id="px-prev" aria-label="Previous step">Back</button>
+        <button class="btn btn-quiet btn-sm" type="button" id="px-next" aria-label="Next step">Next</button>
+        <div class="px-prog" id="px-prog"></div>
+        <select id="px-speed" aria-label="Playback speed"><option value="0.5">0.5x</option><option value="1" selected>1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select>
+        <button class="btn btn-quiet btn-sm" type="button" id="px-restart" aria-label="Start over">Restart</button>
+      </div>
+    </section>
+    <section class="px-rail-card"><div class="px-rail-top"><span class="mono">In this protocol</span><span class="mono" id="px-railno"></span></div><div class="px-rail" id="px-rail"></div></section>
+    <section class="px-detail">
+      <div class="seg px-tabs2" role="group" aria-label="Details"><button type="button" data-tab="step" aria-pressed="true">Current step</button><button type="button" data-tab="over" aria-pressed="false">Overview</button><button type="button" data-tab="prac" aria-pressed="false">Practice</button></div>
+      <div id="px-tab-step"></div><div id="px-tab-over" hidden></div><div id="px-tab-prac" hidden></div>
+    </section>
+    <section class="px-inspect"><div class="px-inspect-top"><h3>Packet inspector</h3><div class="seg" role="group" aria-label="Inspector view"><button type="button" data-ins="fields" aria-pressed="true">Fields</button><button type="button" data-ins="hex" aria-pressed="false">Hex</button></div></div><div id="px-pk-list" class="px-pk-list"></div><div id="px-pk-body" class="px-pk-body"></div></section>
+    <div class="px-intro prose">{md(intro.get("intro", ""))}</div>
+  </main>
+</div>"""
+    write("protocols.html", "Protocols, animated step by step", "Network protocols explained with animated network and sequence views, step by step, with packet fields and practice.", "protocols", main,
+          extra=f'\n<script src="assets/js/protocol-data.js?v={V}"></script>\n<script src="assets/js/protocols.js?v={V}"></script>')
+    return out
+
+
 # ---------------------------------------------------------------- home
-def build_home(learn, design, nb, niv):
+def build_home(tracks, design, nb, niv, protos):
     H = load("content/home.yaml")
-    route = [{"s": L["slug"], "n": L["num"], "t": L["short"], "l": L.get("level")} for L in learn]
+    learn = tracks["learn"][0]
+    route = [{"s": L["slug"], "n": L["num"], "t": L["short"], "l": L.get("level"), "p": L.get("kind") == "practice"} for L in learn]
     nq = 0
-    for L in learn + design:
-        nq += len(L.get("quiz", [])) + sum(len(r["items"]) for r in (L.get("desk") or {}).get("rounds", []))
-        nq += len((L.get("estimate") or {}).get("items", []))
-    stats = [(nb, "short steps in Start here, with a scale simulator"), (len(learn), "concept lessons in five levels, each with an animated diagram"),
-             (len(design), "full design tasks, from a link shortener to an AI chat app"), (nq, "quiz, fill-up and scenario questions with reasons"),
-             (niv, "interview questions with model answers and feedback")]
+    for ls in [t[0] for t in tracks.values()] + [design]:
+        for L in ls:
+            nq += len(L.get("quiz", [])) + sum(len(r["items"]) for r in (L.get("desk") or {}).get("rounds", []))
+            nq += len((L.get("estimate") or {}).get("items", [])) + sum(len(r["items"]) for r in L.get("rounds", []) if L.get("kind") == "practice")
+    nq += sum(len(p["quiz"]) for p in protos)
+    nl = sum(1 for L in learn if L.get("kind") != "practice")
+    ni = sum(1 for L in tracks["infra"][0] if L.get("kind") != "practice")
+    stats = [(nl, "concept lessons in five levels, each with an animated diagram"), (ni, "infra lessons, from Git to Kubernetes, AWS and Terraform"),
+             (len(protos), "network protocols, animated packet by packet"), (len(design), "full design tasks, from a link shortener to an AI chat app"),
+             (nq, "quiz, fill-up, code and scenario questions with reasons"), (niv, "interview questions with model answers and feedback")]
     cards = "".join(f'<a class="card" href="{c["href"]}"><span class="num">{inline(c["num"])}</span><h3>{E(c["t"])}</h3><p>{inline(c["d"])}</p><span class="go">{E(c["go"])}</span></a>' for c in H["cards"])
     loop = "".join(f'<div><span class="mono">{E(x[0])}</span><h3>{E(x[1])}</h3><p>{inline(x[2])}</p></div>' for x in H["loop"])
     main = f"""<main id="main">
   <section class="hero"><div class="wrap"><div>
-    <div class="eyebrow rise"><span class="tag def"><span class="dot def"></span>Concepts</span><span class="tag atk"><span class="dot atk"></span>Design it</span><span>System design and architecture</span></div>
+    <div class="eyebrow rise"><span class="tag def"><span class="dot def"></span>Concepts</span><span class="tag pen"><span class="dot pen"></span>Infra</span><span class="tag atk"><span class="dot atk"></span>Design it</span></div>
     <h1 class="rise d1">{E(H["title"])}</h1>
     <p class="lede rise d2">{inline(H["lede"])}</p>
-    <div class="actions rise d3"><a class="btn btn-primary" href="basics.html">Start here</a><a class="btn btn-quiet" href="plan.html">Open the plan</a></div>
+    <div class="actions rise d3"><a class="btn btn-primary" href="basics.html">Start here</a><a class="btn btn-quiet" href="plan.html">Open the plan</a><a class="btn btn-quiet" href="protocols.html">See protocols move</a></div>
     <p class="small muted rise d3" id="home-progress" style="margin-top:20px"></p>
   </div>
   <div class="hero-visual rise d2"><div class="sheet"><div class="sheet-cap"><span>Your route, basic to mastery</span><span>stations fill in as you finish lessons</span></div>
     <svg id="route" class="dg" viewBox="0 0 640 430" role="img" aria-label="Route map of the five levels of concept lessons, from foundations to mastery, then the design tasks."></svg></div></div>
   </div></section>
-  <section class="section"><div class="wrap"><div class="stats stats-5">{"".join(f'<div class="stat"><b>{n}</b><span>{E(t)}</span></div>' for n, t in stats)}</div></div></section>
+  <section class="section"><div class="wrap"><div class="stats stats-6">{"".join(f'<div class="stat"><b>{n}</b><span>{E(t)}</span></div>' for n, t in stats)}</div></div></section>
   <section class="section"><div class="wrap"><h2 class="section-title">How every lesson works</h2><p class="section-sub">{inline(H["loop_sub"])}</p><div class="loop">{loop}</div></div></section>
   <section class="section"><div class="wrap"><h2 class="section-title">Ways in</h2><p class="section-sub">Pick the one that fits you today. They all link to each other.</p><div class="grid grid-3">{cards}</div></div></section>
   <section class="section"><div class="wrap narrow"><h2 class="section-title">{E(H["end_t"])}</h2><div class="prose">{md(H["end"])}</div></div></section>
@@ -688,11 +843,20 @@ def build_home(learn, design, nb, niv):
 
 
 if __name__ == "__main__":
-    learn = build_track("learn")
-    design = build_track("design")
+    tracks = {"learn": build_track("learn"), "infra": build_track("infra")}
+    design, _ = build_track("design")
     nb = build_basics()
-    niv = build_interview(learn, design)
-    build_plan(learn, design)
+    protos = build_protocols()
+    niv = build_interview(tracks, design)
+    pages = {"basics.html": "Start here", "interview.html": "Interview questions", "protocols.html": "Protocols",
+             "learn/index.html": "Concepts", "infra/index.html": "Infra", "design/index.html": "All designs"}
+    for t, (ls, _) in list(tracks.items()) + [("design", (design, None))]:
+        for L in ls:
+            pages[f"{t}/{L['slug']}.html"] = f'{L["num"]}. {L["title"]}' if t != "design" else L["title"]
+    for p in protos:
+        pages[f"protocols.html#/{p['id']}"] = p["name"]
+    build_plan(pages)
     build_library()
-    build_home(learn, design, nb, niv)
-    print(f"built {nb} basics steps, {len(learn)} concept lessons, {len(design)} designs, {niv} interview questions")
+    build_home(tracks, design, nb, niv, protos)
+    print(f"built {nb} basics steps, " + ", ".join(f"{len(v[0])} {k} pages" for k, v in tracks.items())
+          + f", {len(design)} designs, {len(protos)} protocols, {niv} interview questions")

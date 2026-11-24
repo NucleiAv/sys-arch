@@ -108,7 +108,7 @@ mistakes:
   - Saving uploads or sessions on the app server's own disk or memory.
   - Using sticky sessions as a permanent design.
   - Autoscaling on a trigger so high that new servers arrive after the crash.
-  - Assuming the database scales out as easily as the app servers. It does not, see lessons 8 and 9.
+  - Assuming the database scales out as easily as the app servers. It does not, see lessons 2.3 and 2.4.
 
 quiz:
   - q: You add a second server and users start getting logged out at random. What is the most likely cause?
@@ -182,5 +182,5 @@ desk:
 
 refs:
   - "The Twelve-Factor App. [Processes, execute the app as stateless processes](https://12factor.net/processes)."
-  - "AWS. [What is horizontal and vertical scaling](https://aws.amazon.com/compare/the-difference-between-horizontal-and-vertical-scaling/)."
+  - "Wikipedia. [Scalability, horizontal and vertical scaling](https://en.wikipedia.org/wiki/Scalability)."
   - "Stack Exchange. [Stack Overflow, the architecture](https://nickcraver.com/blog/2016/02/17/stack-overflow-the-architecture-2016-edition/)."

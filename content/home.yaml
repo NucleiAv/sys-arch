@@ -1,31 +1,46 @@
 title: Learn to design systems that serve millions, one box at a time
-lede: System design and architecture from zero to mastery, in plain words. Animated diagrams, real life scenarios, quizzes, fill-ups, design tasks and interview questions with feedback. You need no background.
-loop_sub: About 45 minutes a lesson. Read the idea, watch it move, test yourself, then use it. If you are short on time, do the idea, the animation and the quiz.
+lede: System design, architecture, infrastructure and network protocols, from zero to mastery, in plain words. Animated diagrams, real life scenarios, quizzes, fill-ups, code questions, design tasks and interview questions with feedback. You need no background.
+loop_sub: About 45 minutes a lesson. Read the idea, watch it move, then practice. Every lesson ends with practice, and every level ends with a practice page.
 loop:
-  - ["1 · 10 min", "Understand", "A plain explanation with a picture you can hold in your head. Every new word is explained."]
+  - ["1 · 10 min", "Understand", "A plain explanation with a picture you can keep in your head. Every new word is explained."]
   - ["2 · 10 min", "Watch it move", "An animated diagram you step through. Requests flow, parts light up, numbers change."]
-  - ["3 · 15 min", "Check yourself", "Multiple choice, fill-ups, small math and sorting. Every answer comes with a reason."]
+  - ["3 · 15 min", "Check yourself", "Multiple choice, fill-ups, small math, code and config to read, and sorting. Every answer comes with a reason."]
   - ["4 · 15 min", "Use it", "Real life scenarios, a practice desk and interview questions that give you feedback on your own answer."]
 cards:
   - href: basics.html
-    num: "8 short steps"
+    num: "9 short steps"
     t: Start here
     d: What a system is, clients and servers, speed, scaling, where data lives and how things break. With a scale simulator you can play with.
     go: Read the basics
   - href: learn/index.html
     num: '<span class="dot def"></span> Concepts'
     t: The building blocks
-    d: Twenty two lessons in five levels, from how a request travels to multi-region systems and stream processing.
+    d: Five levels, from design versus architecture and REST, GraphQL, gRPC and WebSocket, to consensus, multi-region systems and stream processing.
     go: Open the lessons
+  - href: infra/index.html
+    num: '<span class="dot pen"></span> Infra'
+    t: Build and run it
+    d: Git, GitHub, GitHub Actions, Linux, Docker, Compose, Kubernetes, AWS, serverless, Terraform and safe deploys, with command and config practice.
+    go: Open the infra track
+  - href: protocols.html
+    num: "62 protocols"
+    t: Protocols, animated
+    d: Watch HTTP, TLS, DNS, TCP, QUIC, SSH, SMB, Kerberos, Wi-Fi and many more move packet by packet, in network and sequence views.
+    go: See protocols move
   - href: design/index.html
     num: '<span class="dot atk"></span> Design it'
     t: Real design tasks
     d: Design a link shortener, a chat app, a news feed, video streaming, ride sharing, payments, an AI chat app and more, step by step.
     go: Open the designs
+  - href: interview.html
+    num: "Interview prep"
+    t: Questions with feedback
+    d: Every interview question in one bank. Write your answer and see which key points you covered, a model answer and what makes it great.
+    go: Practice questions
 end_t: How to use this site
 end: |
   Go in order the first time. Each level uses words from the one before. Mark a page done at the top when you finish it, and your route on the home page fills in.
 
   Write your own answer before you open any model answer. The feedback compares your words with the key points, so it only helps if you try first. Everything you write stays in your browser.
 
-  When you finish the concepts, do the designs out loud, with a timer, as if someone is listening. That is what a real interview feels like. Then use [the interview page](interview.html) for random practice.
+  Try every Git, Docker and Terraform command on your own computer. When you finish the concepts, do the designs out loud, with a timer, as if someone is listening. Then use [the interview page](interview.html) for random practice.

@@ -1,0 +1,412 @@
+- id: https
+  name: HTTPS
+  full: HTTP Secure
+  layer: 7
+  cat: security
+  transport: TCP
+  port: "443"
+  title: HTTPS, the same request inside a locked tunnel.
+  lede: HTTPS is HTTP sent inside a TLS connection. Watch the extra handshake that proves the server's identity and agrees on secret keys, then the encrypted request.
+  overview: |
+    HTTPS protects three things. **Confidentiality**, nobody on the path can read the data. **Integrity**, nobody can change it without being detected. **Authentication**, the certificate proves you talk to the real site.
+
+    The cost is one extra round trip with TLS 1.3, or two with TLS 1.2. Connection reuse and TLS session resumption hide most of that cost.
+  nodes:
+    client: [Browser, 192.168.1.10, laptop, 0, 2]
+    router: [Home router, 192.168.1.1, router, 2, 2]
+    net: [Internet, "", cloud, 4, 2]
+    web: [shop.example, 203.0.113.20, web, 6, 2]
+    ca: [Certificate authority, trusted root, shield, 6, 0]
+  links: [[client, router], [router, net], [net, web], [net, ca]]
+  steps:
+    - t: TCP handshake on port 443
+      tag: handshake
+      d: The browser opens a TCP connection to port 443. SYN, SYN-ACK, ACK, as for plain HTTP.
+      p:
+        - [client, web, "SYN", ctl]
+        - [web, client, "SYN-ACK", ctl]
+        - [client, web, "ACK", ctl]
+    - t: ClientHello
+      tag: tls
+      d: The browser sends a TLS 1.3 ClientHello. It lists cipher suites, a key share for key agreement, the server name in SNI, and `h2` and `http/1.1` in ALPN.
+      f: {TLS version: "1.3", SNI: shop.example, ALPN: "h2, http/1.1", Key share: x25519}
+      p:
+        - [client, web, "ClientHello", sec, {fields: {SNI: shop.example, Key share: x25519 public key, Cipher suites: "TLS_AES_128_GCM_SHA256 and more"}}]
+    - t: The server proves who it is
+      tag: tls
+      d: The server answers with ServerHello and its own key share. Both sides now compute the same secret keys. The rest of the handshake is already encrypted. The server sends its certificate, a signature that proves it owns the private key, and Finished.
+      f: {Certificate: "CN shop.example", Issuer: "Example CA", Signed with: server private key}
+      p:
+        - [web, client, "ServerHello + key share", sec]
+        - [web, client, "Certificate, CertificateVerify, Finished", sec]
+    - t: Check the certificate
+      tag: verify
+      d: The browser checks the certificate chain up to a root CA it already trusts, checks the name matches shop.example, and checks the dates. This basic check needs no call to the CA.
+      f: {Chain: "leaf, intermediate, root", Name match: "yes", Valid dates: "yes"}
+      on: [client, ca]
+      good: The browser already ships a list of trusted root certificates. That is why it can trust a site it has never seen.
+    - t: Encrypted HTTP
+      tag: exchange
+      d: The browser sends Finished, then the HTTP request, both encrypted. Anyone on the path sees only the server IP, the SNI name and the size and timing of encrypted records.
+      p:
+        - [client, web, "Finished + GET / (encrypted)", sec]
+        - [web, client, "200 OK (encrypted)", res]
+  quiz:
+    - q: What does the certificate prove?
+      opts: ["That the site is fast", "That the server holds the private key for this domain name, vouched for by a trusted CA", "That the site has no bugs"]
+      a: 1
+      why: The CA signs the certificate, and the server proves it has the matching private key.
+    - type: fill
+      q: "HTTPS uses TCP port ____ by default."
+      a: ["443"]
+      why: HTTP uses 80, HTTPS uses 443.
+  refs:
+    - "Cloudflare. [What happens in a TLS handshake?](https://www.cloudflare.com/learning/ssl/what-happens-in-a-tls-handshake/)"
+    - "IETF. [RFC 8446, TLS 1.3](https://www.rfc-editor.org/rfc/rfc8446)."
+
+- id: http2
+  name: HTTP/2
+  full: Binary frames, many streams
+  layer: 7
+  cat: app
+  transport: TCP with TLS
+  port: "443"
+  title: HTTP/2, many requests on one connection.
+  lede: HTTP/2 keeps the meaning of HTTP but sends it as binary frames. Many requests share one connection at the same time, so a page loads with fewer connections and less waiting.
+  overview: |
+    HTTP/1.1 sends one request at a time per connection, so browsers open several connections. HTTP/2 **multiplexes** many **streams** on one connection. Each request and response is a stream with an id. Headers are compressed with **HPACK**.
+
+    One weakness remains. HTTP/2 runs on TCP, so one lost TCP packet pauses all streams until it is sent again. HTTP/3 over QUIC fixes this.
+  nodes:
+    client: [Browser, 192.168.1.10, laptop, 0, 1]
+    net: [Internet, "", cloud, 3, 1]
+    web: [Web server, 203.0.113.30, web, 6, 1]
+  links: [[client, net], [net, web]]
+  steps:
+    - t: Agree on h2 during TLS
+      tag: tls
+      d: In the TLS handshake the browser offers `h2` with ALPN. The server picks `h2`. No extra round trip is needed to choose HTTP/2.
+      f: {ALPN offer: "h2, http/1.1", ALPN chosen: h2}
+      p:
+        - [client, web, "ClientHello ALPN h2", sec]
+        - [web, client, "ServerHello ALPN h2", sec]
+    - t: Connection preface and SETTINGS
+      tag: setup
+      d: The client sends a fixed preface string, then a SETTINGS frame. The server sends its own SETTINGS. Each side acknowledges the settings of the other.
+      f: {Preface: "PRI * HTTP/2.0", Example setting: "MAX_CONCURRENT_STREAMS 100"}
+      p:
+        - [client, web, "Preface + SETTINGS", ctl, {raw: "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"}]
+        - [web, client, "SETTINGS", ctl]
+        - [client, web, "SETTINGS ACK", ctl]
+    - t: Three requests at once
+      tag: streams
+      d: The browser sends three HEADERS frames on streams 1, 3 and 5, for the page, the CSS and a script. It does not wait between them.
+      f: {Streams: "1, 3, 5", Header compression: HPACK}
+      p:
+        - [client, web, "HEADERS stream 1 GET /", req]
+        - [client, web, "HEADERS stream 3 GET /app.css", req]
+        - [client, web, "HEADERS stream 5 GET /app.js", req]
+    - t: Responses arrive interleaved
+      tag: streams
+      d: The server sends DATA frames for all three streams, mixed together. The browser puts each frame back into its stream by the stream id.
+      p:
+        - [web, client, "HEADERS + DATA stream 3", res]
+        - [web, client, "DATA stream 1", res]
+        - [web, client, "DATA stream 5, END_STREAM", res]
+      good: Streams that the client starts use odd numbers. Streams that the server starts use even numbers.
+  quiz:
+    - q: What is the main gain of HTTP/2 over HTTP/1.1?
+      opts: ["It is text based", "Many requests and responses share one connection at the same time", "It removes TLS"]
+      a: 1
+      why: Multiplexing removes the need for many parallel connections.
+    - type: fill
+      q: HTTP/2 compresses headers with a scheme called ____.
+      a: ["HPACK"]
+      why: HTTP/3 uses QPACK.
+  refs:
+    - "IETF. [RFC 9113, HTTP/2](https://www.rfc-editor.org/rfc/rfc9113)."
+    - "web.dev. [Introduction to HTTP/2](https://web.dev/articles/performance-http2)."
+
+- id: websocket
+  name: WebSocket
+  full: Two-way web messaging
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "80 or 443"
+  title: A WebSocket, from upgrade to close.
+  lede: A WebSocket starts as a normal HTTP request, then turns the same TCP connection into a two way channel. Both sides can send messages at any time.
+  overview: |
+    WebSocket is defined in RFC 6455. The client sends an HTTP GET with `Upgrade: websocket`. The server answers `101 Switching Protocols`. After that, data travels in **frames**. Frames from the client are **masked** with a random key, to protect old proxies from confusion. Ping and pong frames keep the connection alive.
+
+    Use `wss://` for WebSocket over TLS.
+  nodes:
+    client: [Browser, 192.168.1.10, laptop, 0, 1]
+    lb: [Load balancer, 203.0.113.40, proxy, 3, 1]
+    srv: [Chat server, 10.0.1.5, server, 6, 1]
+  links: [[client, lb], [lb, srv]]
+  steps:
+    - t: Upgrade request
+      tag: handshake
+      d: After TCP and TLS, the browser sends a GET with the upgrade headers and a random base64 key.
+      p:
+        - [client, srv, "GET /chat Upgrade websocket", req, {raw: "GET /chat HTTP/1.1\r\nHost: chat.example\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"}]
+    - t: 101 Switching Protocols
+      tag: handshake
+      d: The server adds a fixed GUID to the key, hashes it with SHA-1 and sends the base64 result as `Sec-WebSocket-Accept`. This proves the server understood the WebSocket request.
+      f: {Status: "101", Accept: "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="}
+      p:
+        - [srv, client, "101 Switching Protocols", res, {raw: "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"}]
+    - t: Messages both ways
+      tag: data
+      d: The client sends a masked text frame. The server pushes a message at any time, with no request.
+      f: {Opcode: "0x1 text", Client mask: "yes", Server mask: "no"}
+      p:
+        - [client, srv, "text frame hello", data, {fields: {FIN: "1", Opcode: "1 text", Mask: "1", Payload: hello}}]
+        - [srv, client, "text frame new message", data]
+    - t: Keep alive
+      tag: control
+      d: The server sends a ping frame. The client answers with pong. Proxies do not close the idle connection.
+      p:
+        - [srv, client, "ping", ctl]
+        - [client, srv, "pong", ctl]
+    - t: Close
+      tag: close
+      d: One side sends a close frame with a status code, such as 1000 for normal closure. The other side answers with a close frame. Then TCP closes.
+      p:
+        - [client, srv, "close 1000", ctl]
+        - [srv, client, "close 1000", ctl]
+  quiz:
+    - type: fill
+      q: "The server answers a WebSocket upgrade with status ____."
+      a: ["101"]
+      why: 101 Switching Protocols.
+    - q: Which frames must be masked?
+      opts: ["Frames from the server", "Frames from the client", "No frames"]
+      a: 1
+      why: RFC 6455 requires clients to mask every frame they send.
+  refs:
+    - "IETF. [RFC 6455, the WebSocket protocol](https://www.rfc-editor.org/rfc/rfc6455)."
+    - "MDN. [Writing WebSocket servers](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers)."
+
+- id: grpc
+  name: gRPC
+  full: Remote calls over HTTP/2
+  layer: 7
+  cat: app
+  transport: HTTP/2
+  port: "any, often 443 or 50051"
+  title: One gRPC call, frame by frame.
+  lede: gRPC turns a function call into HTTP/2 frames. Watch the headers, the length prefixed protobuf message and the trailers that carry the result status.
+  overview: |
+    A gRPC call is an HTTP/2 POST. The path names the service and method, such as `/shop.Inventory/Reserve`. The body holds messages. Each message has a 1 byte compression flag, a 4 byte length, then the protobuf bytes. The result arrives in **trailers** with `grpc-status`. 0 means OK.
+  nodes:
+    cli: [Checkout service, 10.0.1.7, server, 0, 1]
+    srv: [Inventory service, 10.0.2.9, server, 6, 1]
+  links: [[cli, srv]]
+  steps:
+    - t: Request headers
+      tag: call
+      d: The client opens a new HTTP/2 stream and sends HEADERS with the method path, the content type and a deadline in `grpc-timeout`.
+      f: {":method": POST, ":path": /shop.Inventory/Reserve, content-type: application/grpc, grpc-timeout: 200m}
+      p:
+        - [cli, srv, "HEADERS POST /shop.Inventory/Reserve", req]
+    - t: The message
+      tag: call
+      d: A DATA frame carries the request. First a compression flag 0, then the length, then the protobuf bytes for sku and qty.
+      f: {Compressed: "0", Length: "12 bytes", Message: "sku TSHIRT-M, qty 2"}
+      p:
+        - [cli, srv, "DATA length-prefixed ReserveRequest", data]
+    - t: Reply and status
+      tag: reply
+      d: The server sends response HEADERS, a DATA frame with ReserveReply, and trailing HEADERS with `grpc-status 0`. The client code gets a normal return value.
+      f: {grpc-status: "0 OK", Reply: "ok true, left 41"}
+      p:
+        - [srv, cli, "HEADERS :status 200", res]
+        - [srv, cli, "DATA ReserveReply", res]
+        - [srv, cli, "Trailers grpc-status 0", res]
+      good: An HTTP status of 200 does not mean the call worked. Always read grpc-status in the trailers.
+  quiz:
+    - type: fill
+      q: "gRPC reports the result of a call in the ____, with grpc-status."
+      a: ["trailers", "trailer", "trailing headers"]
+      why: The status comes after the messages, so streaming calls can report a final result.
+    - q: Which HTTP version does gRPC use by default?
+      opts: ["HTTP/1.0", "HTTP/2", "SMTP"]
+      a: 1
+      why: gRPC relies on HTTP/2 streams and trailers.
+  refs:
+    - "gRPC. [gRPC over HTTP/2 protocol](https://github.com/grpc/grpc/blob/master/doc/PROTOCOL-HTTP2.md)."
+
+- id: http-proxy
+  name: HTTP Proxy
+  full: Forward proxy and CONNECT
+  layer: 7
+  cat: security
+  transport: TCP
+  port: "often 3128 or 8080"
+  title: A forward proxy and the CONNECT tunnel.
+  lede: Companies often send all web traffic through a forward proxy. For plain HTTP the proxy reads the request. For HTTPS the client asks the proxy to open a blind tunnel with CONNECT.
+  overview: |
+    A **forward proxy** acts for clients. You configure clients to use it. It can filter, log and cache. For HTTPS, the client sends `CONNECT host:443`. The proxy opens a TCP connection to the host and then copies bytes both ways. It cannot read the encrypted traffic, unless the company installs its own root certificate on every machine to inspect TLS.
+
+    A proxy can ask for credentials with `407 Proxy Authentication Required`.
+  nodes:
+    client: [Employee laptop, 10.10.0.21, laptop, 0, 1]
+    proxy: [Forward proxy, 10.10.0.2, proxy, 3, 1]
+    net: [Internet, "", cloud, 5, 1]
+    web: [news.example, 203.0.113.60, web, 7, 1]
+  links: [[client, proxy], [proxy, net], [net, web]]
+  steps:
+    - t: Plain HTTP through the proxy
+      tag: http
+      d: The client sends the full URL in the request line to the proxy. The proxy checks its rules, forwards the request and returns the answer.
+      p:
+        - [client, proxy, "GET http://news.example/ HTTP/1.1", req, {raw: "GET http://news.example/ HTTP/1.1\r\nHost: news.example\r\n\r\n"}]
+        - [proxy, web, "GET / HTTP/1.1", req]
+        - [web, proxy, "200 OK", res]
+        - [proxy, client, "200 OK", res]
+    - t: Ask for a tunnel
+      tag: connect
+      d: For HTTPS, the client sends CONNECT with the host and port.
+      p:
+        - [client, proxy, "CONNECT news.example:443", req, {raw: "CONNECT news.example:443 HTTP/1.1\r\nHost: news.example:443\r\nProxy-Authorization: Basic ZW1wOnB3\r\n\r\n"}]
+    - t: Tunnel open
+      tag: connect
+      d: The proxy opens TCP to the host and answers 200. From now on it only copies bytes.
+      p:
+        - [proxy, web, "TCP SYN to 443", ctl]
+        - [proxy, client, "HTTP/1.1 200 Connection established", res]
+    - t: TLS through the tunnel
+      tag: tls
+      d: The client does a normal TLS handshake with the real server through the tunnel. The proxy sees encrypted bytes only, plus the host name from CONNECT.
+      p:
+        - [client, web, "ClientHello (through tunnel)", sec]
+        - [web, client, "ServerHello, Certificate (through tunnel)", sec]
+  quiz:
+    - type: fill
+      q: "To ask a proxy for an HTTPS tunnel, the client uses the method ____."
+      a: ["CONNECT"]
+      why: CONNECT host:443 opens a byte tunnel.
+    - q: Can a normal forward proxy read HTTPS traffic in a CONNECT tunnel?
+      opts: ["Yes, always", "No, it sees only encrypted bytes and the target host"]
+      a: 1
+      why: Only TLS inspection with a company installed root certificate changes that.
+  refs:
+    - "MDN. [CONNECT method](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/CONNECT)."
+    - "MDN. [Proxy servers and tunneling](https://developer.mozilla.org/en-US/docs/Web/HTTP/Proxy_servers_and_tunneling)."
+
+- id: socks5
+  name: SOCKS5
+  full: Socket Secure proxy
+  layer: 5
+  cat: security
+  transport: TCP
+  port: "1080"
+  title: SOCKS5, a general purpose proxy.
+  lede: SOCKS5 can proxy any TCP connection, and UDP too, not only web traffic. Watch the greeting, the login and the CONNECT request.
+  overview: |
+    SOCKS5 is defined in RFC 1928. It works below HTTP, so it can carry SSH, mail or any TCP protocol. It does not encrypt anything by itself. SSH can act as a SOCKS proxy with `ssh -D 1080 host`.
+  nodes:
+    client: [App, 192.168.1.10, laptop, 0, 1]
+    socks: [SOCKS5 proxy, 198.51.100.8, proxy, 3, 1]
+    srv: [Target server, 203.0.113.70, server, 6, 1]
+  links: [[client, socks], [socks, srv]]
+  steps:
+    - t: Greeting
+      tag: auth
+      d: The client says version 5 and lists the login methods it supports. Here, no login, and username with password.
+      f: {VER: "5", Methods: "0x00 none, 0x02 user and password"}
+      p:
+        - [client, socks, "VER 5, methods 00 02", ctl]
+        - [socks, client, "VER 5, method 02", ctl]
+    - t: Login
+      tag: auth
+      d: The proxy chose username and password, from RFC 1929. The client sends them. They are not encrypted, so use SOCKS inside a trusted network or a tunnel.
+      p:
+        - [client, socks, "user alice, password ****", sec]
+        - [socks, client, "status 0 success", sec]
+    - t: CONNECT request
+      tag: connect
+      d: The client asks the proxy to connect to a host name and port. The proxy can resolve the name itself, which hides DNS lookups from the local network.
+      f: {CMD: "1 CONNECT", ATYP: "3 domain name", DST: "mail.example:993"}
+      p:
+        - [client, socks, "CONNECT mail.example:993", req]
+        - [socks, srv, "TCP connect", ctl]
+        - [socks, client, "REP 0 succeeded", res]
+    - t: Relay
+      tag: data
+      d: The proxy now copies bytes in both directions. The app talks to the target as if directly.
+      p:
+        - [client, srv, "app data (relayed)", data]
+        - [srv, client, "app data (relayed)", data]
+  quiz:
+    - type: fill
+      q: "The usual SOCKS port is ____."
+      a: ["1080"]
+      why: SOCKS servers usually listen on 1080.
+    - q: Does SOCKS5 encrypt traffic?
+      opts: ["Yes", "No, it only relays. Use TLS or SSH for encryption"]
+      a: 1
+      why: SOCKS5 has no encryption of its own.
+  refs:
+    - "IETF. [RFC 1928, SOCKS protocol version 5](https://www.rfc-editor.org/rfc/rfc1928)."
+
+- id: reverse-proxy
+  name: Reverse Proxy
+  full: TLS offloading and routing
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "443"
+  title: A reverse proxy in front of your servers.
+  lede: A reverse proxy takes requests for your servers. It ends TLS, picks a backend, adds headers and can cache. Users never talk to the backends directly.
+  overview: |
+    A reverse proxy acts for **servers**. A forward proxy acts for **clients**. Nginx, HAProxy, Envoy and cloud load balancers are common reverse proxies. See concepts lesson 1.10 for load balancing.
+  nodes:
+    user: [User, 198.51.100.23, laptop, 0, 1]
+    rp: [Reverse proxy, 203.0.113.80, proxy, 3, 1]
+    cache: [Cache, in memory, db, 3, 3]
+    a: [App server A, 10.0.1.11, server, 6, 0]
+    b: [App server B, 10.0.1.12, server, 6, 2]
+  links: [[user, rp], [rp, a], [rp, b], [rp, cache]]
+  steps:
+    - t: TLS ends at the proxy
+      tag: tls
+      d: The user connects to the proxy with HTTPS. The proxy holds the certificate and decrypts the request. This is **TLS offloading**.
+      p:
+        - [user, rp, "ClientHello", sec]
+        - [rp, user, "ServerHello, Certificate", sec]
+        - [user, rp, "GET /products (encrypted)", req]
+    - t: Pick a backend
+      tag: route
+      d: The proxy chooses app server A by its rule, here least connections. It adds `X-Forwarded-For` with the user IP, because A sees only the address of the proxy.
+      f: {Rule: least connections, X-Forwarded-For: 198.51.100.23, X-Forwarded-Proto: https}
+      p:
+        - [rp, a, "GET /products + X-Forwarded-For", req]
+        - [a, rp, "200 OK, Cache-Control max-age=60", res]
+    - t: Cache and answer
+      tag: cache
+      d: The proxy can keep the response for 60 seconds. It sends the response to the user, encrypted again.
+      p:
+        - [rp, cache, "store /products", data]
+        - [rp, user, "200 OK (encrypted)", res]
+    - t: The next user gets the cached copy
+      tag: cache
+      d: A second user asks for the same page within 60 seconds. The proxy answers from its cache. The app servers do no work.
+      p:
+        - [user, rp, "GET /products", req]
+        - [cache, rp, "hit /products", data]
+        - [rp, user, "200 OK from cache", res]
+  quiz:
+    - q: Why does the backend need X-Forwarded-For?
+      opts: ["To speed up TLS", "Because it only sees the IP of the proxy, not the IP of the user", "To cache"]
+      a: 1
+      why: The header carries the original client IP.
+    - type: fill
+      q: Decrypting HTTPS at the proxy so backends get plain HTTP is called TLS ____.
+      a: ["offloading", "termination", "offload"]
+      why: It is also called TLS termination.
+  refs:
+    - "NGINX. [Reverse proxy guide](https://docs.nginx.com/nginx/admin-guide/web-server/reverse-proxy/)."
+    - "Cloudflare. [What is a reverse proxy?](https://www.cloudflare.com/learning/cdn/glossary/reverse-proxy/)"

@@ -1,0 +1,206 @@
+short: Docker Compose
+title: Docker Compose, many containers on one machine
+time: about 40 minutes
+tags: [Compose, networks, volumes]
+lede: A real app needs a web server, a database and a cache. Compose starts them all with one command from one file, and lets them find each other by name.
+
+idea: |
+  Running one container with `docker run` is easy. A real app has several. Typing long `docker run` commands for each one in the right order is slow and easy to get wrong.
+
+  **Docker Compose** reads one YAML file, usually `compose.yaml`, that lists every **service**, its image, ports, settings and storage. `docker compose up` starts them all. Compose also makes a private **network**, so services reach each other by their service name, such as `db`.
+
+  !eli5 Compose is the conductor of a small band. The sheet music, the YAML file, says who plays which part. The conductor starts everyone together, and the players can hear each other.
+
+scenes:
+  - title: docker compose up
+    stats: [Step, Running]
+    nodes:
+      dev: {label: Developer, x: 0, y: 1, kind: box}
+      web: {label: web, x: 2, y: 1, kind: def, tag: port 8080}
+      db: {label: db, x: 4, y: 0, kind: raised, tag: postgres}
+      cache: {label: cache, x: 4, y: 2, kind: raised, tag: redis}
+      vol: {label: db-data volume, x: 6, y: 0, kind: raised}
+    links: [[dev, web], [web, db], [web, cache], [db, vol]]
+    steps:
+      - title: Read the file
+        text: "`docker compose up -d` reads compose.yaml and creates a private network for the app."
+        on: [dev]
+        stats: [Read, "0"]
+      - title: Start the database and cache
+        text: Postgres and Redis start first, because web lists them in depends_on. Postgres keeps its files in a named volume.
+        on: [db, cache, vol]
+        flow: [[db, vol, ink]]
+        stats: [Start, "2"]
+      - title: Start the web app
+        text: "The web container starts. It connects to `db:5432` and `cache:6379`. Compose DNS turns the names db and cache into container addresses."
+        on: [web, db, cache]
+        flow: [[web, db, def], [web, cache, def]]
+        stats: [Start, "3"]
+      - title: Use it
+        text: You open `localhost:8080`. The host port 8080 goes to the web container. The database is not published, so only the web container can reach it.
+        on: [dev, web]
+        flow: [[dev, web, def]]
+        mark: {web: ok}
+        stats: [Ready, "3"]
+
+terms:
+  - [Compose file, "A YAML file, usually compose.yaml, that describes all services of an app."]
+  - [Service, "One container definition in a Compose file, which can run as one or more containers."]
+  - [Named volume, "Docker managed storage with a name, kept when containers are removed."]
+  - [Bind mount, "A folder from your computer mounted into a container. Useful for live code changes in development."]
+  - [depends_on, "Starts services in order. With a health check condition it can wait until a service is healthy."]
+  - [Health check, "A command that tells Docker if a container is really ready."]
+
+how: |
+  ### A compose.yaml for a web app, a database and a cache
+
+  ```
+  services:
+    web:
+      build: .
+      ports:
+        - "8080:3000"
+      environment:
+        DATABASE_URL: postgres://app:secret@db:5432/shop
+        REDIS_URL: redis://cache:6379
+      depends_on:
+        db:
+          condition: service_healthy
+        cache:
+          condition: service_started
+
+    db:
+      image: postgres:16
+      environment:
+        POSTGRES_USER: app
+        POSTGRES_PASSWORD: secret
+        POSTGRES_DB: shop
+      volumes:
+        - db-data:/var/lib/postgresql/data
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U app"]
+        interval: 5s
+        retries: 5
+
+    cache:
+      image: redis:7
+
+  volumes:
+    db-data:
+  ```
+
+  ### The commands
+
+  | Command | What it does |
+  | --- | --- |
+  | `docker compose up -d` | Build if needed and start everything in the background |
+  | `docker compose ps` | List the services and their state |
+  | `docker compose logs -f web` | Follow the logs of one service |
+  | `docker compose down` | Stop and remove containers and the network, keep volumes |
+  | `docker compose down -v` | Also delete the volumes, which deletes the data |
+
+  ### Where Compose fits
+
+  Compose is great for local development, tests in CI and small single server deployments. It runs on one machine. When you need many machines, self healing and rolling updates, you move to Kubernetes or a managed container service.
+
+  !warn The passwords in the example are for local development only. In real deployments, read secrets from a secrets manager or Compose secrets, not from the file in Git.
+
+diagrams:
+  - type: split
+    title: One file, one network, three services
+    source: ["compose.yaml", "def"]
+    targets:
+      - ["web", "box", "reaches db and cache by name"]
+      - ["db", "raised", "data in the db-data volume"]
+      - ["cache", "raised", "not published to the host"]
+    caption: Services find each other through Compose DNS. Only published ports are reachable from your computer.
+
+life:
+  - ["New developer, ready in ten minutes", "A team used to need a full day to set up a laptop. With one compose.yaml, a new developer runs `docker compose up` and has the app, database and cache running in ten minutes."]
+  - ["Data gone after cleanup", "A developer ran `docker compose down -v` to free space and lost the local test data. Named volumes survive `down`, but `-v` deletes them."]
+
+tradeoffs:
+  - ["Compose", "Simple, one file, perfect for development.", "One machine only, no self healing across machines."]
+  - ["Kubernetes", "Many machines, self healing, rolling updates.", "Much more to learn and run."]
+  - ["Database in a container", "Easy local setup.", "In production, a managed database is usually safer for backups and failover."]
+
+mistakes:
+  - Using `localhost` inside a container to reach another container. Use the service name.
+  - Assuming depends_on waits until the database is ready, without a health check.
+  - Committing real passwords in compose.yaml.
+  - Publishing database ports to the internet.
+
+quiz:
+  - q: Inside the web container, which host name reaches the Postgres service named db?
+    opts: ["localhost", "db", "postgres.com"]
+    a: 1
+    why: Compose DNS resolves service names on the app network.
+  - type: fill
+    q: "The command that starts all services in the background is `docker compose ____ -d`."
+    a: ["up"]
+    why: up creates and starts, down stops and removes.
+  - q: What does `docker compose down -v` also delete?
+    opts: ["The images", "The named volumes, so the data", "The Compose file"]
+    a: 1
+    why: -v removes volumes. Be careful with it.
+  - q: Why can web fail at start even with `depends_on db`?
+    opts: ["depends_on only waits for the container to start, not for Postgres to be ready, unless you add a health check condition", "Ports are wrong", "Redis is missing"]
+    a: 0
+    why: Use condition service_healthy with a healthcheck.
+
+interview:
+  - q: When would you use Docker Compose and when Kubernetes?
+    keys:
+      - ["Compose runs multiple containers on one host from one file", [one host, one machine, single, file]]
+      - ["Compose fits development, CI and small deployments", [development, local, ci, small, test]]
+      - ["Kubernetes for many machines, self healing, scaling and rolling updates", [many machines, cluster, self heal, scaling, rolling, replicas]]
+      - ["Cost of Kubernetes complexity", [complex, learn, operate, overhead, managed]]
+    a: |
+      Compose describes a multi container app in one file and runs it on one machine. I use it for local development, integration tests in CI, and small apps that fit on a single server. Kubernetes runs containers across a cluster of machines. It restarts failed containers, moves them when a machine dies, scales replicas and does rolling updates. I move to Kubernetes, usually a managed one, when I need several machines, high availability or many services, and I accept the extra complexity.
+    fb: Saying you would use a managed Kubernetes service shows practical judgment.
+
+desk:
+  title: Fix a team's compose.yaml
+  lede: A blog app runs with Compose but has three problems. Read the file and fix them.
+  situation: |
+    **Inkwell** runs a blog with a web service and a MySQL service in Compose.
+  rounds:
+    - title: Round 1. Read the file
+      info: |
+        ```
+        services:
+          web:
+            build: .
+            environment:
+              DB_HOST: localhost
+            depends_on: [mysql]
+          mysql:
+            image: mysql:8
+            ports:
+              - "3306:3306"
+            environment:
+              MYSQL_ROOT_PASSWORD: root
+        ```
+      items:
+        - q: The web app cannot connect to the database. Why?
+          opts: ["MySQL 8 is too new", "DB_HOST is localhost, which inside web means the web container itself. It must be mysql", "The port is wrong"]
+          a: 1
+          why: Use the service name as the host.
+        - q: Where does MySQL store its data now?
+          opts: ["In a named volume", "Inside the container, so it is lost when the container is removed", "On GitHub"]
+          a: 1
+          why: Add a named volume for /var/lib/mysql.
+        - q: Why is the ports line for mysql risky on a server?
+          opts: ["It publishes the database to the host network, maybe to the internet", "It slows MySQL", "It is required"]
+          a: 0
+          why: Only web needs to reach mysql, through the private network.
+  card: |
+    - One file, one command.
+    - Service names are host names.
+    - Named volumes for data.
+    - Health checks for real readiness.
+
+refs:
+  - "Docker Docs. [Docker Compose overview](https://docs.docker.com/compose/)."
+  - "Docker Docs. [Compose file reference](https://docs.docker.com/reference/compose-file/)."
+  - "Docker Docs. [Networking in Compose](https://docs.docker.com/compose/how-tos/networking/)."

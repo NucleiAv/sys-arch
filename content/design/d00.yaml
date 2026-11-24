@@ -26,7 +26,7 @@ hld: |
 
   ### 2. Estimates, 5 minutes
 
-  Turn users into load. Daily active users, then requests per second, then storage per year. Round hard. You want the size, not the exact number. Lesson 3 teaches the tricks.
+  Turn users into load. Daily active users, then requests per second, then storage per year. Round hard. You want the size, not the exact number. Lesson 1.8 teaches the tricks.
 
   ### 3. API, 5 minutes
 

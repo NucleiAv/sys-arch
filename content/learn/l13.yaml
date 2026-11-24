@@ -197,6 +197,6 @@ desk:
     - Dead letter queue and alerts on queue length.
 
 refs:
-  - "Jay Kreps. [The log, what every software engineer should know about real-time data](https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying)."
+  - "Jay Kreps. [I Heart Logs, O'Reilly](https://www.oreilly.com/library/view/i-heart-logs/9781491909379/), a short book on logs and streams."
   - "Apache Kafka. [Introduction](https://kafka.apache.org/intro)."
   - "AWS. [Amazon SQS dead letter queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)."

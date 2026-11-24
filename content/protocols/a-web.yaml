@@ -1,0 +1,79 @@
+- id: http
+  name: HTTP
+  full: Hypertext Transfer Protocol
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "80"
+  title: An HTTP request, in motion.
+  lede: Follow one plain HTTP page load, from the address bar to the finished page. You see DNS, the TCP handshake and the request and response.
+  overview: |
+    HTTP is the language of the web. A client sends a **request** with a method, a path and headers. A server sends a **response** with a status code, headers and a body. HTTP/1.1 is text, so you can read it.
+
+    Plain HTTP is **not encrypted**. Anyone on the path can read and change it. Real sites use HTTPS, which is the same HTTP inside TLS.
+
+    | Part | Example |
+    | --- | --- |
+    | Request line | `GET /index.html HTTP/1.1` |
+    | Header | `Host: www.example.com` |
+    | Status line | `HTTP/1.1 200 OK` |
+  nodes:
+    client: [Client, 192.168.1.10, laptop, 0, 2]
+    router: [Home router, 192.168.1.1, router, 2, 2]
+    net: [Internet, "", cloud, 4, 2]
+    dns: [DNS resolver, 198.51.100.53, dns, 5, 0]
+    web: [Web server, 203.0.113.10, web, 6, 3]
+  links: [[client, router], [router, net], [net, dns], [net, web]]
+  steps:
+    - t: Choose a resource
+      tag: setup
+      d: You type `http://www.example.com/` and press Enter. The browser prepares a `GET` request. It still needs the server's IP address.
+      f: {URL: "http://www.example.com/", Method: GET, Next hop: Router 192.168.1.1}
+      on: [client]
+    - t: Resolve the name
+      tag: dns
+      d: The browser asks a DNS resolver for the address of www.example.com. The resolver answers with an A record. The browser caches the answer for its TTL.
+      f: {Query: "www.example.com A", Answer: 203.0.113.10, Transport: UDP 53}
+      p:
+        - [client, dns, "DNS query A www.example.com", req, {fields: {Type: A, Class: IN, ID: "0x1a2b"}}]
+        - [dns, client, "A 203.0.113.10 TTL 300", res, {fields: {Answer: 203.0.113.10, TTL: 300 s}}]
+    - t: Open a TCP connection
+      tag: handshake
+      d: The client and the server do the TCP three way handshake on port 80. SYN, SYN-ACK, ACK. Now they have a reliable byte stream.
+      f: {Destination: "203.0.113.10:80", Source port: "51514", Round trips: "1"}
+      p:
+        - [client, web, "SYN seq=1000", ctl, {fields: {Flags: SYN, Seq: 1000}}]
+        - [web, client, "SYN-ACK seq=5000 ack=1001", ctl, {fields: {Flags: "SYN, ACK", Seq: 5000, Ack: 1001}}]
+        - [client, web, "ACK ack=5001", ctl, {fields: {Flags: ACK, Ack: 5001}}]
+    - t: Send the request, get the response
+      tag: exchange
+      d: The client sends the request as text. The server finds the file and answers `200 OK` with HTML in the body.
+      f: {Request: "GET / HTTP/1.1", Status: 200 OK, Content-Type: text/html}
+      p:
+        - [client, web, "GET / HTTP/1.1", req, {raw: "GET / HTTP/1.1\r\nHost: www.example.com\r\nUser-Agent: Mozilla/5.0\r\nAccept: text/html\r\n\r\n"}]
+        - [web, client, "HTTP/1.1 200 OK", res, {raw: "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Length: 1256\r\nCache-Control: max-age=600\r\n\r\n<!doctype html><html>...", fields: {Status: 200, Length: 1256 bytes}}]
+      good: Plain HTTP is readable by every router on the path. That is why browsers mark http pages as not secure.
+    - t: Display the page
+      tag: render
+      d: The browser reads the HTML, finds images, CSS and scripts, and requests them on the same connection. HTTP/1.1 keeps the connection open by default for reuse.
+      f: {Connection: kept alive, Extra requests: "CSS, JS, images"}
+      p:
+        - [client, web, "GET /style.css", req]
+        - [web, client, "200 OK text/css", res]
+      on: [client, web]
+  quiz:
+    - q: What does the server send first in a response?
+      opts: ["The body", "The status line, such as HTTP/1.1 200 OK", "A DNS answer"]
+      a: 1
+      why: The status line comes first, then headers, then an empty line, then the body.
+    - type: fill
+      q: "Plain HTTP uses TCP port ____ by default."
+      a: ["80"]
+      why: HTTPS uses 443.
+    - q: Why is plain HTTP unsafe on public Wi-Fi?
+      opts: ["It is slow", "Anyone on the path can read and change it, because it is not encrypted", "It uses UDP"]
+      a: 1
+      why: HTTPS adds TLS encryption and server authentication.
+  refs:
+    - "MDN. [An overview of HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview)."
+    - "IETF. [RFC 9112, HTTP/1.1](https://www.rfc-editor.org/rfc/rfc9112)."

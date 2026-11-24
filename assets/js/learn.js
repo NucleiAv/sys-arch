@@ -194,6 +194,7 @@
     });
   }
 
+  window.AIC.renderSet = renderSet;
   document.addEventListener("DOMContentLoaded", () => {
     $$(".qset").forEach(renderSet);
     if (window.AIC.enhanceAll) window.AIC.enhanceAll(document);

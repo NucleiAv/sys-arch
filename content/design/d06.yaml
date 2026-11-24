@@ -117,7 +117,7 @@ deep:
   - ["Adaptive bitrate", "Each video exists in several qualities, each cut into 2 to 6 second segments. The player picks the quality for each next segment based on measured speed and buffer level. Formats are HLS and MPEG-DASH."]
   - ["Cost control", "Most views go to a small share of videos. Transcode new videos to a few qualities at first, add more if they get popular, and push rarely watched videos to cheaper storage."]
   - ["Start time", "Start at a low quality to begin fast, prefetch the first segments when a user hovers, and keep the manifest cached at the edge."]
-  - ["View counts", "Do not write to the database on every view. Send view events to a stream and add them up every few seconds, see lesson 22."]
+  - ["View counts", "Do not write to the database on every view. Send view events to a stream and add them up every few seconds, see lesson 5.2."]
   - ["Popular videos", "A new viral video gets requested from every edge at once. Use a mid tier cache, sometimes called origin shield, so edges fetch from it instead of all hitting origin storage."]
 
 tradeoffs:

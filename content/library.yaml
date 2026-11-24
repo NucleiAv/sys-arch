@@ -16,14 +16,30 @@ groups:
       - {t: "Designing Data-Intensive Applications, Martin Kleppmann", u: "https://dataintensive.net/", type: book, n: "The best deep book on data systems. Read it after level 3 here. Chapters 5 to 9 are gold."}
       - {t: "System Design Interview, volumes 1 and 2, Alex Xu", u: "https://bytebytego.com/", type: book, n: "Classic interview designs, step by step. Good for the Design it track."}
       - {t: "Database Internals, Alex Petrov", u: "https://www.databass.dev/", type: book, n: "How storage engines and distributed databases really work. For mastery."}
-      - {t: "Site Reliability Engineering, Google", u: "https://sre.google/sre-book/table-of-contents/", type: book, n: "Free online. SLOs, error budgets, on call and postmortems. Goes with lessons 17 and 18."}
+      - {t: "Site Reliability Engineering, Google", u: "https://sre.google/sre-book/table-of-contents/", type: book, n: "Free online. SLOs, error budgets, on call and postmortems. Goes with lessons 4.1 and 4.2."}
   - t: Free guides and references
     items:
       - {t: The System Design Primer, u: "https://github.com/donnemartin/system-design-primer", type: guide, n: "A huge free guide with diagrams and practice questions."}
       - {t: High Performance Browser Networking, u: "https://hpbn.co/", type: book, n: "Free book on how networks, TCP, TLS and HTTP really behave."}
       - {t: Latency numbers every programmer should know, u: "https://gist.github.com/jboner/2841832", type: reference, n: "The classic list of how long memory, disk and network take. Memorize the order of magnitude."}
       - {t: AWS Architecture Center, u: "https://aws.amazon.com/architecture/", type: reference, n: "Real reference architectures and the Well-Architected guide."}
-      - {t: The Raft paper and visual guide, u: "https://raft.github.io/", type: paper, n: "Consensus explained with an animation. Goes with lesson 16."}
+      - {t: The Raft paper and visual guide, u: "https://raft.github.io/", type: paper, n: "Consensus explained with an animation. Goes with lesson 3.5."}
+  - t: Infra and cloud
+    d: Official docs are the most accurate source for tools that change often.
+    items:
+      - {t: Pro Git book, u: "https://git-scm.com/book/en/v2", type: book, n: "Free and complete. Chapters 2 and 3 cover everything in infra level 1."}
+      - {t: GitHub Actions documentation, u: "https://docs.github.com/en/actions", type: docs, n: "Workflow syntax, security hardening and OIDC."}
+      - {t: Docker documentation, u: "https://docs.docker.com/get-started/", type: docs, n: "Start with the getting started guide and the build best practices."}
+      - {t: Kubernetes documentation, u: "https://kubernetes.io/docs/home/", type: docs, n: "Read Concepts first, then the tasks you need."}
+      - {t: AWS Well-Architected Framework, u: "https://aws.amazon.com/architecture/well-architected/", type: guide, n: "Six pillars for reviewing a cloud design. Good for interviews too."}
+      - {t: Terraform tutorials, u: "https://developer.hashicorp.com/terraform/tutorials", type: course, n: "Hands on tutorials for AWS, Azure and Google Cloud."}
+  - t: Protocols
+    d: The real specifications behind the protocols page. Read the overview sections first.
+    items:
+      - {t: RFC Editor, u: "https://www.rfc-editor.org/", type: standards, n: "Every internet standard, such as RFC 9110 for HTTP and RFC 8446 for TLS 1.3."}
+      - {t: Protocol Explorer, u: "https://protocolexplorer.org/", type: interactive, n: "Another visual way to learn network protocols."}
+      - {t: Cloudflare Learning Center, u: "https://www.cloudflare.com/learning/", type: articles, n: "Clear explainers on DNS, TLS, CDNs, BGP and DDoS."}
+      - {t: The illustrated TLS 1.3 connection, u: "https://tls13.xargs.org/", type: interactive, n: "Every byte of a real TLS 1.3 handshake, explained."}
   - t: Engineering blogs with real stories
     d: Read how real companies solved the problems in this course.
     items:
@@ -31,4 +47,4 @@ groups:
       - {t: Uber Engineering, u: "https://www.uber.com/blog/engineering/", type: blog, n: "Geospatial systems, scaling and data platforms."}
       - {t: Discord Engineering, u: "https://discord.com/category/engineering", type: blog, n: "Storing trillions of messages and scaling realtime chat."}
       - {t: Cloudflare Blog, u: "https://blog.cloudflare.com/", type: blog, n: "Networking, DNS, CDN and very honest outage reports."}
-      - {t: "AWS Builders' Library", u: "https://aws.amazon.com/builders-library/", type: articles, n: "How Amazon handles timeouts, retries, load shedding and more. Pairs with lesson 17."}
+      - {t: "AWS Builders' Library", u: "https://aws.amazon.com/builders-library/", type: articles, n: "How Amazon handles timeouts, retries, load shedding and more. Pairs with lesson 4.1."}

@@ -71,7 +71,7 @@ terms:
 how: |
   ### Passwords done right
 
-  Never store passwords. Store a slow, salted **hash**, made with bcrypt, scrypt or Argon2. Add rate limits on login, see lesson 14, and offer **multi factor** login or **passkeys**.
+  Never store passwords. Store a slow, salted **hash**, made with bcrypt, scrypt or Argon2. Add rate limits on login, see lesson 3.3, and offer **multi factor** login or **passkeys**.
 
   ### Sessions or tokens
 

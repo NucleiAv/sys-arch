@@ -62,7 +62,7 @@ terms:
 how: |
   ### Writing safely, the write-ahead log
 
-  When you save something, the database first appends a note to the **write-ahead log** on disk, "set balance of account 7 to 50". Appending is fast. Then it updates the real data pages later. If the power dies, it replays the log on restart. This is how databases keep the **durable** promise. Replicas, lesson 8, are fed from this same log.
+  When you save something, the database first appends a note to the **write-ahead log** on disk, "set balance of account 7 to 50". Appending is fast. Then it updates the real data pages later. If the power dies, it replays the log on restart. This is how databases keep the **durable** promise. Replicas, lesson 2.3, are fed from this same log.
 
   ### Two ways to store data
 

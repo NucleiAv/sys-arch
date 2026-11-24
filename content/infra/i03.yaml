@@ -1,0 +1,180 @@
+short: GitHub and pull requests
+title: GitHub, remotes and pull requests
+time: about 45 minutes
+tags: [GitHub, push, pull request, review]
+lede: GitHub keeps a shared copy of your Git repository online. Learn to push and pull, open pull requests, review code and protect the main branch.
+
+idea: |
+  Git works on your own computer. To work with a team, you need a shared copy of the repository that everyone can reach. **GitHub** is a website that hosts that shared copy. GitLab and Bitbucket are similar services.
+
+  The shared copy is called a **remote**, usually named `origin`. You **push** your commits to it and **pull** other people's commits from it.
+
+  To add your work to `main`, you open a **pull request**, or PR. A pull request says "please merge my branch". Teammates read the changes, comment and approve. Automatic tests also run. Then someone merges it.
+
+  !eli5 Your laptop has your notebook. GitHub has the class notebook on the wall. You copy your new pages to the wall notebook. Before a page goes into the main chapter, the class reads it and agrees.
+
+scenes:
+  - title: From a laptop to main through a pull request
+    stats: [Step, Where the change is]
+    nodes:
+      lap: {label: Your laptop, x: 0, y: 1, kind: box, tag: local repo}
+      gh: {label: GitHub, x: 3, y: 1, kind: def, tag: origin}
+      ci: {label: Automatic checks, x: 5, y: 0, kind: raised, tag: GitHub Actions}
+      rev: {label: Reviewer, x: 5, y: 2, kind: box}
+      main: {label: main branch, x: 6, y: 1, kind: ok}
+    links: [[lap, gh], [gh, ci], [gh, rev], [gh, main]]
+    steps:
+      - title: Push your branch
+        text: "`git push -u origin fix-login` uploads your branch and its commits to GitHub."
+        on: [lap, gh]
+        flow: [[lap, gh, ink]]
+        stats: [git push, GitHub branch]
+      - title: Open a pull request
+        text: On GitHub you open a pull request from `fix-login` into `main`. You write what you changed and why.
+        on: [gh]
+        stats: [Open PR, waiting]
+      - title: Checks and review
+        text: Tests run automatically. A teammate reads the diff, asks one question and approves.
+        on: [gh, ci, rev]
+        flow: [[gh, ci, ink], [ci, gh, def], [gh, rev, ink], [rev, gh, def]]
+        mark: {ci: ok, rev: ok}
+        stats: [Review, approved]
+      - title: Merge
+        text: The pull request merges into main. Your teammates run `git pull` to get it.
+        on: [gh, main]
+        flow: [[gh, main, def]]
+        mark: {main: ok}
+        stats: [Merge, main]
+
+terms:
+  - [Remote, "Another copy of the repository, usually on GitHub, named origin."]
+  - [Clone, "Download a full copy of a remote repository, with all history."]
+  - [Push, "Upload your commits to a remote."]
+  - [Fetch, "Download new commits from a remote without changing your files."]
+  - [Pull, "Fetch, then merge the new commits into your branch."]
+  - [Pull request, "A request to merge one branch into another, with review and checks. GitLab calls it a merge request."]
+  - [Fork, "Your own copy of someone else's repository on GitHub, used to contribute to projects you cannot push to."]
+  - [Branch protection, "Rules that stop direct pushes to main and require reviews and passing checks."]
+  - [CODEOWNERS, "A file that names who must review changes to each part of the code."]
+
+how: |
+  ### Commands you use with a remote
+
+  ```
+  git clone https://github.com/team/shop.git
+  git switch -c fix-login
+  # edit, add, commit
+  git push -u origin fix-login   # first push of a new branch
+  git pull                        # get new commits on your branch
+  git fetch                       # look at what changed without merging
+  ```
+
+  ### How a good pull request looks
+
+  1. Small. Under about 400 changed lines is much easier to review.
+  2. A clear title and a description of what and why.
+  3. Linked to an issue or ticket.
+  4. All automatic checks pass.
+
+  ### Three ways to merge a pull request
+
+  | Way | Result on main |
+  | --- | --- |
+  | Merge commit | All branch commits plus one merge commit |
+  | Squash and merge | One new commit with all the changes |
+  | Rebase and merge | The branch commits replayed on main, no merge commit |
+
+  ### Protect main
+
+  In the repository settings, add a **branch protection rule** or ruleset for `main`. Require a pull request, at least one approval and passing status checks. Block force pushes. Now nobody, by mistake or on purpose, can break main without review.
+
+  !key Code review is not only about bugs. It spreads knowledge, so more than one person understands each part.
+
+diagrams:
+  - type: flow
+    title: The GitHub flow
+    nodes: [["Branch from main", "box"], ["Commit and push", "raised"], ["Open pull request", "def"], ["Checks and review", "def"], ["Merge and deploy", "def"]]
+    edges: ["", "", "", ""]
+    caption: Main is always ready to deploy. All change comes through pull requests.
+
+life:
+  - ["Open source contributions", "You cannot push to a famous open source project. You fork it, push to your fork, and open a pull request to the original. The maintainers review it."]
+  - ["A Friday push to main", "A developer pushed straight to main on a Friday evening and broke the site. After that, the team turned on branch protection with required checks."]
+
+tradeoffs:
+  - ["Squash and merge", "Clean main history, one commit per change.", "Loses the small steps inside the branch."]
+  - ["Merge commit", "Full history.", "Busier history."]
+  - ["Required reviews", "Fewer bugs, shared knowledge.", "Changes wait for a reviewer."]
+
+mistakes:
+  - Huge pull requests that nobody can review well.
+  - Approving without reading.
+  - Pushing straight to main without protection.
+  - Forgetting to pull before starting new work, so the branch starts from old code.
+
+quiz:
+  - q: What is the difference between fetch and pull?
+    opts: ["No difference", "Fetch downloads new commits, pull downloads and merges them", "Pull uploads commits"]
+    a: 1
+    why: pull is fetch plus merge.
+  - type: fill
+    q: "The usual name of the remote you cloned from is ____."
+    a: ["origin"]
+    why: git clone names the remote origin.
+  - type: fill
+    q: "To upload a new branch and link it to the remote, run `git push ____ origin fix-login`."
+    a: ["-u", "--set-upstream"]
+    why: -u sets the upstream, so later you can just run git push.
+  - q: Which setting stops people from pushing directly to main?
+    opts: ["A .gitignore entry", "A branch protection rule", "A fork"]
+    a: 1
+    why: Protection rules can require pull requests, reviews and checks.
+  - q: You want to fix a typo in a project you cannot push to. What do you do?
+    opts: ["Email the file", "Fork it, fix it on a branch in your fork, open a pull request", "Clone and push to main"]
+    a: 1
+    why: Forks let anyone propose changes safely.
+
+interview:
+  - q: Describe a good code review process for a team.
+    keys:
+      - ["Small pull requests with clear descriptions", [small, description, clear, focused]]
+      - ["Automatic checks run before review", [check, ci, test, lint, automat]]
+      - ["Required approval and branch protection", [approv, protect, required, rule]]
+      - ["Reviewers look at design, correctness, tests and readability, and are kind", [design, correct, test, readab, kind, respect, constructive]]
+      - ["Fast turnaround", [fast, quick, same day, hours, turnaround]]
+    a: |
+      Changes come as small pull requests with a clear description and a link to the task. Automatic checks, tests, linters and security scans, run first, so people do not review code that does not build. Main is protected, so every change needs at least one approval and passing checks. Reviewers check that the design fits, the logic is correct, tests cover the change and the code is easy to read. Comments are specific and kind. The team aims to review within a few hours, so work does not get stuck.
+    fb: Fast review turnaround is often forgotten. Slow reviews cause big pull requests, which cause worse reviews.
+
+desk:
+  title: Set up a new team repository
+  lede: A team of five is moving to GitHub. Set up the workflow.
+  situation: |
+    **Bloom Studio** has five developers. Until now they emailed zip files. They want a safe way to work together.
+  rounds:
+    - title: Round 1. Order the flow
+      items:
+        - type: sort
+          q: Put the GitHub flow in order.
+          rows:
+            - ["Create a branch from main", "Step 1"]
+            - ["Commit and push the branch", "Step 2"]
+            - ["Open a pull request", "Step 3"]
+            - ["Checks pass and a teammate approves", "Step 4"]
+            - ["Merge into main", "Step 5"]
+          opts: ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"]
+          why: Every change follows the same path to main.
+    - title: Round 2. Settings
+      items:
+        - type: open
+          q: Which protection settings would you turn on for main?
+          a: "Require a pull request before merging, at least one approval, passing status checks, and block force pushes and deletion. Optionally require that conversations are resolved and add a CODEOWNERS file for sensitive folders."
+  card: |
+    - Clone, branch, push, pull request, merge.
+    - Small pull requests, fast reviews.
+    - Protect main with required checks and approvals.
+
+refs:
+  - "GitHub Docs. [GitHub flow](https://docs.github.com/en/get-started/using-github/github-flow)."
+  - "GitHub Docs. [About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)."
+  - "Google. [Engineering practices, code review](https://google.github.io/eng-practices/review/)."

@@ -1,0 +1,217 @@
+short: Cloud and AWS basics
+title: The cloud and AWS basics, regions, IAM and EC2
+time: about 55 minutes
+tags: [AWS, IAM, EC2, regions]
+lede: The cloud lets you rent servers, storage and services by the minute. Learn how AWS is organized, who is responsible for what, how permissions work with IAM, and how to run a server with EC2.
+
+idea: |
+  Before the cloud, a company bought servers, waited weeks for delivery, and paid for them even when they sat idle. **Cloud computing** lets you rent computing over the internet. You start a server in a minute, pay for what you use and give it back when you are done.
+
+  **Amazon Web Services**, or AWS, is the largest cloud provider. Microsoft Azure and Google Cloud are the other big ones. The ideas in this lesson are the same in all three. Only the names change.
+
+  AWS has hundreds of services. You only need a few to start. **IAM** for permissions, **EC2** for virtual servers, **S3** for files, **RDS** for databases and **VPC** for networks.
+
+  !eli5 The cloud is like electricity. You do not build a power plant at home. You plug in and pay for what you use. AWS is one big power company with many kinds of sockets.
+
+scenes:
+  - title: How AWS is laid out
+    stats: [Level, Example]
+    nodes:
+      geo: {label: AWS global, x: 0, y: 1, kind: box}
+      reg: {label: Region ap-south-1, x: 2, y: 1, kind: def, tag: Mumbai}
+      az1: {label: Zone a, x: 4, y: 0, kind: raised, tag: data centers}
+      az2: {label: Zone b, x: 4, y: 2, kind: raised, tag: data centers}
+      ec2a: {label: EC2 server, x: 6, y: 0, kind: ok}
+      ec2b: {label: EC2 server, x: 6, y: 2, kind: ok}
+    links: [[geo, reg], [reg, az1], [reg, az2], [az1, ec2a], [az2, ec2b]]
+    steps:
+      - title: Regions
+        text: AWS has more than 30 regions around the world. Each region is a separate area, such as Mumbai, Frankfurt or Virginia. You choose where your data lives.
+        on: [geo, reg]
+        flow: [[geo, reg, ink]]
+        stats: [Region, ap-south-1]
+      - title: Availability zones
+        text: Each region has several availability zones, usually three or more. A zone is one or more data centers with their own power and network, a few kilometers from the others.
+        on: [reg, az1, az2]
+        flow: [[reg, az1, ink], [reg, az2, ink]]
+        stats: [Zone, ap-south-1a and 1b]
+      - title: Spread your servers
+        text: Put one server in each zone behind a load balancer. If a whole zone fails, the other keeps serving.
+        on: [az1, az2, ec2a, ec2b]
+        flow: [[az1, ec2a, def], [az2, ec2b, def]]
+        stats: [Servers, one per zone]
+      - title: A zone fails
+        text: Zone a loses power. The server in zone b keeps running and an Auto Scaling group starts a replacement in a healthy zone.
+        on: [ec2b]
+        mark: {az1: bad, ec2a: bad, ec2b: ok}
+        stats: [Failure, zone b survives]
+
+terms:
+  - [Region, "A geographic area with its own AWS data centers, such as ap-south-1 in Mumbai."]
+  - [Availability zone, "One or more separate data centers inside a region."]
+  - [Shared responsibility model, "AWS secures the cloud itself. You secure what you put in it, such as your data, access and settings."]
+  - [IAM, "Identity and Access Management. Controls who can do what in your AWS account."]
+  - [IAM role, "A set of permissions that a service or person can take on for a short time, without long lived keys."]
+  - [Policy, "A JSON document that allows or denies actions on resources."]
+  - [EC2, "Elastic Compute Cloud. Virtual servers called instances."]
+  - [AMI, "Amazon Machine Image. The template an EC2 instance starts from."]
+  - [Auto Scaling group, "Keeps a number of EC2 instances running and adds or removes them with load."]
+  - [CloudWatch, "AWS service for metrics, logs and alarms."]
+  - [CloudTrail, "AWS service that records every API call in your account, for audits."]
+
+how: |
+  ### Who secures what
+
+  | AWS secures | You secure |
+  | --- | --- |
+  | Data center buildings and hardware | Who can log in and what they can do, with IAM |
+  | The network between data centers | Your network rules, such as security groups |
+  | The software that runs EC2 and managed services | Your operating system patches on EC2 |
+  | | Your data, encryption and backups |
+
+  ### IAM in plain words
+
+  1. Lock the **root user**. Turn on MFA and do not use it for daily work.
+  2. Give people access through IAM Identity Center or IAM users with MFA.
+  3. Give programs a **role**, not access keys. An EC2 server gets a role through an instance profile. A GitHub Actions workflow gets a role through OIDC.
+  4. Allow only what is needed, least privilege.
+
+  This policy allows reading files in one bucket.
+
+  ```
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::shop-images/*"
+      }
+    ]
+  }
+  ```
+
+  ### EC2 in five steps
+
+  1. Choose an AMI, such as Amazon Linux or Ubuntu.
+  2. Choose an instance type, such as `t3.micro` for small tests or `m7g.large` for general work.
+  3. Choose a network, subnet and security group.
+  4. Attach a role and storage.
+  5. Start it. For real services, use a launch template and an Auto Scaling group instead of single servers.
+
+  ### How you pay
+
+  | Option | Good for |
+  | --- | --- |
+  | On-Demand | Pay by the second, no commitment. Tests and spiky work. |
+  | Savings Plans and Reserved Instances | Commit for 1 or 3 years for a big discount. Steady work. |
+  | Spot | Spare capacity at a large discount. AWS can take it back with a 2 minute warning. Batch jobs and CI. |
+
+  !key Set a **budget alarm** on day one. Many beginners get a surprise bill from a server or a NAT gateway they forgot to delete.
+
+diagrams:
+  - type: layers
+    title: Where an IAM request is decided
+    attack: an API call, such as s3 GetObject
+    layers:
+      - ["Who is calling?", "Authenticate the user or role", "pass"]
+      - ["Is there an explicit deny?", "Any deny wins", "partial"]
+      - ["Is there an allow?", "Identity or resource policy", "stop"]
+      - ["Otherwise", "Denied by default", "pass"]
+    caption: Everything is denied unless a policy allows it, and an explicit deny always wins.
+
+life:
+  - ["The root key on a laptop", "A startup used root access keys in a script. A stolen laptop gave an attacker full control of the account. They moved to roles and turned off root keys."]
+  - ["Spot for CI", "A team ran its build machines on Spot instances and cut that bill by more than half. When AWS took a machine back, the job simply retried on another one."]
+
+tradeoffs:
+  - ["Cloud", "No upfront cost, scale in minutes, many managed services.", "Ongoing cost, needs cost and security discipline."]
+  - ["Own servers", "Predictable cost at a steady large scale, full control.", "Upfront cost, slow to grow, you run everything."]
+  - ["Single zone", "Cheapest and simplest.", "One zone failure stops you."]
+  - ["Multi zone", "Survives a zone failure.", "More cost, some data transfer charges."]
+
+mistakes:
+  - Using the root user for daily work.
+  - Long lived access keys in code or on laptops.
+  - 'Policies with `"Action": "*"` and `"Resource": "*"`.'
+  - All servers in one availability zone.
+  - No budget alarm.
+
+quiz:
+  - q: Which is AWS's job under the shared responsibility model?
+    opts: ["Patching the operating system on your EC2 instance", "Physical security of the data centers", "Choosing who can read your S3 bucket"]
+    a: 1
+    why: AWS secures the cloud. You secure what you configure in it.
+  - type: fill
+    q: "An EC2 instance should get AWS permissions through an IAM ____, not through stored access keys."
+    a: ["role"]
+    why: Roles give short lived credentials automatically.
+  - q: What does this policy allow?
+    info: |
+      ```
+      {"Effect": "Allow",
+       "Action": "s3:PutObject",
+       "Resource": "arn:aws:s3:::uploads/*"}
+      ```
+    opts: ["Read any bucket", "Upload objects into the uploads bucket only", "Delete the uploads bucket"]
+    a: 1
+    why: One action on objects in one bucket. That is least privilege.
+  - q: A nightly batch job can restart if interrupted. Which pricing fits best?
+    opts: ["On-Demand", "Spot", "Dedicated hosts"]
+    a: 1
+    why: Spot is much cheaper and fine for work that can be interrupted.
+  - type: fill
+    q: The AWS service that records every API call in your account is ____.
+    a: ["CloudTrail", "cloudtrail", "aws cloudtrail"]
+    why: CloudTrail is your audit log. CloudWatch is for metrics and logs from apps.
+
+interview:
+  - q: How would you set up access to a new AWS account securely?
+    keys:
+      - ["Lock the root user with MFA and no access keys", [root, mfa]]
+      - ["People use single sign on or IAM Identity Center with MFA", [identity center, sso, single sign, federat, mfa]]
+      - ["Services and CI use roles, not long lived keys", [role, oidc, instance profile, no keys, short lived]]
+      - ["Least privilege policies", [least privilege, minimal, only what]]
+      - ["Audit and alerts, CloudTrail and budgets", [cloudtrail, audit, alarm, budget, guardduty]]
+    a: |
+      I turn on MFA for the root user, delete any root access keys and lock the credentials away. People log in through IAM Identity Center, linked to the company login, with MFA and permission sets per job. Workloads use roles. EC2 uses instance profiles, Lambda uses execution roles and GitHub Actions uses OIDC, so there are no long lived keys anywhere. Policies follow least privilege and start from what each job really needs. CloudTrail records every call to a separate account, and I set up budget alarms and a threat detection service such as GuardDuty.
+    fb: The sentence "no long lived keys anywhere" shows modern cloud security thinking.
+
+desk:
+  title: Clean up a risky AWS account
+  lede: A small company's AWS account grew without rules. Find the biggest risks and fix them.
+  situation: |
+    **Brightleaf** has one AWS account. Developers share the root login. Two EC2 servers run in one zone. A script on a laptop uses access keys with full admin rights. Last month's bill was three times higher than expected.
+  rounds:
+    - title: Round 1. Match risk to fix
+      items:
+        - type: sort
+          q: Which fix goes with each risk?
+          rows:
+            - ["Shared root login", "MFA on root and personal logins for each developer"]
+            - ["Admin access keys on a laptop", "A role with least privilege and short lived credentials"]
+            - ["Both servers in one zone", "Spread servers over two zones behind a load balancer"]
+            - ["Surprise bill", "Budget alarm and cost review"]
+          opts: ["MFA on root and personal logins for each developer", "A role with least privilege and short lived credentials", "Spread servers over two zones behind a load balancer", "Budget alarm and cost review"]
+          why: Fix identity first, then resilience and cost.
+    - title: Round 2. Read a policy
+      items:
+        - q: What is wrong with this policy for a script that only uploads reports?
+          info: |
+            ```
+            {"Effect": "Allow", "Action": "*", "Resource": "*"}
+            ```
+          opts: ["Nothing", "It allows every action on every resource, far more than needed", "It denies everything"]
+          a: 1
+          why: Allow only s3:PutObject on the reports bucket.
+  card: |
+    - Regions contain zones. Use at least two zones.
+    - AWS secures the cloud, you secure your settings.
+    - Roles, not keys. Least privilege.
+    - Budget alarm on day one.
+
+refs:
+  - "AWS. [Regions and availability zones](https://aws.amazon.com/about-aws/global-infrastructure/regions_az/)."
+  - "AWS. [Shared responsibility model](https://aws.amazon.com/compliance/shared-responsibility-model/)."
+  - "AWS. [Security best practices in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)."
+  - "AWS. [Amazon EC2 Spot instances](https://aws.amazon.com/ec2/spot/)."

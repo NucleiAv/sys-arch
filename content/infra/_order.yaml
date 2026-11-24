@@ -1,0 +1,17 @@
+levels:
+  - n: 1
+    t: Code and teamwork
+    d: Save your work with Git, work with a team on GitHub, and let GitHub Actions test and ship your code for you.
+    items: [i01, i02, i03, i04, ip1]
+  - n: 2
+    t: Servers and containers
+    d: Learn the Linux basics every server needs, pack apps into Docker containers, and run many containers with Compose and Kubernetes.
+    items: [i05, i06, i07, i08, i09, ip2]
+  - n: 3
+    t: The cloud
+    d: Learn how AWS is organized, how to build a private network, where to store data, and how to run code without servers.
+    items: [i10, i11, i12, ip3]
+  - n: 4
+    t: Automation and delivery
+    d: Describe all your infrastructure as code with Terraform, and ship changes safely with rolling, blue green and canary deploys.
+    items: [i13, i14, ip4]

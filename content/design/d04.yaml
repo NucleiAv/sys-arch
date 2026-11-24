@@ -127,7 +127,7 @@ diagrams:
 deep:
   - ["Priority lanes", "Login codes and security alerts must never sit behind a marketing blast. Use separate high priority queues and dedicated workers."]
   - ["Deduplication", "Idempotency keys at the API, plus a unique key in the notification log per user, type and object, like `order_shipped:o9`, stop double sends from retries."]
-  - ["Rate limits", "Providers cap how fast you can send. Workers use a token bucket per provider, lesson 14. Also cap how many notifications one user can get per hour to avoid spam."]
+  - ["Rate limits", "Providers cap how fast you can send. Workers use a token bucket per provider, lesson 3.3. Also cap how many notifications one user can get per hour to avoid spam."]
   - ["Campaigns", "Do not dump 50 million messages at once. The scheduler feeds them gradually, by time zone, so users get them at a sensible local hour."]
   - ["Invalid tokens", "Push providers report uninstalled apps. Delete those tokens, or you waste capacity and may be throttled."]
 

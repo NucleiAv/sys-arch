@@ -1,82 +1,110 @@
-title: The plan, ten weeks from zero to interview ready
-lede: About five hours a week. Each week has concept lessons, one or two designs and a small thinking task. Tick tasks as you go. Your ticks stay in this browser.
+title: The plan, twelve weeks from zero to interview ready
+lede: About six hours a week. Each week mixes concept lessons, infra lessons, protocols and design tasks, and ends with a practice page. Tick tasks as you go. Your ticks stay in this browser.
 
 weeks:
   - n: 1
     t: How the web works
     d: Learn the words everyone uses. Do not rush this week.
     tasks:
-      - {k: Read, time: 2 hrs, t: "Read all eight steps of Start here and play with the scale simulator until you can make 10 million users healthy.", page: basics.html, label: Start here}
-      - {k: Learn, time: 45 min, t: "Lesson 1.", page: learn/l01.html}
-      - {k: Learn, time: 45 min, t: "Lesson 2.", page: learn/l02.html}
-      - {k: Think, time: 20 min, t: "Write down what happens when you open your favourite app, from the tap to the screen. Then compare with the interview answer in lesson 1."}
+      - {k: Read, time: 2 hrs, t: "Read all of Start here and play with the scale simulator until 10 million users are healthy.", page: basics.html}
+      - {k: Learn, time: 40 min, t: "Concepts lesson 1.1.", page: learn/l00.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 1.2.", page: learn/l01.html}
+      - {k: Watch, time: 30 min, t: "Watch DNS, TCP and HTTP move, packet by packet, in both views.", page: "protocols.html#/dns", label: "DNS, then TCP and HTTP"}
+      - {k: Infra, time: 45 min, t: "Infra lesson 1.1. Install Git and make your first commits.", page: infra/i01.html}
   - n: 2
-    t: Numbers and servers
-    d: Learn to estimate and to grow from one server to many.
+    t: How programs talk
+    d: The four API styles every engineer meets.
     tasks:
-      - {k: Learn, time: 45 min, t: "Lesson 3. Do every math question without a calculator.", page: learn/l03.html}
-      - {k: Learn, time: 45 min, t: "Lesson 4.", page: learn/l04.html}
-      - {k: Learn, time: 45 min, t: "Lesson 5.", page: learn/l05.html}
-      - {k: Design, time: 1 hr, t: "Read the method, then do the link shortener out loud with a 45 minute timer.", page: design/d00.html}
-      - {k: Design, time: 1 hr, t: "Design 01.", page: design/d01.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 1.3.", page: learn/l02.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 1.4.", page: learn/api-rest.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 1.5.", page: learn/api-graphql.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 1.6.", page: learn/api-grpc.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 1.7.", page: learn/api-realtime.html}
+      - {k: Watch, time: 30 min, t: "Watch HTTPS, HTTP/2, WebSocket and gRPC.", page: "protocols.html#/https", label: "HTTPS and friends"}
   - n: 3
+    t: Numbers, servers and teamwork
+    tasks:
+      - {k: Learn, time: 50 min, t: "Concepts lesson 1.8. Do every math question without a calculator.", page: learn/l03.html}
+      - {k: Learn, time: 40 min, t: "Concepts lesson 1.9.", page: learn/l04.html}
+      - {k: Learn, time: 40 min, t: "Concepts lesson 1.10.", page: learn/l05.html}
+      - {k: Infra, time: 50 min, t: "Infra lesson 1.2.", page: infra/i02.html}
+      - {k: Infra, time: 45 min, t: "Infra lesson 1.3. Push a repository to GitHub and open a pull request.", page: infra/i03.html}
+      - {k: Practice, time: 40 min, t: "Concepts level 1 practice.", page: learn/p1.html}
+  - n: 4
+    t: Automate and start designing
+    tasks:
+      - {k: Infra, time: 55 min, t: "Infra lesson 1.4. Add a CI workflow to your repository.", page: infra/i04.html}
+      - {k: Practice, time: 30 min, t: "Infra level 1 practice.", page: infra/ip1.html}
+      - {k: Design, time: 40 min, t: "Read the method.", page: design/d00.html}
+      - {k: Design, time: 1 hr, t: "Design a link shortener out loud with a 45 minute timer.", page: design/d01.html}
+  - n: 5
     t: Databases
     d: The heart of most designs.
     tasks:
-      - {k: Learn, time: 45 min, t: "Lesson 6.", page: learn/l06.html}
-      - {k: Learn, time: 45 min, t: "Lesson 7.", page: learn/l07.html}
-      - {k: Learn, time: 45 min, t: "Lesson 8.", page: learn/l08.html}
-      - {k: Think, time: 20 min, t: "Pick an app you use. Write its three main tables and say if you would use SQL or NoSQL and why."}
-  - n: 4
-    t: Growing the data layer
-    d: Split data, cache it and move files closer to users.
-    tasks:
-      - {k: Learn, time: 45 min, t: "Lesson 9.", page: learn/l09.html}
-      - {k: Learn, time: 45 min, t: "Lesson 10.", page: learn/l10.html}
-      - {k: Learn, time: 45 min, t: "Lesson 11.", page: learn/l11.html}
-      - {k: Design, time: 1 hr, t: "Design 05.", page: design/d05.html}
-  - n: 5
-    t: Many machines, one truth
-    d: The hardest ideas in the course. Read slowly and do the practice desks.
-    tasks:
-      - {k: Learn, time: 45 min, t: "Lesson 12.", page: learn/l12.html}
-      - {k: Learn, time: 45 min, t: "Lesson 13.", page: learn/l13.html}
-      - {k: Learn, time: 45 min, t: "Lesson 14.", page: learn/l14.html}
-      - {k: Design, time: 1 hr, t: "Design 02.", page: design/d02.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 2.1.", page: learn/l06.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 2.2.", page: learn/l07.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 2.3.", page: learn/l08.html}
+      - {k: Watch, time: 30 min, t: "Watch MySQL, PostgreSQL and Redis on the wire.", page: "protocols.html#/postgres", label: PostgreSQL and friends}
+      - {k: Infra, time: 50 min, t: "Infra lesson 2.1.", page: infra/i05.html}
   - n: 6
+    t: Growing the data layer and containers
+    tasks:
+      - {k: Learn, time: 55 min, t: "Concepts lesson 2.4.", page: learn/l09.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 2.5.", page: learn/l10.html}
+      - {k: Learn, time: 40 min, t: "Concepts lesson 2.6.", page: learn/l11.html}
+      - {k: Practice, time: 40 min, t: "Concepts level 2 practice.", page: learn/p2.html}
+      - {k: Infra, time: 55 min, t: "Infra lesson 2.2. Build and run your own image.", page: infra/i06.html}
+      - {k: Infra, time: 40 min, t: "Infra lesson 2.3.", page: infra/i07.html}
+  - n: 7
+    t: Many machines and Kubernetes
+    tasks:
+      - {k: Learn, time: 55 min, t: "Concepts lesson 3.1.", page: learn/l12.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 3.2.", page: learn/l13.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 3.3.", page: learn/l14.html}
+      - {k: Infra, time: 1 hr, t: "Infra lesson 2.4.", page: infra/i08.html}
+      - {k: Infra, time: 1 hr, t: "Infra lesson 2.5.", page: infra/i09.html}
+      - {k: Practice, time: 40 min, t: "Infra level 2 practice.", page: infra/ip2.html}
+  - n: 8
     t: Order, time and agreement
     tasks:
-      - {k: Learn, time: 45 min, t: "Lesson 15.", page: learn/l15.html}
-      - {k: Learn, time: 1 hr, t: "Lesson 16.", page: learn/l16.html}
-      - {k: Design, time: 1 hr, t: "Design 03.", page: design/d03.html}
-      - {k: Design, time: 1 hr, t: "Design 04.", page: design/d04.html}
-  - n: 7
-    t: Running it for real
-    tasks:
-      - {k: Learn, time: 45 min, t: "Lesson 17.", page: learn/l17.html}
-      - {k: Learn, time: 45 min, t: "Lesson 18.", page: learn/l18.html}
-      - {k: Design, time: 1 hr, t: "Design 06.", page: design/d06.html}
-      - {k: Design, time: 1 hr, t: "Design 07.", page: design/d07.html}
-  - n: 8
-    t: Safe and well organized
-    tasks:
-      - {k: Learn, time: 45 min, t: "Lesson 19.", page: learn/l19.html}
-      - {k: Learn, time: 45 min, t: "Lesson 20.", page: learn/l20.html}
-      - {k: Design, time: 1 hr, t: "Design 08.", page: design/d08.html}
-      - {k: Design, time: 1 hr, t: "Design 09.", page: design/d09.html}
+      - {k: Learn, time: 40 min, t: "Concepts lesson 3.4.", page: learn/l15.html}
+      - {k: Learn, time: 1 hr, t: "Concepts lesson 3.5.", page: learn/l16.html}
+      - {k: Practice, time: 40 min, t: "Concepts level 3 practice.", page: learn/p3.html}
+      - {k: Design, time: 1 hr, t: "Design a chat app.", page: design/d02.html}
+      - {k: Design, time: 1 hr, t: "Design a news feed.", page: design/d03.html}
   - n: 9
-    t: Mastery
+    t: The cloud and running it for real
     tasks:
-      - {k: Learn, time: 45 min, t: "Lesson 21.", page: learn/l21.html}
-      - {k: Learn, time: 45 min, t: "Lesson 22.", page: learn/l22.html}
-      - {k: Design, time: 1 hr, t: "Design 10.", page: design/d10.html}
-      - {k: Design, time: 1 hr, t: "Design 11.", page: design/d11.html}
+      - {k: Infra, time: 55 min, t: "Infra lesson 3.1. Set up a budget alarm and MFA on a free AWS account.", page: infra/i10.html}
+      - {k: Infra, time: 1 hr, t: "Infra lesson 3.2.", page: infra/i11.html}
+      - {k: Infra, time: 50 min, t: "Infra lesson 3.3.", page: infra/i12.html}
+      - {k: Practice, time: 30 min, t: "Infra level 3 practice.", page: infra/ip3.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 4.1.", page: learn/l17.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 4.2.", page: learn/l18.html}
   - n: 10
-    t: Interview ready
-    d: Practice out loud, with a timer, and ideally with a friend.
+    t: Safe, secure and well organized
     tasks:
-      - {k: Design, time: 1 hr, t: "Design 12.", page: design/d12.html}
-      - {k: Design, time: 1 hr, t: "Design 13.", page: design/d13.html}
-      - {k: Design, time: 1 hr, t: "Design 14.", page: design/d14.html}
-      - {k: Mock, time: 1 hr, t: "Press Give me a random question on the interview page five times. Answer each out loud in under 5 minutes, then get feedback.", page: interview.html, label: Interview questions}
-      - {k: Mock, time: 1 hr, t: "Ask a friend to pick any design. Do it in 45 minutes on paper. Ask them to stop you every time you skip a trade-off."}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 4.3.", page: learn/l19.html}
+      - {k: Watch, time: 40 min, t: "Watch TLS, OAuth, Kerberos and WireGuard.", page: "protocols.html#/tls", label: "TLS and the security protocols"}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 4.4.", page: learn/l20.html}
+      - {k: Practice, time: 40 min, t: "Concepts level 4 practice.", page: learn/p4.html}
+      - {k: Design, time: 1 hr, t: "Design a notification system.", page: design/d04.html}
+      - {k: Design, time: 1 hr, t: "Design search autocomplete.", page: design/d05.html}
+  - n: 11
+    t: Mastery and automation
+    tasks:
+      - {k: Learn, time: 55 min, t: "Concepts lesson 5.1.", page: learn/l21.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 5.2.", page: learn/l22.html}
+      - {k: Practice, time: 30 min, t: "Concepts level 5 practice.", page: learn/p5.html}
+      - {k: Infra, time: 1 hr, t: "Infra lesson 4.1. Create one S3 bucket with Terraform, then destroy it.", page: infra/i13.html}
+      - {k: Infra, time: 50 min, t: "Infra lesson 4.2.", page: infra/i14.html}
+      - {k: Practice, time: 30 min, t: "Infra level 4 practice.", page: infra/ip4.html}
+  - n: 12
+    t: Interview ready
+    d: Practice out loud, with a timer, and with a friend if you can.
+    tasks:
+      - {k: Design, time: 1 hr, t: "Design video streaming.", page: design/d06.html}
+      - {k: Design, time: 1 hr, t: "Design a payment system.", page: design/d10.html}
+      - {k: Design, time: 1 hr, t: "Design an AI chat app.", page: design/d14.html}
+      - {k: Design, time: 2 hrs, t: "Pick any two other designs and do them in 45 minutes each.", page: design/index.html, label: All designs}
+      - {k: Mock, time: 1 hr, t: "Press Give me a random question five times. Answer each out loud in under 5 minutes, then get feedback.", page: interview.html}

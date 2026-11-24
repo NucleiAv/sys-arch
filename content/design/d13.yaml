@@ -86,7 +86,7 @@ scenes:
         stats: [Converge, a cats, a cats]
 
 hld: |
-  1. **Session routing** sends all editors of a document to the same doc server, using consistent hashing on the doc id, lesson 9.
+  1. **Session routing** sends all editors of a document to the same doc server, using consistent hashing on the doc id, lesson 2.4.
   2. **Doc server** keeps the live document in memory, orders and transforms operations, appends them to the operations log, then broadcasts.
   3. **Operations log** is the durable truth, with periodic **snapshots** to load documents fast.
   4. **Presence** like cursors is broadcast but not stored.

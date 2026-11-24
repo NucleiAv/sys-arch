@@ -1,0 +1,369 @@
+- id: webrtc
+  name: WebRTC
+  full: Browser video calls
+  layer: 7
+  cat: app
+  transport: UDP mostly
+  port: "dynamic, STUN 3478"
+  title: WebRTC, a video call straight between two browsers.
+  lede: WebRTC sends audio and video directly between browsers. A server only helps them find each other. Watch signaling, NAT discovery with STUN, the TURN fallback and the encrypted media.
+  overview: |
+    WebRTC does not define **signaling**. Apps exchange **SDP** offers and answers through their own server, often over WebSocket. **ICE** collects possible addresses, called candidates. **STUN** tells each browser its public address behind NAT. If a direct path fails, a **TURN** server relays the media. Media is always encrypted with **DTLS** and **SRTP**.
+  nodes:
+    a: [Asha browser, 192.168.1.10, laptop, 0, 1]
+    natA: [Asha router, NAT, router, 2, 1]
+    sig: [Signaling server, WebSocket, server, 4, 0]
+    stun: [STUN and TURN, 203.0.113.5, server, 4, 3]
+    natB: [Ben router, NAT, router, 6, 1]
+    b: [Ben browser, 10.0.0.22, laptop, 8, 1]
+  links: [[a, natA], [natA, sig], [natA, stun], [natA, natB], [natB, sig], [natB, stun], [natB, b]]
+  steps:
+    - t: Offer through signaling
+      tag: signaling
+      d: Asha starts a call. Her browser makes an SDP offer that lists codecs and a DTLS fingerprint, and sends it to Ben through the app signaling server.
+      p:
+        - [a, sig, "SDP offer", req]
+        - [sig, b, "SDP offer", req]
+    - t: Answer
+      tag: signaling
+      d: Ben accepts. His browser sends an SDP answer back the same way.
+      p:
+        - [b, sig, "SDP answer", res]
+        - [sig, a, "SDP answer", res]
+    - t: Find public addresses with STUN
+      tag: ice
+      d: Each browser asks the STUN server "what address do you see me from?". The answer is its public IP and port after NAT. These become candidates, sent to the other side through signaling.
+      p:
+        - [a, stun, "STUN Binding request", ctl]
+        - [stun, a, "you are 198.51.100.7:54321", ctl]
+        - [b, stun, "STUN Binding request", ctl]
+        - [stun, b, "you are 203.0.113.99:40112", ctl]
+    - t: Connectivity checks
+      tag: ice
+      d: ICE tries candidate pairs with STUN checks directly between the browsers. A direct pair works, so the call goes peer to peer. If none worked, both would use the TURN relay.
+      p:
+        - [a, b, "STUN check", ctl]
+        - [b, a, "STUN check response", ctl]
+    - t: Encrypted media
+      tag: media
+      d: A DTLS handshake checks the fingerprints from the SDP and makes keys. Then audio and video flow as SRTP packets over UDP, directly between the two browsers.
+      p:
+        - [a, b, "DTLS handshake", sec]
+        - [a, b, "SRTP video", data]
+        - [b, a, "SRTP video", data]
+  quiz:
+    - q: What does a TURN server do?
+      opts: ["Encrypts the call", "Relays media when a direct path between peers is not possible", "Stores contacts"]
+      a: 1
+      why: STUN helps find a direct path. TURN is the fallback relay.
+    - type: fill
+      q: "WebRTC describes codecs and settings in offers and answers written in ____."
+      a: ["SDP", "session description protocol"]
+      why: Session Description Protocol.
+  refs:
+    - "MDN. [WebRTC connectivity](https://developer.mozilla.org/en-US/docs/Web/API/WebRTC_API/Connectivity)."
+    - "IETF. [RFC 8445, ICE](https://www.rfc-editor.org/rfc/rfc8445)."
+
+- id: sip
+  name: SIP
+  full: Internet phone calls
+  layer: 7
+  cat: app
+  transport: UDP or TCP or TLS
+  port: "5060, 5061 for TLS"
+  title: SIP, setting up a phone call over the internet.
+  lede: SIP is the signaling protocol for most office phones and phone networks. It looks a lot like HTTP. Watch registration, an INVITE that rings a phone, and the media that flows directly.
+  overview: |
+    Phones first **REGISTER** with a registrar, so the system knows where to reach them. A call starts with **INVITE**, which carries an SDP offer. Responses use numbers like HTTP, such as **100 Trying**, **180 Ringing** and **200 OK**. The caller confirms with **ACK**. Voice then flows as **RTP**, usually directly between phones. **BYE** ends the call.
+  nodes:
+    alice: [Alice phone, ext 201, phone, 0, 1]
+    proxy: [SIP proxy, pbx.example, server, 4, 0]
+    bob: [Bob phone, ext 305, phone, 8, 1]
+  links: [[alice, proxy], [proxy, bob], [alice, bob]]
+  steps:
+    - t: Register
+      tag: register
+      d: Bob phone registers its current address with the proxy. The proxy asks for a digest login first.
+      p:
+        - [bob, proxy, "REGISTER sip:305@pbx.example", req]
+        - [proxy, bob, "401 Unauthorized (challenge)", ctl]
+        - [bob, proxy, "REGISTER with digest", req]
+        - [proxy, bob, "200 OK", res]
+    - t: INVITE
+      tag: call
+      d: Alice dials 305. Her phone sends INVITE with an SDP offer to the proxy, which forwards it to Bob.
+      p:
+        - [alice, proxy, "INVITE sip:305 + SDP", req, {raw: "INVITE sip:305@pbx.example SIP/2.0\r\nVia: SIP/2.0/UDP 192.168.1.40:5060\r\nFrom: <sip:201@pbx.example>\r\nTo: <sip:305@pbx.example>\r\nCall-ID: a84b4c76e66710\r\nCSeq: 1 INVITE\r\nContent-Type: application/sdp\r\n\r\n"}]
+        - [proxy, alice, "100 Trying", ctl]
+        - [proxy, bob, "INVITE + SDP", req]
+    - t: Ringing and answer
+      tag: call
+      d: Bob phone rings and sends 180 Ringing. Bob picks up. His phone sends 200 OK with its SDP answer.
+      p:
+        - [bob, proxy, "180 Ringing", res]
+        - [proxy, alice, "180 Ringing", res]
+        - [bob, proxy, "200 OK + SDP", res]
+        - [proxy, alice, "200 OK + SDP", res]
+    - t: ACK and voice
+      tag: media
+      d: Alice sends ACK. Voice now flows as RTP packets directly between the two phones, using the addresses from the SDP.
+      p:
+        - [alice, bob, "ACK", ctl]
+        - [alice, bob, "RTP voice", data]
+        - [bob, alice, "RTP voice", data]
+    - t: Hang up
+      tag: end
+      d: Bob hangs up and sends BYE. Alice answers 200 OK.
+      p:
+        - [bob, alice, "BYE", ctl]
+        - [alice, bob, "200 OK", res]
+  quiz:
+    - type: fill
+      q: "The SIP request that starts a call is ____."
+      a: ["INVITE"]
+      why: The response sequence is 100, 180, 200, then the caller sends ACK.
+    - q: How does voice travel once the call is set up?
+      opts: ["Inside SIP messages", "As RTP, usually directly between the phones", "By email"]
+      a: 1
+      why: SIP only sets up and ends the call.
+  refs:
+    - "IETF. [RFC 3261, SIP](https://www.rfc-editor.org/rfc/rfc3261)."
+
+- id: rtsp
+  name: RTSP
+  full: IP camera streams
+  layer: 7
+  cat: app
+  transport: TCP for control, RTP for media
+  port: "554"
+  title: RTSP, watching an IP camera.
+  lede: Security cameras and video recorders often use RTSP. It is like a remote control for a stream. Describe, set up, play and stop.
+  overview: |
+    RTSP looks like HTTP. **DESCRIBE** gets an SDP that lists the tracks. **SETUP** chooses how media travels, RTP over UDP ports or interleaved in the same TCP connection. **PLAY** starts the stream and **TEARDOWN** stops it. A **Session** header ties the requests together.
+
+    !warn Many cameras ship with default passwords and expose RTSP to the internet. Change the password and keep cameras on a private network.
+  nodes:
+    nvr: [Video recorder, 192.168.10.5, server, 0, 1]
+    cam: [IP camera, 192.168.10.80, camera, 6, 1]
+  links: [[nvr, cam]]
+  steps:
+    - t: DESCRIBE
+      tag: control
+      d: The recorder asks what the stream contains. The camera answers with SDP, one H.264 video track and one audio track. It may first ask for a login with 401.
+      p:
+        - [nvr, cam, "DESCRIBE rtsp://192.168.10.80/stream1", req]
+        - [cam, nvr, "200 OK + SDP", res]
+    - t: SETUP
+      tag: control
+      d: The recorder asks for RTP over UDP on client ports 5000 and 5001. The camera answers with a Session id.
+      f: {Transport: "RTP/AVP;unicast;client_port=5000-5001", Session: "12345678"}
+      p:
+        - [nvr, cam, "SETUP track1 client_port=5000-5001", req]
+        - [cam, nvr, "200 OK Session 12345678", res]
+    - t: PLAY
+      tag: control
+      d: The recorder sends PLAY. The camera starts sending video.
+      p:
+        - [nvr, cam, "PLAY Session 12345678", req]
+        - [cam, nvr, "200 OK", res]
+    - t: RTP media and RTCP reports
+      tag: media
+      d: Video arrives in RTP packets with sequence numbers and timestamps. RTCP reports give quality feedback, such as lost packets.
+      p:
+        - [cam, nvr, "RTP H.264 video", data]
+        - [nvr, cam, "RTCP receiver report", ctl]
+    - t: TEARDOWN
+      tag: control
+      d: The recorder stops the session.
+      p:
+        - [nvr, cam, "TEARDOWN", req]
+        - [cam, nvr, "200 OK", res]
+  quiz:
+    - type: fill
+      q: "RTSP uses TCP port ____ by default."
+      a: ["554"]
+      why: Media usually travels separately as RTP.
+    - q: Which request returns the SDP description of the stream?
+      opts: ["PLAY", "DESCRIBE", "TEARDOWN"]
+      a: 1
+      why: DESCRIBE, SETUP, PLAY, TEARDOWN.
+  refs:
+    - "IETF. [RFC 2326, RTSP 1.0](https://www.rfc-editor.org/rfc/rfc2326)."
+
+- id: rtmp
+  name: RTMP
+  full: Live streaming upload
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "1935"
+  title: RTMP, sending a live stream to a platform.
+  lede: Streaming software such as OBS sends your live video to platforms with RTMP. The platform then turns it into HLS for viewers. Watch the handshake, connect and publish.
+  overview: |
+    RTMP was made by Macromedia for Flash. Flash is gone, but RTMP is still the common way to **ingest** live video. The encoder sends a **stream key** in the publish command. Keep it secret, because anyone with it can broadcast on your channel. **RTMPS** wraps RTMP in TLS. Viewers do not receive RTMP. They watch HLS or DASH from a CDN.
+  nodes:
+    obs: [Streaming PC, OBS encoder, laptop, 0, 1]
+    ingest: [Ingest server, live.example, server, 3, 1]
+    tc: [Transcoder, many qualities, server, 5, 1]
+    cdn: [CDN, HLS for viewers, cloud, 7, 1]
+  links: [[obs, ingest], [ingest, tc], [tc, cdn]]
+  steps:
+    - t: Handshake
+      tag: handshake
+      d: The encoder and the server exchange C0 and C1, S0, S1 and S2, then C2. These check the version and swap random data.
+      p:
+        - [obs, ingest, "C0 + C1", ctl]
+        - [ingest, obs, "S0 + S1 + S2", ctl]
+        - [obs, ingest, "C2", ctl]
+    - t: Connect
+      tag: command
+      d: The encoder sends a connect command, encoded in AMF, for the application `live`.
+      p:
+        - [obs, ingest, "connect app=live", req]
+        - [ingest, obs, "_result NetConnection.Connect.Success", res]
+    - t: Publish with the stream key
+      tag: command
+      d: The encoder creates a stream and publishes it with the secret stream key. The server checks the key.
+      f: {Command: publish, Stream key: "live_8f2...secret", Type: live}
+      p:
+        - [obs, ingest, "createStream", req]
+        - [obs, ingest, "publish live_8f2...", sec]
+        - [ingest, obs, "onStatus NetStream.Publish.Start", res]
+    - t: Audio and video
+      tag: media
+      d: Audio and video messages flow, split into chunks. The server sends the stream to transcoders, which make several qualities, then to the CDN as HLS segments.
+      p:
+        - [obs, ingest, "video and audio chunks", data]
+        - [ingest, tc, "stream", data]
+        - [tc, cdn, "HLS segments", data]
+  quiz:
+    - type: fill
+      q: "RTMP uses TCP port ____ by default."
+      a: ["1935"]
+      why: RTMPS often uses 443.
+    - q: Why must you keep the stream key secret?
+      opts: ["It is your password for the website", "Anyone with it can broadcast on your channel", "It makes the stream faster"]
+      a: 1
+      why: The key authorizes publishing.
+  refs:
+    - "Wikipedia. [Real-Time Messaging Protocol](https://en.wikipedia.org/wiki/Real-Time_Messaging_Protocol)."
+
+- id: mqtt
+  name: MQTT
+  full: Messages for IoT devices
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "1883, 8883 with TLS"
+  title: MQTT, sensors publish and apps subscribe.
+  lede: MQTT is a tiny publish and subscribe protocol for sensors and devices on weak networks. Devices never talk to each other directly. A broker routes messages by topic.
+  overview: |
+    Topics are paths such as `home/kitchen/temperature`. Subscribers can use wildcards, `+` for one level and `#` for many. **QoS 0** sends once, **QoS 1** at least once with PUBACK, **QoS 2** exactly once with a four step exchange. A **retained** message is kept for new subscribers. A **last will** message is sent if a device drops off.
+  nodes:
+    sensor: [Temperature sensor, 192.168.1.60, plc, 0, 1]
+    broker: [MQTT broker, 192.168.1.2, queue, 4, 1]
+    app: [Phone app, subscriber, phone, 8, 0]
+    dash: [Dashboard, subscriber, web, 8, 2]
+  links: [[sensor, broker], [broker, app], [broker, dash]]
+  steps:
+    - t: Connect
+      tag: connect
+      d: Each client connects with a client id, a keep alive time and a login. The sensor also sets a last will, "offline", on its status topic.
+      p:
+        - [sensor, broker, "CONNECT id=sensor-7, will", req]
+        - [broker, sensor, "CONNACK", res]
+        - [app, broker, "CONNECT id=phone", req]
+        - [broker, app, "CONNACK", res]
+    - t: Subscribe with a wildcard
+      tag: subscribe
+      d: The app subscribes to `home/+/temperature` with QoS 1. It will get temperatures from every room.
+      p:
+        - [app, broker, "SUBSCRIBE home/+/temperature QoS 1", req]
+        - [broker, app, "SUBACK", res]
+        - [dash, broker, "SUBSCRIBE home/#", req]
+    - t: Publish
+      tag: publish
+      d: The sensor publishes 22.5 to `home/kitchen/temperature` with QoS 1 and the retain flag. The broker acknowledges with PUBACK.
+      p:
+        - [sensor, broker, "PUBLISH home/kitchen/temperature 22.5", data]
+        - [broker, sensor, "PUBACK", ctl]
+    - t: Fan out
+      tag: deliver
+      d: The broker sends the message to every subscriber whose filter matches.
+      p:
+        - [broker, app, "PUBLISH 22.5", data]
+        - [broker, dash, "PUBLISH 22.5", data]
+    - t: Keep alive and last will
+      tag: health
+      d: The sensor sends PINGREQ when it is idle. If it loses power and misses its keep alive, the broker publishes its last will, "offline".
+      p:
+        - [sensor, broker, "PINGREQ", ctl]
+        - [broker, sensor, "PINGRESP", ctl]
+        - [broker, dash, "PUBLISH status offline (last will)", bad]
+  quiz:
+    - q: "Which topic filter matches home/kitchen/temperature and home/hall/temperature?"
+      opts: ["home/#/temperature", "home/+/temperature", "home/kitchen"]
+      a: 1
+      why: Plus matches exactly one level. Hash matches many levels and must be last.
+    - type: fill
+      q: "MQTT over TLS uses port ____."
+      a: ["8883"]
+      why: Plain MQTT uses 1883.
+  refs:
+    - "OASIS. [MQTT version 5.0](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)."
+    - "HiveMQ. [MQTT essentials](https://www.hivemq.com/mqtt/)."
+
+- id: amqp
+  name: AMQP
+  full: Message queues, RabbitMQ
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "5672, 5671 with TLS"
+  title: AMQP, publishing to an exchange and consuming from a queue.
+  lede: AMQP 0-9-1 is the protocol of RabbitMQ. Producers send to an exchange, the exchange routes to queues by bindings, and consumers acknowledge each message.
+  overview: |
+    Producers never write to a queue directly. They publish to an **exchange** with a **routing key**. **Bindings** connect exchanges to queues. A **direct** exchange matches the key exactly, a **topic** exchange matches patterns such as `order.*`, a **fanout** exchange copies to every bound queue. Consumers send **ack** after work, so a crash means redelivery, not loss.
+  nodes:
+    prod: [Order service, producer, server, 0, 1]
+    ex: [Exchange orders, topic, queue, 3, 1]
+    q1: [Queue emails, bound order.*, queue, 5, 0]
+    q2: [Queue billing, bound order.paid, queue, 5, 2]
+    cons: [Email worker, consumer, server, 8, 0]
+  links: [[prod, ex], [ex, q1], [ex, q2], [q1, cons]]
+  steps:
+    - t: Open the connection
+      tag: connect
+      d: The client sends the protocol header, then Connection.Start, Start-Ok with credentials, Tune and Open. Then it opens a channel. Many channels share one TCP connection.
+      p:
+        - [prod, ex, "AMQP 0-9-1 header", ctl, {raw: "AMQP\u0000\u0000\u0009\u0001"}]
+        - [ex, prod, "Connection.Start", ctl]
+        - [prod, ex, "Start-Ok, Tune-Ok, Open, Channel.Open", ctl]
+    - t: Publish
+      tag: publish
+      d: The order service publishes a message to exchange `orders` with routing key `order.created`, marked persistent.
+      f: {Exchange: orders, Routing key: order.created, Delivery mode: "2 persistent"}
+      p:
+        - [prod, ex, "Basic.Publish order.created", data]
+    - t: Route by binding
+      tag: route
+      d: The emails queue is bound with `order.*`, so it matches. The billing queue is bound with `order.paid`, so it does not.
+      p:
+        - [ex, q1, "route order.created", data]
+    - t: Deliver and acknowledge
+      tag: consume
+      d: The email worker consumes from the queue. It gets Basic.Deliver, sends the email, then Basic.Ack. Without the ack, RabbitMQ would redeliver the message.
+      p:
+        - [q1, cons, "Basic.Deliver", data]
+        - [cons, q1, "Basic.Ack", ctl]
+  quiz:
+    - q: Where does a producer publish in AMQP 0-9-1?
+      opts: ["Directly to a queue", "To an exchange, which routes to queues by bindings", "To the consumer"]
+      a: 1
+      why: Exchanges and bindings decide routing.
+    - type: fill
+      q: "An exchange that copies every message to all bound queues is a ____ exchange."
+      a: ["fanout"]
+      why: Direct, topic, fanout and headers are the types.
+  refs:
+    - "RabbitMQ. [AMQP 0-9-1 model explained](https://www.rabbitmq.com/tutorials/amqp-concepts)."

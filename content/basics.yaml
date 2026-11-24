@@ -9,9 +9,11 @@ steps:
 
       Software systems are the same. An app like a food delivery app has parts that take orders, parts that store data, parts that send messages and parts that take payments.
 
-      **System design** is deciding which parts you need, what each part does, and how they talk to each other. **System architecture** is the drawing of that plan, the boxes and the arrows between them.
+      **System architecture** is the big shape. It names the main parts, the job of each part and how the parts connect. It also holds the big decisions that are hard to change later.
 
-      !eli5 If the app is a house, architecture is the floor plan. Design is all the choices behind it. Where the kitchen goes, how big the pipes are, what happens when the power fails.
+      **System design** is the detailed work inside that shape. It decides how each part does its job, such as the data it stores and the messages it sends.
+
+      !eli5 If the app is a house, architecture is the floor plan. Two floors, the kitchen next to the dining room. Design is the detail. How many cupboards the kitchen has, how big the pipes are. Lesson 1.1 in Concepts explains the difference fully.
     diagrams:
       - type: flow
         title: A restaurant and an app are both systems
@@ -92,7 +94,7 @@ steps:
             mark: {phone: ok}
             stats: [Response, 140 ms]
     more: |
-      Lesson 1 in Concepts goes much deeper into DNS, TCP, HTTP and TLS.
+      Lesson 1.2 in Concepts goes much deeper into DNS, TCP, HTTP and TLS.
     quiz:
       - q: Why does a server on the other side of the world feel slow even if it is very powerful?
         opts: ["Because it is old", "Because each trip over the network takes time, and distance adds to it", "Because DNS is broken"]
@@ -202,7 +204,14 @@ steps:
       5. **Where will it break?** Find the busiest and weakest parts and fix them.
       6. **What did I trade?** Say it out loud.
 
-      The rest of this site teaches the parts, level by level, and then you use them to design real systems. You are ready. Open level 1.
+      The rest of this site has four parts.
+
+      - **Concepts** teaches the building blocks, level by level.
+      - **Infra** teaches the tools that build and run them, such as Git, Docker, Kubernetes, AWS and Terraform.
+      - **Protocols** shows how machines really talk, packet by packet.
+      - **Design it** puts everything together in real design tasks.
+
+      Do the practice step below, then open Concepts level 1.
     diagrams:
       - type: cycle
         title: The architect's loop
@@ -214,3 +223,38 @@ steps:
         opts: ["Users can post a photo", "A photo appears on friends' feeds within 5 seconds", "Users can like a photo"]
         a: 1
         why: Features are functional. How fast, how big and how reliable are non-functional.
+
+  - short: Practice
+    title: Practice, the basics all together
+    practice: true
+    body: |
+      Answer these without scrolling up. Each answer shows the reason. If you miss one, read that step again.
+    quiz:
+      - type: sort
+        q: Match each word to its meaning.
+        rows:
+          - ["Client", "The side that asks"]
+          - ["Latency", "How long one request takes"]
+          - ["Throughput", "How many requests each second"]
+          - ["Cache", "Fast memory with copies of popular answers"]
+          - ["Load balancer", "Spreads requests over many servers"]
+        opts: ["The side that asks", "How long one request takes", "How many requests each second", "Fast memory with copies of popular answers", "Spreads requests over many servers"]
+        why: These five words appear in almost every design discussion.
+      - q: Your app has one database and five app servers. Which part is the single point of failure?
+        opts: ["Any app server", "The database", "The users"]
+        a: 1
+        why: If one app server dies, the others carry on. If the only database dies, everything stops.
+      - type: fill
+        q: Adding more machines to share the work is called scaling ____.
+        a: ["out", "horizontally", "horizontal"]
+        why: Scaling up means a bigger machine. Scaling out means more machines.
+      - q: Which statement is architecture, not detailed design?
+        opts: ["The cache key for a user is user:42", "Orders and payments are separate services that talk through a queue", "The page size of the orders list is 20"]
+        a: 1
+        why: It shapes many parts and is hard to change later.
+      - type: num
+        q: 10 million requests a day. About how many requests a second on average? Use 100 thousand seconds in a day.
+        a: 100
+        tol: 15
+        unit: per second
+        why: 10 million divided by 100 thousand is 100.

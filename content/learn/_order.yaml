@@ -1,0 +1,21 @@
+levels:
+  - n: 1
+    t: Foundations
+    d: Learn what system design is, how one request travels, and how programs talk with APIs. Then learn to estimate size and to grow from one server to many.
+    items: [l00, l01, l02, api-rest, api-graphql, api-grpc, api-realtime, l03, l04, l05, p1]
+  - n: 2
+    t: Data
+    d: Learn where data lives. Choose a database, make it fast with indexes and caches, copy it, split it and move big files near users.
+    items: [l06, l07, l08, l09, l10, l11, p2]
+  - n: 3
+    t: Many machines
+    d: Learn what changes when many machines must agree. Consistency, queues, rate limits, ids, clocks and consensus.
+    items: [l12, l13, l14, l15, l16, p3]
+  - n: 4
+    t: Running it for real
+    d: Learn to keep a system alive and safe. Failure patterns, monitoring, security and how to split a system into services.
+    items: [l17, l18, l19, l20, p4]
+  - n: 5
+    t: Mastery
+    d: Learn to run a system in many regions and to process very large amounts of data.
+    items: [l21, l22, p5]

@@ -1,0 +1,825 @@
+- id: quic
+  name: QUIC
+  full: HTTP/3 over UDP
+  layer: 4
+  cat: core
+  transport: UDP
+  port: "443"
+  title: QUIC, a faster secure transport on UDP.
+  lede: QUIC joins the transport and TLS handshakes into one round trip, runs many streams without blocking each other, and survives a change of network. HTTP/3 runs on it.
+  overview: |
+    QUIC is defined in RFC 9000. It runs in user space on top of UDP. TLS 1.3 is built in, so almost everything is encrypted, even most transport headers. Streams are independent. A lost packet only delays its own stream, not all of them.
+
+    Each connection has **connection IDs**, not only addresses. When your phone moves from Wi-Fi to mobile data, the connection can continue.
+  nodes:
+    phone: [Phone, 192.168.1.20, phone, 0, 1]
+    net: [Internet, "", cloud, 3, 1]
+    srv: [Web server, 203.0.113.90, web, 6, 1]
+  links: [[phone, net], [net, srv]]
+  steps:
+    - t: Initial packet with ClientHello
+      tag: handshake
+      d: The client sends a QUIC Initial packet over UDP. Inside a CRYPTO frame is a TLS 1.3 ClientHello with ALPN `h3`. There is no separate TCP handshake.
+      f: {Packet: Initial, ALPN: h3, Size: "at least 1200 bytes"}
+      p:
+        - [phone, srv, "Initial: ClientHello", sec]
+      good: The first packet is padded to at least 1200 bytes. This stops attackers from using small spoofed packets to make the server send large replies.
+    - t: Server Initial and Handshake
+      tag: handshake
+      d: The server answers with ServerHello in an Initial packet and the rest of the TLS handshake in Handshake packets. Keys are ready after this one round trip.
+      p:
+        - [srv, phone, "Initial: ServerHello", sec]
+        - [srv, phone, "Handshake: Certificate, Finished", sec]
+    - t: Finished and the first request
+      tag: data
+      d: The client sends Finished and, in the same flight, the HTTP/3 request on stream 0, protected with the new keys.
+      p:
+        - [phone, srv, "Handshake: Finished", sec]
+        - [phone, srv, "1-RTT: stream 0 GET /", req]
+    - t: Independent streams
+      tag: streams
+      d: Responses for streams 0, 4 and 8 arrive. One UDP packet for stream 4 is lost. Only stream 4 waits for the resend. Streams 0 and 8 carry on.
+      p:
+        - [srv, phone, "stream 0 data", res]
+        - [srv, phone, "stream 4 data (lost)", bad]
+        - [srv, phone, "stream 8 data", res]
+    - t: Change of network
+      tag: migration
+      d: The phone leaves Wi-Fi and gets a new IP on mobile data. It keeps sending with the same connection ID. The server checks the new path and the download continues.
+      f: {Old IP: 192.168.1.20, New IP: 100.64.12.7, Connection ID: same}
+      p:
+        - [phone, srv, "same connection ID, new address", ctl]
+        - [srv, phone, "path challenge and response", ctl]
+  quiz:
+    - q: On which protocol does QUIC run?
+      opts: ["TCP", "UDP", "ICMP"]
+      a: 1
+      why: QUIC builds reliability and streams on top of UDP.
+    - type: fill
+      q: HTTP over QUIC is called HTTP/____.
+      a: ["3"]
+      why: HTTP/3 is defined in RFC 9114.
+  refs:
+    - "IETF. [RFC 9000, QUIC](https://www.rfc-editor.org/rfc/rfc9000)."
+    - "Cloudflare. [What is HTTP/3?](https://www.cloudflare.com/learning/performance/what-is-http3/)"
+
+- id: tcp
+  name: TCP
+  full: Transmission Control Protocol
+  layer: 4
+  cat: core
+  transport: IP
+  port: "any"
+  title: TCP, a reliable conversation over an unreliable network.
+  lede: TCP turns lost and out of order packets into a clean, ordered byte stream. Watch the handshake, the data with acknowledgements, a lost segment and the polite close.
+  overview: |
+    TCP numbers every byte with a **sequence number**. The receiver sends back an **acknowledgement** with the next byte it expects. Lost data is sent again. A **window** says how much data may be in flight, which gives flow control. Congestion control slows down when the network is busy.
+  nodes:
+    client: [Client, 192.168.1.10, laptop, 0, 1]
+    net: [Internet, "", cloud, 3, 1]
+    srv: [Server, 203.0.113.10, server, 6, 1]
+  links: [[client, net], [net, srv]]
+  steps:
+    - t: SYN
+      tag: handshake
+      d: The client picks a random initial sequence number, here 1000, and sends a segment with the SYN flag.
+      f: {Flags: SYN, Seq: "1000", Window: "64240"}
+      p:
+        - [client, srv, "SYN seq=1000", ctl, {fields: {Flags: SYN, Seq: "1000", Window: "64240", MSS: "1460"}}]
+    - t: SYN-ACK
+      tag: handshake
+      d: The server picks its own number, 5000, and acknowledges the client SYN with ack 1001.
+      f: {Flags: "SYN, ACK", Seq: "5000", Ack: "1001"}
+      p:
+        - [srv, client, "SYN-ACK seq=5000 ack=1001", ctl]
+    - t: ACK, connection open
+      tag: handshake
+      d: The client acknowledges with ack 5001. Both sides now know the starting numbers of the other.
+      p:
+        - [client, srv, "ACK ack=5001", ctl]
+    - t: Data and acknowledgements
+      tag: data
+      d: The client sends 100 bytes starting at 1001. The server acknowledges with ack 1101, the next byte it expects.
+      f: {Seq: "1001", Length: "100", Ack from server: "1101"}
+      p:
+        - [client, srv, "seq=1001 len=100", data]
+        - [srv, client, "ACK ack=1101", ctl]
+    - t: A segment is lost
+      tag: retransmit
+      d: The next segment is lost on the way. The server keeps sending ack 1101. After duplicate acks or a timeout, the client sends the segment again.
+      p:
+        - [client, srv, "seq=1101 len=100 (lost)", bad]
+        - [srv, client, "ACK ack=1101 (duplicate)", ctl]
+        - [client, srv, "seq=1101 len=100 (resent)", data]
+    - t: Close
+      tag: close
+      d: Each side closes its own direction with FIN, and the other side acknowledges it.
+      p:
+        - [client, srv, "FIN", ctl]
+        - [srv, client, "ACK", ctl]
+        - [srv, client, "FIN", ctl]
+        - [client, srv, "ACK", ctl]
+  quiz:
+    - q: The client sent SYN with seq 7000. What ack does the server send in its SYN-ACK?
+      opts: ["7000", "7001", "0"]
+      a: 1
+      why: The ack is the next byte expected. A SYN counts as one byte.
+    - type: fill
+      q: The three messages that open a TCP connection are SYN, SYN-ACK and ____.
+      a: ["ACK"]
+      why: This is the three way handshake.
+  refs:
+    - "IETF. [RFC 9293, TCP](https://www.rfc-editor.org/rfc/rfc9293)."
+    - "Ilya Grigorik. [High Performance Browser Networking, building blocks of TCP](https://hpbn.co/building-blocks-of-tcp/)."
+
+- id: udp
+  name: UDP
+  full: User Datagram Protocol
+  layer: 4
+  cat: core
+  transport: IP
+  port: "any"
+  title: UDP, send and hope, very fast.
+  lede: UDP sends single messages called datagrams. There is no handshake, no order and no resend. It is simple and fast, so DNS, games, voice and QUIC use it.
+  overview: |
+    A UDP header has only four fields. Source port, destination port, length and checksum, 8 bytes in total. Compare that with at least 20 bytes for TCP. If the application needs reliability, it must build it itself, as QUIC does.
+  nodes:
+    game: [Game client, 192.168.1.30, laptop, 0, 1]
+    net: [Internet, "", cloud, 3, 1]
+    srv: [Game server, 203.0.113.100, server, 6, 1]
+  links: [[game, net], [net, srv]]
+  steps:
+    - t: No handshake
+      tag: data
+      d: The game client sends its position at once. No connection setup.
+      f: {Source port: "50000", Destination port: "27015", Header: "8 bytes"}
+      p:
+        - [game, srv, "position x=10 y=4 (tick 1)", data, {fields: {Src port: "50000", Dst port: "27015", Length: "28", Checksum: "0x4c1a"}}]
+    - t: Keep sending
+      tag: data
+      d: The client sends a new position every tick, about 30 to 60 times a second.
+      p:
+        - [game, srv, "position (tick 2)", data]
+        - [game, srv, "position (tick 3)", data]
+    - t: One is lost, nobody waits
+      tag: loss
+      d: Tick 4 is lost. UDP does not resend it. Tick 5 arrives, and it is newer anyway. For live data, waiting for old data would be worse.
+      p:
+        - [game, srv, "position (tick 4, lost)", bad]
+        - [game, srv, "position (tick 5)", data]
+    - t: Server updates
+      tag: data
+      d: The server sends world updates back the same way.
+      p:
+        - [srv, game, "world state", data]
+  quiz:
+    - q: Which is true about UDP?
+      opts: ["It guarantees order", "It has no handshake and does not resend lost datagrams", "It is slower than TCP"]
+      a: 1
+      why: Applications add reliability if they need it.
+    - type: num
+      q: How many bytes is a UDP header?
+      a: 8
+      tol: 0
+      unit: bytes
+      why: Four fields of 2 bytes each.
+  refs:
+    - "IETF. [RFC 768, User Datagram Protocol](https://www.rfc-editor.org/rfc/rfc768)."
+
+- id: ip
+  name: IP
+  full: Internet Protocol
+  layer: 3
+  cat: core
+  transport: "-"
+  port: "none, IP has no ports"
+  title: IP, one packet hops across the internet.
+  lede: IP gives every machine an address and moves packets hop by hop toward the destination. Each router looks only at the destination and picks the next hop.
+  overview: |
+    An IPv4 packet header has a source and destination address, a **TTL**, the protocol inside, such as 6 for TCP or 17 for UDP, and a checksum. Each router lowers the TTL by one. If it reaches zero, the router drops the packet and sends an ICMP message back. This stops packets from looping forever.
+
+    Home networks use private addresses such as 192.168.x.x. The home router does **NAT**. It swaps the private source address for its public address on the way out.
+  nodes:
+    pc: [Laptop, 192.168.1.10, laptop, 0, 2]
+    home: [Home router, "198.51.100.7 public", router, 2, 2]
+    isp: [ISP router, AS 64500, router, 4, 1]
+    core: [Core router, AS 64510, router, 6, 1]
+    srv: [Server, 203.0.113.10, server, 8, 2]
+  links: [[pc, home], [home, isp], [isp, core], [core, srv]]
+  steps:
+    - t: Build the packet
+      tag: send
+      d: The laptop puts the TCP segment in an IP packet. Source 192.168.1.10, destination 203.0.113.10, TTL 64. The destination is not local, so it sends the packet to its default gateway, the home router.
+      f: {Src: 192.168.1.10, Dst: 203.0.113.10, TTL: "64", Protocol: "6 TCP"}
+      p:
+        - [pc, home, "IP 192.168.1.10 to 203.0.113.10 TTL 64", data]
+    - t: NAT at home
+      tag: nat
+      d: The home router replaces the private source with its public address 198.51.100.7 and remembers the mapping, so replies can come back. It lowers the TTL to 63.
+      f: {Src after NAT: 198.51.100.7, TTL: "63"}
+      p:
+        - [home, isp, "IP 198.51.100.7 to 203.0.113.10 TTL 63", data]
+    - t: Hop by hop
+      tag: route
+      d: Each router looks up the destination in its routing table and forwards the packet to the next hop. TTL drops at each hop.
+      p:
+        - [isp, core, "TTL 62", data]
+        - [core, srv, "TTL 61", data]
+    - t: The reply comes back
+      tag: route
+      d: The server replies to 198.51.100.7. The home router finds the mapping and sends the reply to 192.168.1.10.
+      p:
+        - [srv, home, "IP 203.0.113.10 to 198.51.100.7", res]
+        - [home, pc, "IP to 192.168.1.10 (NAT reversed)", res]
+  quiz:
+    - q: What happens when the TTL reaches 0 at a router?
+      opts: ["The packet is delivered", "The router drops it and usually sends an ICMP time exceeded message", "The TTL resets to 64"]
+      a: 1
+      why: This is how traceroute discovers each hop.
+    - type: fill
+      q: Swapping private addresses for a public address at the home router is called ____.
+      a: ["NAT", "network address translation"]
+      why: NAT lets many devices share one public IPv4 address.
+  refs:
+    - "IETF. [RFC 791, Internet Protocol](https://www.rfc-editor.org/rfc/rfc791)."
+    - "Cloudflare. [What is routing?](https://www.cloudflare.com/learning/network-layer/what-is-routing/)"
+
+- id: ipv6
+  name: IPv6
+  full: Address setup, neighbour discovery
+  layer: 3
+  cat: core
+  transport: "-"
+  port: "none"
+  title: IPv6, a device gives itself an address.
+  lede: IPv6 has enough addresses for every device. Watch how a laptop joins a network, learns the prefix from the router and builds its own address, with no DHCP server needed.
+  overview: |
+    IPv6 addresses are 128 bits, written in hexadecimal groups, such as `2001:db8:1:1::25`. Hosts use **SLAAC**, stateless address autoconfiguration. They learn the network prefix from **Router Advertisements** and build the rest themselves. **Neighbor Discovery**, part of ICMPv6, replaces ARP.
+  nodes:
+    pc: [Laptop, "fe80::a1b2", laptop, 0, 1]
+    sw: [Switch, "", switch, 3, 1]
+    rtr: [Router, "2001:db8:1:1::1", router, 6, 1]
+    peer: [Printer, "2001:db8:1:1::9", server, 3, 3]
+  links: [[pc, sw], [sw, rtr], [sw, peer]]
+  steps:
+    - t: Link local address
+      tag: setup
+      d: The laptop first makes a link local address that starts with `fe80::`. It works only on this local link.
+      f: {Link local: "fe80::a1b2:c3ff:fed4:e5f6"}
+      on: [pc]
+    - t: Router Solicitation
+      tag: ndp
+      d: The laptop sends a Router Solicitation to the all routers multicast address `ff02::2`.
+      p:
+        - [pc, rtr, "ICMPv6 Router Solicitation to ff02::2", ctl]
+    - t: Router Advertisement
+      tag: ndp
+      d: The router answers with a Router Advertisement. It gives the prefix `2001:db8:1:1::/64` and says it is the default gateway. DNS server addresses can also come in the advertisement.
+      f: {Prefix: "2001:db8:1:1::/64", Gateway: "router link local address"}
+      p:
+        - [rtr, pc, "ICMPv6 Router Advertisement prefix /64", res]
+    - t: Build and check the address
+      tag: slaac
+      d: The laptop adds its own 64 bit interface id to the prefix, often random for privacy. Before it uses the address, it checks nobody else has it with Duplicate Address Detection.
+      f: {New address: "2001:db8:1:1:5d2e:91a4:7b3c:10f2"}
+      p:
+        - [pc, sw, "Neighbor Solicitation (duplicate check)", ctl]
+    - t: Find a neighbour
+      tag: ndp
+      d: To print, the laptop needs the printer link layer address. It sends a Neighbor Solicitation. The printer answers with a Neighbor Advertisement. This replaces ARP.
+      p:
+        - [pc, peer, "Neighbor Solicitation who has ::9", ctl]
+        - [peer, pc, "Neighbor Advertisement MAC 00:1b:...", res]
+  quiz:
+    - type: num
+      q: How many bits long is an IPv6 address?
+      a: 128
+      tol: 0
+      unit: bits
+      why: IPv4 has 32 bits.
+    - q: Which protocol replaces ARP in IPv6?
+      opts: ["DHCP", "Neighbor Discovery, part of ICMPv6", "BGP"]
+      a: 1
+      why: Neighbor Solicitation and Advertisement find link layer addresses.
+  refs:
+    - "IETF. [RFC 4861, Neighbor Discovery](https://www.rfc-editor.org/rfc/rfc4861)."
+    - "IETF. [RFC 4862, IPv6 stateless address autoconfiguration](https://www.rfc-editor.org/rfc/rfc4862)."
+
+- id: bgp
+  name: BGP
+  full: Routing between networks
+  layer: 7
+  cat: core
+  transport: TCP
+  port: "179"
+  title: BGP, how networks tell each other where addresses live.
+  lede: The internet is tens of thousands of networks. BGP is how they announce which address blocks they can reach. A wrong announcement can send traffic to the wrong place.
+  overview: |
+    Each large network is an **autonomous system**, with an AS number. Routers in different systems open a BGP session over TCP port 179. They exchange **UPDATE** messages that announce prefixes with an **AS path**. Each router chooses the best path by policy and rules, such as the shortest AS path.
+
+    BGP trusts announcements by default. **RPKI** lets networks sign which AS may announce a prefix, so others can reject hijacks.
+  nodes:
+    a: [Router AS 64500, ISP A, router, 0, 1]
+    b: [Router AS 64510, ISP B, router, 4, 0]
+    c: [Router AS 64520, Hosting, router, 8, 1]
+    bad: [Router AS 64666, misconfigured, router, 4, 3]
+  links: [[a, b], [b, c], [a, bad], [bad, c]]
+  steps:
+    - t: Open a session
+      tag: session
+      d: Routers in AS 64510 and AS 64520 open TCP 179 and send OPEN messages with their AS numbers and a hold time.
+      f: {Transport: TCP 179, Hold time: "90 s"}
+      p:
+        - [b, c, "OPEN AS 64510", ctl]
+        - [c, b, "OPEN AS 64520", ctl]
+        - [b, c, "KEEPALIVE", ctl]
+    - t: Announce a prefix
+      tag: update
+      d: AS 64520 hosts 203.0.113.0/24. It sends an UPDATE with that prefix and AS path 64520.
+      f: {Prefix: 203.0.113.0/24, AS path: "64520"}
+      p:
+        - [c, b, "UPDATE 203.0.113.0/24 path 64520", data]
+    - t: Pass it on
+      tag: update
+      d: AS 64510 adds its own number and tells AS 64500. Now ISP A knows how to reach the prefix, through B.
+      f: {AS path at A: "64510 64520"}
+      p:
+        - [b, a, "UPDATE 203.0.113.0/24 path 64510 64520", data]
+    - t: A bad announcement
+      tag: hijack
+      d: A misconfigured AS 64666 announces a more specific prefix, 203.0.113.0/25. Routers prefer more specific prefixes, so half the traffic now goes the wrong way.
+      p:
+        - [bad, a, "UPDATE 203.0.113.0/25 path 64666", bad]
+      bad: [bad]
+      good: RPKI route origin validation would mark this announcement invalid, because AS 64666 is not allowed to originate the prefix.
+  quiz:
+    - type: fill
+      q: "BGP sessions run over TCP port ____."
+      a: ["179"]
+      why: BGP uses TCP for reliable delivery.
+    - q: Why did traffic follow the bad announcement?
+      opts: ["It had a longer AS path", "It was a more specific prefix, and routers prefer the longest match", "BGP picks at random"]
+      a: 1
+      why: Longest prefix match wins in routing tables.
+  refs:
+    - "Cloudflare. [What is BGP?](https://www.cloudflare.com/learning/security/glossary/what-is-bgp/)"
+    - "MANRS. [Mutually agreed norms for routing security](https://manrs.org/)."
+
+- id: dns
+  name: DNS
+  full: Domain Name System
+  layer: 7
+  cat: core
+  transport: UDP and TCP
+  port: "53"
+  title: DNS, from a name to an address.
+  lede: Your device asks a resolver, and the resolver asks the root, the top level domain servers and the authoritative server, then caches the answer.
+  overview: |
+    A **stub resolver** on your device asks a **recursive resolver**, often run by your ISP or a public service. The recursive resolver walks the tree. **Root** servers point to the `.com` servers. The `.com` servers point to the domain's **authoritative** name servers, which give the final answer. Every answer has a **TTL** that says how long to cache it.
+
+    Common record types are A for IPv4, AAAA for IPv6, CNAME for an alias, MX for mail servers and TXT for text such as SPF.
+  nodes:
+    pc: [Laptop, 192.168.1.10, laptop, 0, 2]
+    res: [Recursive resolver, 198.51.100.53, dns, 3, 2]
+    root: [Root server, a.root-servers.net, globe, 6, 0]
+    tld: [.com server, a.gtld-servers.net, dns, 7, 2]
+    auth: [Authoritative server, ns1.example.com, dns, 6, 4]
+  links: [[pc, res], [res, root], [res, tld], [res, auth]]
+  steps:
+    - t: Ask the resolver
+      tag: query
+      d: The laptop asks its resolver for the A record of www.example.com, with recursion desired.
+      f: {Query: "www.example.com A", Flags: RD, Transport: UDP 53}
+      p:
+        - [pc, res, "query www.example.com A", req]
+    - t: Ask a root server
+      tag: iterate
+      d: The resolver has no cached answer. It asks a root server. The root does not know the answer, but refers it to the .com servers.
+      p:
+        - [res, root, "query www.example.com A", req]
+        - [root, res, "referral to .com NS", res]
+    - t: Ask the .com server
+      tag: iterate
+      d: The .com server refers it to the authoritative servers for example.com.
+      p:
+        - [res, tld, "query www.example.com A", req]
+        - [tld, res, "referral to ns1.example.com", res]
+    - t: Ask the authoritative server
+      tag: answer
+      d: The authoritative server gives the real answer, 203.0.113.10, with a TTL of 300 seconds.
+      f: {Answer: 203.0.113.10, TTL: "300", Flag: AA authoritative}
+      p:
+        - [res, auth, "query www.example.com A", req]
+        - [auth, res, "A 203.0.113.10 TTL 300", res]
+    - t: Answer and cache
+      tag: cache
+      d: The resolver sends the answer to the laptop and caches it, and the referrals too. The next user who asks within 300 seconds gets an instant answer.
+      p:
+        - [res, pc, "A 203.0.113.10", res]
+      good: Lower TTLs before you move a site. Old answers live in caches until their TTL ends.
+  quiz:
+    - q: Which server gives the final answer for www.example.com?
+      opts: ["The root server", "The authoritative server for example.com", "The laptop"]
+      a: 1
+      why: Root and TLD servers only refer the resolver onward.
+    - type: fill
+      q: "The DNS record type for an IPv6 address is ____."
+      a: ["AAAA"]
+      why: A is for IPv4, AAAA for IPv6.
+  refs:
+    - "Cloudflare. [What is DNS?](https://www.cloudflare.com/learning/dns/what-is-dns/)"
+    - "IETF. [RFC 1035, domain names](https://www.rfc-editor.org/rfc/rfc1035)."
+
+- id: dhcp
+  name: DHCP
+  full: Dynamic Host Configuration Protocol
+  layer: 7
+  cat: core
+  transport: UDP
+  port: "67 and 68"
+  title: DHCP, a new device gets its network settings.
+  lede: A device that joins a network knows nothing, not even its own IP address. DHCP gives it an address, the gateway and DNS servers in four messages, called DORA.
+  overview: |
+    DORA means **Discover, Offer, Request, Acknowledge**. The client starts with no address, so it broadcasts. The server leases an address for a time, such as 24 hours. The client renews the lease before it ends.
+
+    A rogue DHCP server on a network can hand out a fake gateway and DNS server. Switches protect against this with **DHCP snooping**.
+  nodes:
+    pc: [New laptop, "0.0.0.0", laptop, 0, 1]
+    sw: [Switch, "", switch, 3, 1]
+    srv: [DHCP server, 192.168.1.1, router, 6, 1]
+  links: [[pc, sw], [sw, srv]]
+  steps:
+    - t: Discover
+      tag: dora
+      d: The laptop has no address. It broadcasts a Discover from 0.0.0.0 port 68 to 255.255.255.255 port 67, with its MAC address.
+      f: {Src: "0.0.0.0:68", Dst: "255.255.255.255:67", Client MAC: "a4:5e:60:12:34:56"}
+      p:
+        - [pc, srv, "DHCPDISCOVER (broadcast)", req]
+    - t: Offer
+      tag: dora
+      d: The server offers 192.168.1.42 for 24 hours, plus the subnet mask, the gateway and DNS servers.
+      f: {Offered IP: 192.168.1.42, Lease: "86400 s", Router: 192.168.1.1, DNS: 192.168.1.1}
+      p:
+        - [srv, pc, "DHCPOFFER 192.168.1.42", res]
+    - t: Request
+      tag: dora
+      d: The laptop broadcasts a Request for 192.168.1.42. Broadcasting tells any other servers that offered addresses that it chose this one.
+      p:
+        - [pc, srv, "DHCPREQUEST 192.168.1.42", req]
+    - t: Acknowledge
+      tag: dora
+      d: The server confirms with an ACK. The laptop sets its address, mask, gateway and DNS. It will renew at half the lease time.
+      f: {Renew at: "12 hours"}
+      p:
+        - [srv, pc, "DHCPACK 192.168.1.42", res]
+  quiz:
+    - type: fill
+      q: "The four DHCP steps are Discover, Offer, Request and ____."
+      a: ["Acknowledge", "ACK", "Acknowledgement"]
+      why: DORA.
+    - q: Why does the client broadcast the first message?
+      opts: ["It is faster", "It has no IP address and does not know the server address yet", "Broadcasts are encrypted"]
+      a: 1
+      why: Broadcast reaches every device on the local network.
+  refs:
+    - "IETF. [RFC 2131, DHCP](https://www.rfc-editor.org/rfc/rfc2131)."
+
+- id: icmp
+  name: ICMP
+  full: Internet Control Message
+  layer: 3
+  cat: core
+  transport: IP protocol 1
+  port: "none"
+  title: ICMP, ping and traceroute.
+  lede: ICMP carries error and test messages for IP. Ping uses echo request and reply. Traceroute uses expiring TTLs to find each router on the path.
+  overview: |
+    Common ICMP types are **8 echo request**, **0 echo reply**, **3 destination unreachable** and **11 time exceeded**. Path MTU discovery relies on ICMP too, so blocking all ICMP can break connections in strange ways.
+  nodes:
+    pc: [Laptop, 192.168.1.10, laptop, 0, 1]
+    r1: [Router 1, 192.168.1.1, router, 2, 1]
+    r2: [Router 2, 198.51.100.1, router, 4, 1]
+    srv: [Server, 203.0.113.10, server, 6, 1]
+  links: [[pc, r1], [r1, r2], [r2, srv]]
+  steps:
+    - t: Ping, echo request
+      tag: ping
+      d: "`ping 203.0.113.10` sends an ICMP echo request, type 8, with an id and a sequence number."
+      f: {Type: "8 echo request", Seq: "1"}
+      p:
+        - [pc, srv, "ICMP echo request seq=1", req]
+    - t: Echo reply
+      tag: ping
+      d: The server answers with type 0, echo reply. Ping shows the round trip time, such as 24 ms.
+      f: {Type: "0 echo reply", RTT: "24 ms"}
+      p:
+        - [srv, pc, "ICMP echo reply seq=1", res]
+    - t: Traceroute, TTL 1
+      tag: traceroute
+      d: Traceroute sends a probe with TTL 1. Router 1 lowers it to 0, drops the packet and sends back time exceeded, type 11. Now we know hop 1.
+      p:
+        - [pc, r1, "probe TTL 1", req]
+        - [r1, pc, "ICMP time exceeded (hop 1)", ctl]
+    - t: TTL 2, then 3
+      tag: traceroute
+      d: With TTL 2, router 2 answers. With TTL 3 the probe reaches the server, which answers. The list of answers is the path.
+      p:
+        - [pc, r2, "probe TTL 2", req]
+        - [r2, pc, "ICMP time exceeded (hop 2)", ctl]
+        - [pc, srv, "probe TTL 3", req]
+        - [srv, pc, "reply from destination", res]
+  quiz:
+    - type: fill
+      q: "The ICMP type number of an echo request is ____."
+      a: ["8"]
+      why: Echo reply is type 0.
+    - q: Which ICMP message does traceroute rely on?
+      opts: ["Echo reply only", "Time exceeded from each router", "Redirect"]
+      a: 1
+      why: Each router that drops a TTL 0 packet reveals itself.
+  refs:
+    - "IETF. [RFC 792, ICMP](https://www.rfc-editor.org/rfc/rfc792)."
+
+- id: igmp
+  name: IGMP
+  full: Multicast and TV channels
+  layer: 3
+  cat: core
+  transport: IP protocol 2
+  port: "none"
+  title: IGMP, joining a TV channel on the network.
+  lede: Multicast sends one stream to many receivers at the same time. IGMP is how a device tells the local router "I want this group". IPTV uses it.
+  overview: |
+    A multicast group is an address such as 239.1.1.1. Hosts send **Membership Reports** to join. Routers send **Queries** to check who still listens. With IGMPv2 and later, hosts send **Leave** messages. Switches use **IGMP snooping** to send the stream only to ports that joined.
+  nodes:
+    tv: [Set top box, 192.168.1.50, tv, 0, 1]
+    tv2: [Second TV, 192.168.1.51, tv, 0, 3]
+    sw: [Switch, IGMP snooping, switch, 3, 2]
+    rtr: [Router, 192.168.1.1, router, 6, 2]
+    src: [TV head end, 239.1.1.1 source, server, 8, 2]
+  links: [[tv, sw], [tv2, sw], [sw, rtr], [rtr, src]]
+  steps:
+    - t: Join a channel
+      tag: join
+      d: You select channel 1. The set top box sends a Membership Report for group 239.1.1.1.
+      f: {Group: 239.1.1.1, Message: Membership Report}
+      p:
+        - [tv, rtr, "IGMP join 239.1.1.1", req]
+    - t: The stream flows
+      tag: stream
+      d: The router starts forwarding the group. The switch snoops the join and sends the stream only to the port of the set top box.
+      p:
+        - [src, rtr, "multicast video 239.1.1.1", data]
+        - [rtr, tv, "multicast video", data]
+    - t: Query
+      tag: query
+      d: Every so often, the router sends a General Query to 224.0.0.1, all hosts. Members answer to say they still listen.
+      p:
+        - [rtr, tv, "General Query", ctl]
+        - [tv, rtr, "Report 239.1.1.1", ctl]
+    - t: Leave
+      tag: leave
+      d: You change channel. The box sends a Leave Group to 224.0.0.2. The router checks if anyone else still listens, then stops the stream.
+      p:
+        - [tv, rtr, "IGMP leave 239.1.1.1", ctl]
+  quiz:
+    - q: What does IGMP snooping on a switch do?
+      opts: ["Encrypts video", "Sends multicast only to ports whose devices joined the group", "Blocks all multicast"]
+      a: 1
+      why: Without snooping, the switch would flood the stream to every port.
+    - type: fill
+      q: "IPv4 multicast addresses are in the range 224.0.0.0 to ____."
+      a: ["239.255.255.255"]
+      why: 224.0.0.0/4.
+  refs:
+    - "IETF. [RFC 3376, IGMPv3](https://www.rfc-editor.org/rfc/rfc3376)."
+
+- id: ntp
+  name: NTP
+  full: Network Time Protocol
+  layer: 7
+  cat: core
+  transport: UDP
+  port: "123"
+  title: NTP, setting the clock across the network.
+  lede: Logs, certificates and distributed systems need correct time. NTP measures four timestamps to work out both the network delay and the clock error.
+  overview: |
+    NTP servers form layers called **strata**. Stratum 0 is a reference clock, such as GPS or an atomic clock. Stratum 1 servers connect to it. Each level below adds one. Clients adjust their clocks smoothly, a little at a time, so time does not jump.
+
+    Offset is ((T2 minus T1) plus (T3 minus T4)) divided by 2. Delay is (T4 minus T1) minus (T3 minus T2).
+  nodes:
+    pc: [Server clock, slightly fast, clock, 0, 1]
+    ntp: [NTP server, stratum 2, clock, 4, 1]
+    gps: [Stratum 1 server, GPS clock, globe, 7, 1]
+  links: [[pc, ntp], [ntp, gps]]
+  steps:
+    - t: Send the request, T1
+      tag: measure
+      d: The client notes its own send time, T1, and sends a request.
+      f: {T1: "10:00:00.000 client clock"}
+      p:
+        - [pc, ntp, "NTP request (T1)", req]
+    - t: Server timestamps, T2 and T3
+      tag: measure
+      d: The server notes when the request arrived, T2, and when it sends the reply, T3. Both are in the server clock.
+      f: {T2: "09:59:59.920 server clock", T3: "09:59:59.921 server clock"}
+      p:
+        - [ntp, pc, "NTP reply (T2, T3)", res]
+    - t: Arrival, T4, and the math
+      tag: compute
+      d: The client notes arrival, T4 = 10:00:00.041. Delay is 41 minus 1 = 40 ms. Offset is ((-80) + (-120)) divided by 2 = -100 ms. The client clock is 100 ms fast.
+      f: {Delay: "40 ms", Offset: "-100 ms"}
+      on: [pc]
+    - t: Adjust slowly
+      tag: adjust
+      d: The client slows its clock a little until it matches, called slewing, instead of jumping back. It repeats the exchange every few minutes.
+      on: [pc]
+      good: Clocks that jump backwards break software that assumes time only moves forward. That is why NTP prefers to slew.
+  quiz:
+    - type: fill
+      q: "NTP uses UDP port ____."
+      a: ["123"]
+      why: Both client and server use port 123 by default.
+    - q: What is a stratum 1 server?
+      opts: ["A server connected directly to a reference clock such as GPS", "The slowest server", "A client"]
+      a: 0
+      why: Stratum 0 is the reference clock itself.
+  refs:
+    - "IETF. [RFC 5905, NTPv4](https://www.rfc-editor.org/rfc/rfc5905)."
+
+- id: ethernet
+  name: Ethernet
+  full: Frames and switches
+  layer: 2
+  cat: core
+  transport: "-"
+  port: "none"
+  title: Ethernet, a switch learns where everyone is.
+  lede: On a local network, data travels in Ethernet frames addressed by MAC address. A switch learns which device sits on which port, then sends each frame only where it must go.
+  overview: |
+    A frame has a destination MAC, a source MAC, an **EtherType** that says what is inside, such as 0x0800 for IPv4, the payload and a checksum called the FCS. A switch keeps a **MAC address table**. It learns from source addresses, forwards known destinations to one port and floods unknown ones to all ports.
+  nodes:
+    a: [PC A, "aa:aa:aa:00:00:01", laptop, 0, 0]
+    b: [PC B, "bb:bb:bb:00:00:02", laptop, 0, 2]
+    sw: [Switch, MAC table, switch, 3, 1]
+    c: [Printer C, "cc:cc:cc:00:00:03", server, 6, 0]
+    d: [PC D, "dd:dd:dd:00:00:04", laptop, 6, 2]
+  links: [[a, sw], [b, sw], [c, sw], [d, sw]]
+  steps:
+    - t: A sends a frame to C
+      tag: learn
+      d: A sends a frame to C. The switch learns that A is on port 1. It does not know C yet.
+      f: {Dst MAC: "cc:cc:cc:00:00:03", Src MAC: "aa:aa:aa:00:00:01", EtherType: "0x0800 IPv4"}
+      p:
+        - [a, sw, "frame to cc:..:03", data]
+    - t: Flood
+      tag: flood
+      d: Unknown destination, so the switch floods the frame to every other port. B and D ignore it, because the MAC is not theirs.
+      p:
+        - [sw, b, "frame (flooded)", data]
+        - [sw, c, "frame (flooded)", data]
+        - [sw, d, "frame (flooded)", data]
+    - t: C replies
+      tag: learn
+      d: C answers A. The switch learns that C is on port 3. It already knows A, so it sends the reply only to port 1.
+      p:
+        - [c, sw, "frame to aa:..:01", data]
+        - [sw, a, "frame to A only", data]
+    - t: From now on, direct
+      tag: forward
+      d: Every frame between A and C now goes only to the right port. Entries age out after a few minutes if unused.
+      f: {MAC table: "A port 1, C port 3"}
+      p:
+        - [a, sw, "frame to C", data]
+        - [sw, c, "frame to C only", data]
+  quiz:
+    - q: What does a switch do with a frame for an unknown MAC address?
+      opts: ["Drops it", "Floods it to all other ports", "Sends it to the router"]
+      a: 1
+      why: Then it learns the location from the reply.
+    - type: fill
+      q: "The EtherType value for IPv4 is 0x____."
+      a: ["0800", "800"]
+      why: 0x86DD is IPv6 and 0x0806 is ARP.
+  refs:
+    - "Cisco. [How LAN switches work](https://www.cisco.com/c/en/us/support/docs/lan-switching/spanning-tree-protocol/10556-16.html)."
+
+- id: arp
+  name: ARP
+  full: Address Resolution Protocol
+  layer: 2
+  cat: core
+  transport: Ethernet
+  port: "none"
+  title: ARP, finding the MAC address for an IP.
+  lede: To send an IP packet on the local network, a device needs the MAC address of the next hop. ARP asks the whole network "who has this IP?" and the owner answers.
+  overview: |
+    An ARP request is a broadcast, "who has 192.168.1.1, tell 192.168.1.10". The owner replies directly. The result goes into an **ARP cache** for a few minutes.
+
+    ARP has no authentication. An attacker can send fake replies and pretend to be the gateway. This is **ARP spoofing**. Switches defend with Dynamic ARP Inspection.
+  nodes:
+    pc: [Laptop, "192.168.1.10", laptop, 0, 1]
+    sw: [Switch, "", switch, 3, 1]
+    gw: [Gateway, "192.168.1.1", router, 6, 0]
+    x: [Other device, "192.168.1.77", laptop, 6, 2]
+  links: [[pc, sw], [sw, gw], [sw, x]]
+  steps:
+    - t: Who has 192.168.1.1?
+      tag: request
+      d: The laptop wants to send to the internet, through the gateway. It broadcasts an ARP request to ff:ff:ff:ff:ff:ff.
+      f: {Dst MAC: "ff:ff:ff:ff:ff:ff", Question: "who has 192.168.1.1"}
+      p:
+        - [pc, sw, "ARP who has 192.168.1.1?", req]
+        - [sw, gw, "ARP request (broadcast)", req]
+        - [sw, x, "ARP request (broadcast)", req]
+    - t: The owner replies
+      tag: reply
+      d: Only the gateway owns that IP. It replies straight to the laptop with its MAC address.
+      p:
+        - [gw, pc, "ARP 192.168.1.1 is at 3c:22:fb:00:00:01", res]
+    - t: Cache and send
+      tag: cache
+      d: The laptop saves the answer in its ARP cache and sends the IP packet in a frame to that MAC.
+      f: {ARP cache: "192.168.1.1 at 3c:22:fb:00:00:01"}
+      p:
+        - [pc, gw, "IP packet in frame to 3c:22:fb:..", data]
+    - t: A spoofing attempt
+      tag: attack
+      d: Another device sends unasked ARP replies that say "192.168.1.1 is at my MAC". If the laptop accepts them, its traffic goes through the attacker. Dynamic ARP Inspection on the switch blocks these replies.
+      p:
+        - [x, pc, "fake ARP 192.168.1.1 is at 66:66:..", bad]
+      bad: [x]
+  quiz:
+    - q: Where does an ARP request go?
+      opts: ["Only to the gateway", "To every device on the local network, as a broadcast", "To a DNS server"]
+      a: 1
+      why: The sender does not know the target MAC yet.
+    - type: fill
+      q: Sending fake ARP replies to redirect traffic is called ARP ____.
+      a: ["spoofing", "poisoning"]
+      why: Also called ARP cache poisoning.
+  refs:
+    - "IETF. [RFC 826, ARP](https://www.rfc-editor.org/rfc/rfc826)."
+
+- id: pppoe
+  name: PPPoE
+  full: Broadband logins
+  layer: 2
+  cat: core
+  transport: Ethernet
+  port: "none"
+  title: PPPoE, a home router logs in to the ISP.
+  lede: Many DSL and fibre connections use PPPoE. The router finds the ISP access concentrator, opens a session, logs in with a username and password, and gets a public IP.
+  overview: |
+    PPPoE puts PPP, an old point to point protocol, inside Ethernet frames. Discovery has four packets, **PADI, PADO, PADR, PADS**. Then PPP negotiates the link with **LCP**, authenticates with **PAP** or **CHAP**, and gets an IP with **IPCP**. PPPoE adds 8 bytes of headers, so the MTU drops from 1500 to 1492.
+  nodes:
+    rtr: [Home router, PPPoE client, router, 0, 1]
+    ont: [Fibre box, ONT, switch, 3, 1]
+    bras: [Access concentrator, ISP BRAS, server, 6, 1]
+    radius: [ISP RADIUS, accounts, key, 8, 1]
+  links: [[rtr, ont], [ont, bras], [bras, radius]]
+  steps:
+    - t: PADI, looking for a server
+      tag: discovery
+      d: The router broadcasts a PPPoE Active Discovery Initiation.
+      p:
+        - [rtr, bras, "PADI (broadcast)", req]
+    - t: PADO, an offer
+      tag: discovery
+      d: The access concentrator answers with an Offer and its name.
+      p:
+        - [bras, rtr, "PADO", res]
+    - t: PADR and PADS, a session
+      tag: discovery
+      d: The router requests a session. The concentrator confirms it with a session id.
+      f: {Session ID: "0x2a1f"}
+      p:
+        - [rtr, bras, "PADR", req]
+        - [bras, rtr, "PADS session 0x2a1f", res]
+    - t: Log in with CHAP
+      tag: auth
+      d: LCP sets link options. Then CHAP authentication. The concentrator sends a challenge, the router answers with a hash of the challenge and password. The concentrator checks it with RADIUS.
+      p:
+        - [bras, rtr, "CHAP challenge", sec]
+        - [rtr, bras, "CHAP response (hash)", sec]
+        - [bras, radius, "Access-Request", sec]
+        - [radius, bras, "Access-Accept", sec]
+    - t: Get an IP with IPCP
+      tag: ipcp
+      d: IPCP gives the router its public IP and DNS servers. The router is online.
+      f: {Public IP: 198.51.100.7, MTU: "1492"}
+      p:
+        - [bras, rtr, "IPCP 198.51.100.7", res]
+  quiz:
+    - type: num
+      q: What is the usual MTU on a PPPoE link, in bytes?
+      a: 1492
+      tol: 0
+      unit: bytes
+      why: 1500 minus 8 bytes of PPPoE and PPP headers.
+    - q: Which PPP part assigns the IP address?
+      opts: ["LCP", "IPCP", "CHAP"]
+      a: 1
+      why: LCP sets up the link, CHAP authenticates, IPCP configures IP.
+  refs:
+    - "IETF. [RFC 2516, PPPoE](https://www.rfc-editor.org/rfc/rfc2516)."

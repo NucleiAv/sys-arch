@@ -1,0 +1,204 @@
+short: Linux and servers
+title: Linux and servers for beginners
+time: about 50 minutes
+tags: [Linux, SSH, processes, ports]
+lede: Almost every server and container runs Linux. Learn the few commands and ideas you need to log in, find what is running, read logs and fix the most common problems.
+
+idea: |
+  A **server** is a computer that runs programs for other computers. Most servers run **Linux**, a free operating system. You usually have no screen. You control it with text commands in a **shell**, over a secure connection called **SSH**.
+
+  On a server, your app is a **process**, a running program. It listens on a **port**, a numbered door, such as port 443. A **service manager**, usually **systemd**, starts the process at boot and restarts it if it crashes.
+
+  !eli5 A server is a kitchen with no lights you can see. You talk to the chef through a speaking tube, that is SSH. Each cook is a process. Each serving window has a number, that is the port. The head chef, systemd, wakes the cooks in the morning and replaces any cook who faints.
+
+scenes:
+  - title: Fixing a website that is down
+    stats: [Command, What you learn]
+    nodes:
+      me: {label: Your laptop, x: 0, y: 1, kind: box}
+      srv: {label: Linux server, x: 3, y: 1, kind: def, tag: web-1}
+      app: {label: App process, x: 5, y: 0, kind: raised, tag: port 8080}
+      log: {label: Logs, x: 5, y: 2, kind: raised, tag: journald}
+    links: [[me, srv], [srv, app], [srv, log]]
+    steps:
+      - title: Log in
+        text: "`ssh deploy@web-1` opens a secure shell on the server, using your SSH key."
+        on: [me, srv]
+        flow: [[me, srv, pen]]
+        stats: [ssh, You are in]
+      - title: Is it running?
+        text: "`systemctl status shop` says the service is failed. The app process is not running."
+        on: [srv, app]
+        flow: [[srv, app, atk]]
+        mark: {app: bad}
+        stats: [systemctl status, It crashed]
+      - title: Read the logs
+        text: "`journalctl -u shop -n 50` shows the last 50 log lines. The app could not read its config file."
+        on: [srv, log]
+        flow: [[srv, log, ink], [log, srv, def]]
+        stats: [journalctl, Config error]
+      - title: Fix and restart
+        text: "You fix the config and run `sudo systemctl restart shop`. Then `ss -tlnp` shows the app listening on port 8080 again."
+        on: [srv, app]
+        flow: [[srv, app, def]]
+        mark: {app: ok}
+        stats: [restart, Back online]
+
+terms:
+  - [Shell, "A program that reads your typed commands and runs them, such as bash."]
+  - [SSH, "Secure Shell. An encrypted way to log in to another computer, usually on port 22."]
+  - [Process, "A running program with an id, called a PID."]
+  - [Port, "A number from 0 to 65535 that names one door for network traffic on a machine."]
+  - [systemd, "The service manager on most Linux systems. It starts, stops and restarts services."]
+  - [root, "The all powerful user. Use `sudo` to run one command as root."]
+  - [Permissions, "Rules about who may read, write or run each file."]
+  - [Environment variable, "A named value that a process can read, such as `DATABASE_URL`."]
+
+how: |
+  ### Ten commands to start with
+
+  | Command | What it does |
+  | --- | --- |
+  | `ssh user@host` | Log in to a server |
+  | `ls -la` | List files with details |
+  | `cd /var/log` | Change folder |
+  | `cat file`, `less file`, `tail -f file` | Read a file, page through it, follow new lines |
+  | `ps aux`, `top` | List processes, see CPU and memory live |
+  | `systemctl status name` | Check a service |
+  | `journalctl -u name` | Read a service's logs |
+  | `ss -tlnp` | Show which processes listen on which ports |
+  | `curl -I http://localhost:8080` | Send a test HTTP request |
+  | `df -h`, `free -h` | Disk space and memory |
+
+  ### File permissions
+
+  `ls -l` shows something like `-rwxr-x---`. The three groups are owner, group and others. `r` is read, `w` is write, `x` is run. `chmod 600 key.pem` lets only the owner read and write the file. SSH refuses private keys that others can read.
+
+  ### SSH keys, not passwords
+
+  1. Make a key pair on your laptop with `ssh-keygen -t ed25519`.
+  2. Put the **public** key in `~/.ssh/authorized_keys` on the server.
+  3. Keep the **private** key only on your laptop.
+  4. Turn off password login on the server.
+
+  ### A service file
+
+  ```
+  # /etc/systemd/system/shop.service
+  [Unit]
+  Description=Shop app
+  After=network.target
+
+  [Service]
+  User=shop
+  Environment=PORT=8080
+  ExecStart=/usr/bin/node /opt/shop/server.js
+  Restart=always
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+  `Restart=always` makes systemd start the app again if it crashes. `User=shop` runs it as a normal user, not root.
+
+  !key Ports below 1024 need extra rights. So apps often listen on a high port, such as 8080, and a reverse proxy like Nginx listens on 80 and 443.
+
+diagrams:
+  - type: layers
+    title: What to check when a site is down, in order
+    attack: a broken website
+    layers:
+      - ["Can you reach the server?", "ping or ssh", "pass"]
+      - ["Is the service running?", "systemctl status", "pass"]
+      - ["What do the logs say?", "journalctl or log files", "stop"]
+      - ["Is it listening on the port?", "ss -tlnp", "partial"]
+      - ["Is the disk full or memory gone?", "df -h and free -h", "partial"]
+    caption: Work from the outside in. Most problems show up in the logs.
+
+life:
+  - ["The disk that filled up", "A server stopped writing orders. `df -h` showed the disk 100 percent full of old logs. Log rotation, which deletes old logs on a schedule, fixed it for good."]
+  - ["Running as root", "An app ran as root. A bug let an attacker run commands, and they owned the whole machine. Running the app as a normal user would have limited the damage."]
+
+tradeoffs:
+  - ["SSH keys", "Strong, no passwords to guess.", "You must protect and rotate keys."]
+  - ["Password login", "Easy.", "Bots try to guess passwords all day."]
+  - ["Logging in to fix servers by hand", "Quick for one problem.", "Changes are not recorded, servers drift apart. Prefer automation."]
+
+mistakes:
+  - Running apps as root.
+  - Leaving password SSH login on.
+  - Private keys that other users can read.
+  - No log rotation, so disks fill up.
+  - Fixing production by hand and never writing it down.
+
+quiz:
+  - type: fill
+    q: "To log in to server web-1 as user deploy, run `____ deploy@web-1`."
+    a: ["ssh"]
+    why: SSH gives you an encrypted shell on the server.
+  - q: Which command shows which process listens on port 8080?
+    opts: ["df -h", "ss -tlnp", "chmod 600"]
+    a: 1
+    why: ss lists sockets. -t TCP, -l listening, -n numbers, -p process.
+  - type: fill
+    q: "To restart the service called shop with systemd, run `sudo systemctl ____ shop`."
+    a: ["restart"]
+    why: start, stop, restart and status are the common actions.
+  - q: What does `chmod 600 key.pem` do?
+    opts: ["Lets everyone read the key", "Lets only the owner read and write the file", "Deletes the file"]
+    a: 1
+    why: 6 is read plus write for the owner. 0 means nothing for group and others.
+  - q: Which line makes systemd start the app again after a crash?
+    opts: ["After=network.target", "Restart=always", "WantedBy=multi-user.target"]
+    a: 1
+    why: Restart controls what happens when the process exits.
+
+interview:
+  - q: A web app on a Linux server is not responding. How do you investigate?
+    keys:
+      - ["Check you can reach the server and log in", [ping, ssh, reach, connect]]
+      - ["Check the service status", [systemctl, status, running, process, ps]]
+      - ["Read the logs", [log, journalctl, tail]]
+      - ["Check ports and test locally", [port, ss, netstat, curl, listen]]
+      - ["Check resources, disk, memory, CPU", [disk, memory, cpu, df, free, top]]
+    a: |
+      I work from the outside in. First I check I can reach and SSH to the server. Then `systemctl status` tells me if the service is running. I read the last log lines with `journalctl -u app` or the app's log file, because most failures say why there. I check that the process listens on the right port with `ss -tlnp` and test it locally with `curl localhost:8080`, which tells me if the problem is the app or the network in front of it. Finally I check disk with `df -h`, memory with `free -h` and load with `top`, since a full disk or memory pressure often looks like an app bug.
+    fb: Testing locally with curl to split "app problem" from "network problem" is a strong debugging habit to mention.
+
+desk:
+  title: Harden a new server
+  lede: You just got a fresh Linux server for a small app. Make it safe and reliable.
+  situation: |
+    **Cloudnest** gave you a new Ubuntu server. Password login is on, the app runs as root from a terminal window, and logs are never deleted.
+  rounds:
+    - title: Round 1. Fix the risks
+      items:
+        - type: sort
+          q: Match each problem to its fix.
+          rows:
+            - ["Password SSH login", "Use SSH keys and turn off passwords"]
+            - ["App runs as root", "Create a normal user for the app"]
+            - ["App started by hand in a terminal", "Run it as a systemd service with Restart=always"]
+            - ["Logs grow forever", "Set up log rotation"]
+          opts: ["Use SSH keys and turn off passwords", "Create a normal user for the app", "Run it as a systemd service with Restart=always", "Set up log rotation"]
+          why: Each fix removes a common cause of breaches or outages.
+    - title: Round 2. Commands
+      items:
+        - type: fill
+          q: "Make a modern SSH key pair on your laptop with `ssh-keygen -t ____`."
+          a: ["ed25519"]
+          why: Ed25519 keys are short, fast and strong.
+        - type: fill
+          q: "To follow new lines of a log file as they arrive, run `tail ____ app.log`."
+          a: ["-f"]
+          why: -f means follow.
+  card: |
+    - ssh, systemctl, journalctl, ss, curl, df, free.
+    - Keys not passwords, never run apps as root.
+    - systemd with Restart=always.
+    - Check from the outside in.
+
+refs:
+  - "Ubuntu. [The Linux command line for beginners](https://ubuntu.com/tutorials/command-line-for-beginners)."
+  - "systemd. [systemd.service manual](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)."
+  - "OpenSSH. [ssh-keygen manual](https://man.openbsd.org/ssh-keygen)."

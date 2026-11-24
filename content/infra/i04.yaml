@@ -1,0 +1,238 @@
+short: GitHub Actions and CI/CD
+title: GitHub Actions, continuous integration and delivery
+time: about 55 minutes
+tags: [CI, CD, workflows, YAML]
+lede: Let a robot test every change and ship it when it is good. Learn CI and CD, and write GitHub Actions workflows step by step.
+
+idea: |
+  **Continuous integration**, or CI, means every change is built and tested automatically, many times a day, as soon as it is pushed. Problems show up in minutes, not weeks.
+
+  **Continuous delivery**, or CD, means every change that passes CI is ready to release with one click. **Continuous deployment** goes one step further. It releases every passing change automatically.
+
+  **GitHub Actions** is the CI/CD service built into GitHub. You describe the work in a **workflow** file written in YAML. GitHub runs it on a fresh machine, called a **runner**, when an event happens, such as a push or a pull request.
+
+  !eli5 A bakery has a taster at the door. Every new cake goes to the taster first. If it tastes good, it goes on the shelf. If not, it goes back to the baker with a note. CI is the taster. CD is the delivery van that takes good cakes to the shops.
+
+scenes:
+  - title: A pull request runs the pipeline
+    stats: [Stage, Result]
+    nodes:
+      dev: {label: Developer, x: 0, y: 1, kind: box}
+      gh: {label: GitHub, x: 2, y: 1, kind: def, tag: event}
+      run: {label: Runner, x: 4, y: 1, kind: raised, tag: fresh machine}
+      reg: {label: Image registry, x: 6, y: 0, kind: raised}
+      prod: {label: Production, x: 6, y: 2, kind: ok}
+    links: [[dev, gh], [gh, run], [run, reg], [run, prod]]
+    steps:
+      - title: An event
+        text: The developer pushes to a pull request. The event matches `on pull_request` in the workflow file.
+        on: [dev, gh]
+        flow: [[dev, gh, ink]]
+        stats: [Trigger, started]
+      - title: Build and test
+        text: A runner starts, checks out the code, installs dependencies, runs the linter and the tests.
+        on: [gh, run]
+        flow: [[gh, run, ink]]
+        stats: [CI, running]
+      - title: A test fails
+        text: One test fails. The runner reports a red cross on the pull request. Merging is blocked by branch protection. The developer fixes it and pushes again.
+        on: [run, gh]
+        flow: [[run, gh, atk]]
+        mark: {run: bad}
+        stats: [CI, failed]
+      - title: Green, then deploy
+        text: After merging to main, another workflow builds a container image, pushes it to the registry and deploys it.
+        on: [run, reg, prod]
+        flow: [[run, reg, def], [run, prod, def]]
+        mark: {prod: ok}
+        stats: [CD, deployed]
+
+terms:
+  - [Workflow, "A YAML file in `.github/workflows/` that describes automated work."]
+  - [Event, "What starts a workflow, such as push, pull_request, schedule or workflow_dispatch."]
+  - [Job, "A group of steps that run on one runner. Jobs run in parallel unless one needs another."]
+  - [Step, "One command or one action inside a job."]
+  - [Action, "A reusable step, such as `actions/checkout`."]
+  - [Runner, "The machine that runs a job. GitHub hosts Linux, Windows and macOS runners, or you can host your own."]
+  - [Secret, "An encrypted value, such as an API key, used in a workflow as `${{ secrets.NAME }}`."]
+  - [Matrix, "Runs the same job for several versions or systems."]
+  - [Artifact, "A file that a job saves, such as a test report or a build."]
+
+how: |
+  ### A CI workflow for a Node.js app
+
+  ```
+  # .github/workflows/ci.yml
+  name: CI
+  on:
+    pull_request:
+    push:
+      branches: [main]
+
+  jobs:
+    test:
+      runs-on: ubuntu-latest
+      strategy:
+        matrix:
+          node: [20, 22]
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with:
+            node-version: ${{ matrix.node }}
+            cache: npm
+        - run: npm ci
+        - run: npm run lint
+        - run: npm test
+  ```
+
+  Read it top down. The name. The events that start it. One job called `test` that runs on Ubuntu, twice, once for Node 20 and once for Node 22. Then the steps. Check out the code, install Node, install packages, lint, test.
+
+  ### A deploy job that waits for tests
+
+  ```
+    deploy:
+      needs: test
+      if: github.ref == 'refs/heads/main'
+      runs-on: ubuntu-latest
+      environment: production
+      permissions:
+        id-token: write
+        contents: read
+      steps:
+        - uses: actions/checkout@v4
+        - run: ./scripts/deploy.sh
+  ```
+
+  `needs: test` means deploy starts only after test passes. `environment: production` can require a person to approve. `id-token: write` lets the job get a short lived cloud login with **OIDC**, so you do not store long lived cloud keys as secrets.
+
+  ### Good CI habits
+
+  1. Keep CI fast, under about 10 minutes. Use caches.
+  2. Run the same checks on every pull request.
+  3. Pin actions to a version or a commit hash.
+  4. Give the workflow the smallest permissions it needs.
+  5. Never print secrets in logs.
+
+  !warn Workflows that run on pull requests from forks can be abused to steal secrets. GitHub does not pass secrets to fork pull requests by default. Be careful with the `pull_request_target` event.
+
+diagrams:
+  - type: flow
+    title: A typical pipeline
+    nodes: [["Push or PR", "box"], ["Lint and test", "def"], ["Build image", "raised"], ["Deploy to staging", "raised"], ["Approve, deploy to production", "def"]]
+    edges: ["", "", "", ""]
+    caption: Each stage runs only if the stage before it passed.
+
+life:
+  - ["Tests that run on every change", "A team that ran tests once a week found 30 bugs at a time and spent days on them. With CI on every pull request, each bug showed up minutes after it was written."]
+  - ["A leaked cloud key", "A workflow printed environment values in a debug step. The cloud key appeared in public logs. The team switched to OIDC with short lived credentials, so there was no long lived key to leak."]
+
+tradeoffs:
+  - ["Continuous deployment", "Fastest feedback, small releases.", "Needs strong tests, monitoring and quick rollback."]
+  - ["Continuous delivery with approval", "A person chooses the moment.", "Slower, people become a bottleneck."]
+  - ["GitHub hosted runners", "No servers to run.", "Limited power, cost for heavy use."]
+  - ["Self hosted runners", "Fast machines, access to private networks.", "You must secure and update them."]
+
+mistakes:
+  - Slow CI that people skip.
+  - Long lived cloud keys stored as secrets when OIDC is possible.
+  - Workflows with write permission to everything.
+  - Using actions from unknown authors without pinning a version.
+  - Tests that fail randomly, so people ignore red builds.
+
+quiz:
+  - type: fill
+    q: "Workflow files live in the folder `.github/____/`."
+    a: ["workflows"]
+    why: GitHub reads every YAML file in .github/workflows.
+  - q: "What does `needs: test` do on a job?"
+    opts: ["Installs test tools", "The job starts only after the test job succeeds", "Runs tests twice"]
+    a: 1
+    why: needs creates an order between jobs.
+  - q: How many times does this job run?
+    info: |
+      ```
+      strategy:
+        matrix:
+          os: [ubuntu-latest, windows-latest]
+          python: ["3.11", "3.12", "3.13"]
+      ```
+    opts: ["2", "3", "6"]
+    a: 2
+    why: 2 systems times 3 versions is 6 combinations.
+  - type: fill
+    q: "In a workflow you read a secret named API_KEY with `${{ ____.API_KEY }}`."
+    a: ["secrets"]
+    why: The secrets context holds encrypted repository or environment secrets.
+  - q: What is the difference between continuous delivery and continuous deployment?
+    opts: ["None", "Delivery keeps every change ready to release, deployment releases every passing change automatically", "Deployment only runs tests"]
+    a: 1
+    why: The difference is whether a person presses the release button.
+
+interview:
+  - q: Design a CI/CD pipeline for a web service on GitHub.
+    keys:
+      - ["Run lint and tests on every pull request", [pull request, lint, test, every]]
+      - ["Branch protection that requires passing checks", [protect, required, block merge]]
+      - ["Build an artifact or container image once and promote it", [image, artifact, build once, promote, registry]]
+      - ["Deploy to staging then production, with approval or automatic gates", [staging, production, approv, environment, gate]]
+      - ["Secure secrets with OIDC and least privilege, plus rollback", [oidc, secret, least privilege, permission, rollback, roll back]]
+    a: |
+      On every pull request a workflow lints, runs unit tests and a security scan, and branch protection blocks merging until they pass. On merge to main, a workflow builds one container image tagged with the commit hash and pushes it to a registry. It deploys that exact image to staging and runs smoke tests. Then it deploys the same image to production, either automatically or after an approval on the production environment. The workflow logs in to the cloud with OIDC and short lived credentials and has minimal permissions. Deploys are rolling or canary, and a rollback is a redeploy of the previous image tag.
+    fb: The key phrase is "build once, promote the same artifact". Rebuilding for each environment can ship something you never tested.
+
+desk:
+  title: Fix a broken workflow
+  lede: A team's first GitHub Actions workflow does not work as they want. Read the YAML and fix it.
+  situation: |
+    **Pocketbook** wants tests on every pull request and a deploy only from main after tests pass.
+  rounds:
+    - title: Round 1. Read the workflow
+      info: |
+        ```
+        on:
+          push:
+            branches: [main]
+        jobs:
+          test:
+            runs-on: ubuntu-latest
+            steps:
+              - run: npm test
+          deploy:
+            runs-on: ubuntu-latest
+            steps:
+              - run: ./deploy.sh
+        ```
+      items:
+        - q: Why do tests not run on pull requests?
+          opts: ["The runner is wrong", "The on section has only push to main, no pull_request event", "npm is missing"]
+          a: 1
+          why: Add pull_request under on.
+        - q: Why does npm test fail with "no package.json"?
+          opts: ["The code was never checked out, a checkout step is missing", "Node is too new", "Tests are broken"]
+          a: 0
+          why: Runners start empty. Add actions/checkout first.
+        - q: Why can deploy run even when tests fail?
+          opts: ["deploy has no needs test, so the jobs run in parallel", "deploy.sh ignores errors", "It cannot"]
+          a: 0
+          why: Without needs, jobs start at the same time.
+    - title: Round 2. Write the fix
+      items:
+        - type: fill
+          q: "Add this line under the deploy job so it waits for tests. `needs: ____`"
+          a: ["test", "[test]"]
+          why: needs takes the job id.
+        - type: open
+          q: Deploy must also run only on main, not on pull requests. What line do you add?
+          a: "Add if github.ref == 'refs/heads/main' to the deploy job, or put deploy in a separate workflow that runs only on push to main."
+  card: |
+    - CI on every pull request, fast.
+    - needs for order, if for conditions.
+    - Build once, promote the same image.
+    - OIDC instead of long lived keys.
+
+refs:
+  - "GitHub Docs. [Understanding GitHub Actions](https://docs.github.com/en/actions/about-github-actions/understanding-github-actions)."
+  - "GitHub Docs. [Workflow syntax for GitHub Actions](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions)."
+  - "GitHub Docs. [About security hardening with OpenID Connect](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect)."
+  - "Martin Fowler. [Continuous integration](https://martinfowler.com/articles/continuousIntegration.html)."

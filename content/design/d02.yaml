@@ -133,7 +133,7 @@ diagrams:
     caption: Persist before you acknowledge. Deliver after you persist. That order is what makes "never lose a message" true.
 
 deep:
-  - ["Ordering", "Give each message a per chat increasing id, from the chat's partition leader or a Snowflake style id, lesson 15. Clients sort by it. Order across different chats does not matter."]
+  - ["Ordering", "Give each message a per chat increasing id, from the chat's partition leader or a Snowflake style id, lesson 3.4. Clients sort by it. Order across different chats does not matter."]
   - ["Exactly once feel", "Delivery is at least once. The client message id lets the server drop duplicates on retry, and the receiver drops ids it already has."]
   - ["Groups", "For a 500 member group, the chat service looks up members and fans out to each member's connection server. For huge broadcast channels, switch to members pulling recent messages instead of pushing to everyone."]
   - ["Multiple devices", "Each device is its own connection and keeps its own last synced id. Read receipts are stored per user, so reading on the laptop clears the phone."]

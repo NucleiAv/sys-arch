@@ -133,7 +133,7 @@ quiz:
   - type: fill
     q: The status code that means "slow down, you sent too many requests" is ____.
     a: ["429"]
-    why: 429 means Too Many Requests. Rate limiters send it. You will meet it again in lesson 14.
+    why: 429 means Too Many Requests. Rate limiters send it. You will meet it again in lesson 3.3.
   - type: fill
     q: The S in HTTPS comes from a layer called ____.
     a: ["TLS", "SSL", "tls 1.3"]
@@ -204,7 +204,7 @@ desk:
           why: You can cut the number of trips, or make each trip shorter by moving closer. Good teams do both.
         - type: open
           q: Your manager asks for one change this week. Which one and why?
-          a: "Reuse connections and join the calls. It is a code change, it needs no new servers, and it removes most of the trips. A new region is the bigger win later, but it brings data copying problems you meet in lesson 21."
+          a: "Reuse connections and join the calls. It is a code change, it needs no new servers, and it removes most of the trips. A new region is the bigger win later, but it brings data copying problems you meet in lesson 5.1."
   card: |
     - Latency is mostly trips times distance.
     - Reuse connections. Batch calls.

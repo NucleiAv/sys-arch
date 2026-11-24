@@ -1,0 +1,68 @@
+kind: practice
+title: Level 4 practice, running it for real
+time: about 40 minutes
+lede: Mixed questions on failure, monitoring, security and service boundaries. Several questions show code or config.
+
+rounds:
+  - title: Round 1. Failure
+    items:
+      - q: What is missing in this call?
+        info: |
+          ```
+          resp = requests.get("http://pricing/api/price?sku=42")
+          ```
+        opts: ["A header", "A timeout, so a slow pricing service cannot block this thread for a long time", "A loop"]
+        a: 1
+        why: "Every network call needs a timeout, such as timeout=0.3."
+      - type: fill
+        q: A pattern that stops calling a failing service for a while, then tests it again, is a circuit ____.
+        a: ["breaker"]
+        why: Closed, open, half open.
+      - type: num
+        q: Two layers each try a call up to 3 times. How many calls can reach the bottom service for one user request?
+        a: 9
+        tol: 0
+        unit: calls
+        why: 3 times 3 is 9. Retry at one layer only.
+  - title: Round 2. Signals
+    items:
+      - type: sort
+        q: Which signal answers each question?
+        rows:
+          - ["Is the error rate going up right now?", "Metrics"]
+          - ["Which service made this one request slow?", "Traces"]
+          - ["What exact error did order 81 get?", "Logs"]
+        opts: ["Metrics", "Traces", "Logs"]
+        why: Metrics say what, traces say where, logs say why.
+      - type: num
+        q: An SLO of 99.9 percent over 30 days. About how many minutes of failure does the error budget allow?
+        a: 43
+        tol: 2
+        unit: minutes
+        why: 0.1 percent of 43,200 minutes is about 43 minutes.
+  - title: Round 3. Security
+    items:
+      - q: What is wrong with this endpoint?
+        info: |
+          ```
+          @app.get("/invoices/{id}")
+          def invoice(id, user = Depends(logged_in_user)):
+              return db.get_invoice(id)
+          ```
+        opts: ["Nothing, the user is logged in", "It does not check that the invoice belongs to the user", "It should use POST"]
+        a: 1
+        why: That is an IDOR. Check ownership on every object.
+      - type: fill
+        q: Passwords should be stored as slow salted hashes, for example with bcrypt or ____.
+        a: ["argon2", "scrypt", "argon2id"]
+        why: Slow salted hashes resist cracking.
+  - title: Round 4. Boundaries
+    items:
+      - type: open
+        q: A team of 6 engineers wants to start a new product with 25 microservices. What do you advise?
+        a: "Start with a well structured modular monolith with clear internal boundaries and one deploy pipeline. Split out a service later when there is a real reason, such as a team that needs to deploy on its own, a part with very different scaling, or different security needs. 25 services would bring network failures, tracing, many pipelines and data consistency problems that the team does not need yet."
+card: |
+  - Timeouts, retries with backoff, breakers, bulkheads.
+  - Page on symptoms with SLO burn.
+  - Authenticate once, authorize every object.
+  - Monolith first, split for a reason.

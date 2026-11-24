@@ -1,0 +1,236 @@
+short: REST in depth
+title: REST APIs in depth, HTTP the way it was meant
+time: about 55 minutes
+tags: [REST, HTTP methods, headers, CORS]
+lede: REST is the most common way to build web APIs. Learn the ideas behind it, the HTTP methods and headers it uses, how caching and CORS work, and how to describe an API with OpenAPI.
+
+idea: |
+  **REST** means Representational State Transfer. Roy Fielding described it in his PhD thesis in 2000. It is a set of rules for web APIs, not a product or a library.
+
+  In REST, everything is a **resource**, a thing with a name. A user, an order or a photo is a resource. Each resource has a **URL**, such as `/orders/42`. You do things to resources with the normal HTTP **methods**, such as `GET` to read and `DELETE` to remove. The server sends back a **representation** of the resource, usually as JSON.
+
+  !eli5 A library has shelves with labels. The label is the URL. The book is the resource. You can ask to read a book, add a new book or remove a book. You always use the same few actions, whatever the book is. That is REST.
+
+scenes:
+  - title: One REST request with caching
+    stats: [Step, Status, Bytes of body]
+    nodes:
+      app: {label: Mobile app, x: 0, y: 1, kind: box, tag: client}
+      cdn: {label: Cache, x: 2, y: 0, kind: raised, tag: browser or CDN}
+      api: {label: Orders API, x: 4, y: 1, kind: def}
+      db: {label: Database, x: 6, y: 1, kind: raised}
+    links: [[app, cdn], [cdn, api], [app, api], [api, db]]
+    steps:
+      - title: Read a resource
+        text: "The app sends `GET /orders/42` with `Accept: application/json` and an `Authorization` header."
+        on: [app, api]
+        flow: [[app, api, ink]]
+        stats: [Request, waiting, "0"]
+      - title: The server answers
+        text: "The API reads order 42 and sends `200 OK` with the JSON body. It adds `ETag: \"v7\"` to name this version, and `Cache-Control: max-age=60`."
+        on: [api, db, app]
+        flow: [[api, db, ink], [db, api, def], [api, app, def]]
+        stats: [Response, "200", "812"]
+      - title: Ask again later
+        text: "Two minutes later the cached copy is old. The app asks again with `If-None-Match: \"v7\"`, which means send it only if it changed."
+        on: [app, api]
+        flow: [[app, api, ink]]
+        stats: [Revalidate, waiting, "0"]
+      - title: Nothing changed
+        text: The version is still v7. The server answers `304 Not Modified` with no body. The app uses its saved copy. You save bandwidth and time.
+        on: [api, app]
+        flow: [[api, app, def]]
+        mark: {app: ok}
+        stats: [Response, "304", "0"]
+
+terms:
+  - [Resource, "A thing with a name and a URL, such as `/users/7`."]
+  - [Representation, "The form the server sends a resource in, usually JSON."]
+  - [JSON, "JavaScript Object Notation. Text that holds data as keys and values, such as `{\"id\": 42}`."]
+  - [Endpoint, "One URL and method pair, such as `POST /orders`."]
+  - [Header, "A name and value line sent with a request or response, such as `Content-Type: application/json`."]
+  - [Safe method, "A method that does not change data. GET, HEAD and OPTIONS."]
+  - [Idempotent method, "Sending it many times has the same effect as once. GET, HEAD, PUT, DELETE and OPTIONS."]
+  - [Stateless, "Each request carries everything the server needs. The server keeps no session for the conversation."]
+  - [ETag, "A tag that names one version of a resource. Used to check if it changed."]
+  - [CORS, "Cross-Origin Resource Sharing. Rules that let a web page call an API on a different origin."]
+  - [OpenAPI, "A standard file format that describes a REST API, its paths, inputs and outputs."]
+
+how: |
+  ### The REST constraints
+
+  Fielding listed six rules. An API that follows them is "RESTful".
+
+  1. **Client and server.** They are separate and change separately.
+  2. **Stateless.** Each request has all the information that the server needs.
+  3. **Cacheable.** Responses say if and how long you can keep them.
+  4. **Uniform interface.** Same methods, URLs for resources, self describing messages.
+  5. **Layered system.** Proxies, caches and gateways can sit in the middle.
+  6. **Code on demand.** Optional. The server can send code, such as JavaScript.
+
+  ### The methods
+
+  | Method | Use | Safe | Idempotent | Usual success code |
+  | --- | --- | --- | --- | --- |
+  | GET | Read | Yes | Yes | 200 |
+  | POST | Create, or run an action | No | No | 201 or 200 |
+  | PUT | Replace the whole resource | No | Yes | 200 or 204 |
+  | PATCH | Change part of a resource | No | Not always | 200 |
+  | DELETE | Remove | No | Yes | 204 |
+  | HEAD | Like GET, headers only | Yes | Yes | 200 |
+  | OPTIONS | Ask what is allowed | Yes | Yes | 204 |
+
+  ### A full request and response
+
+  ```
+  POST /v1/orders HTTP/1.1
+  Host: api.shop.example
+  Content-Type: application/json
+  Authorization: Bearer eyJhbGci...
+  Idempotency-Key: 6f1c2e
+
+  {"items": [{"sku": "TSHIRT-M", "qty": 2}]}
+
+  HTTP/1.1 201 Created
+  Location: /v1/orders/9812
+  Content-Type: application/json
+
+  {"id": 9812, "status": "pending", "total": 1998}
+  ```
+
+  ### Caching headers
+
+  - `Cache-Control: max-age=60` lets clients and caches keep it for 60 seconds.
+  - `Cache-Control: no-store` forbids any copy. Use it for private data.
+  - `ETag` and `If-None-Match` let a client ask "did it change?". The server answers `304` with no body if not.
+
+  ### CORS in plain words
+
+  A browser blocks a page on `shop.example` from reading responses from `api.other.example`, unless the API agrees. This is the **same origin policy**. For many requests, the browser first sends a **preflight**, an `OPTIONS` request. The API answers with headers like `Access-Control-Allow-Origin: https://shop.example`. CORS only affects browsers. It does not protect your API from other clients such as scripts.
+
+  ### Maturity, from not REST to REST
+
+  The Richardson maturity model has four levels. Level 0 sends everything to one URL. Level 1 has resources. Level 2 uses HTTP methods and status codes correctly. Level 3 adds links in responses, called **HATEOAS**. Most good public APIs are at level 2.
+
+  !key Describe your API in an **OpenAPI** file. Tools then make documentation, client libraries and tests from it.
+
+diagrams:
+  - type: flow
+    title: A CORS preflight
+    nodes: [["Page on shop.example", "box"], ["Browser sends OPTIONS", "raised"], ["API allows the origin", "def"], ["Browser sends the real request", "def"], ["Page reads the answer", "box"]]
+    edges: ["", "", "", ""]
+    caption: The browser does the checking. The API only says which origins and methods it allows.
+
+life:
+  - ["A GET that deleted data", "An old admin page used links like `GET /delete?id=5`. A search engine crawler followed every link and deleted many records. GET must never change data, because tools assume it is safe."]
+  - ["A news API saves bandwidth with ETags", "Phones refresh the headlines every minute. With ETags, most refreshes get `304 Not Modified` and no body. Data use dropped sharply."]
+  - ["The CORS error that was not a server bug", "A team saw the API work in a terminal with curl but fail in the browser. The API did not return `Access-Control-Allow-Origin` for the web app's origin. One header fixed it."]
+
+tradeoffs:
+  - ["PUT to replace", "Simple and idempotent.", "Client must send the whole resource."]
+  - ["PATCH to change part", "Small requests.", "Rules for merging changes must be clear."]
+  - ["Strict REST with HATEOAS links", "Clients can discover actions.", "More work, few clients use the links."]
+  - ["Pragmatic REST, level 2", "Clear and widely understood.", "Some actions do not map well to resources."]
+
+mistakes:
+  - Changing data with GET.
+  - Returning `200` for every error with a message in the body.
+  - Verbs in paths, such as `/createOrder`, instead of `POST /orders`.
+  - Fixing CORS errors with `Access-Control-Allow-Origin` set to all origins on an API that uses cookies.
+  - No version and no description file, so clients guess.
+
+quiz:
+  - q: Which methods are idempotent?
+    opts: ["POST and PATCH", "GET, PUT and DELETE", "Only GET"]
+    a: 1
+    why: Sending GET, PUT or DELETE twice has the same effect as once. POST can create two records.
+  - type: fill
+    q: "The response header that tells the client the URL of a newly created resource is ____."
+    a: ["Location", "location header"]
+    why: "`201 Created` usually comes with a `Location` header that points to the new resource."
+  - type: fill
+    q: The status code that means "not changed, use your saved copy" is ____.
+    a: ["304"]
+    why: 304 Not Modified has no body, so the client reuses its cached copy.
+  - q: Which tool enforces CORS rules?
+    opts: ["The database", "The browser", "The load balancer"]
+    a: 1
+    why: The browser checks the API's CORS headers. Scripts and servers do not apply CORS.
+  - q: What does this request do?
+    info: |
+      ```
+      curl -X PATCH https://api.shop.example/v1/orders/9812 \
+        -H "Content-Type: application/json" \
+        -d '{"status": "cancelled"}'
+      ```
+    opts: ["Creates a new order", "Changes only the status field of order 9812", "Deletes order 9812"]
+    a: 1
+    why: PATCH changes part of a resource. Only the field in the body changes.
+  - type: fill
+    q: "To send a request with the curl tool and choose the method, use the option `-X`. To add a header, use the option ____."
+    a: ["-H", "--header"]
+    why: "`-H` adds one header. You can repeat it for more headers."
+
+interview:
+  - q: What makes an API RESTful?
+    keys:
+      - ["Resources identified by URLs", [resource, url, uri, noun]]
+      - ["Standard HTTP methods with the right meaning", [get, post, put, delete, method, verb]]
+      - ["Stateless requests", [stateless]]
+      - ["Cacheable responses and status codes", [cache, status code, etag]]
+      - ["Uniform interface or the Fielding constraints, maybe HATEOAS", [uniform, fielding, constraint, hateoas, layered]]
+    a: |
+      REST comes from Roy Fielding's constraints. Resources have URLs, and clients act on them with standard HTTP methods, GET to read, POST to create, PUT or PATCH to change, DELETE to remove, with real status codes. Every request is stateless and carries its own authentication. Responses say if they are cacheable. The interface is uniform, so proxies and caches in the middle can understand it. Full REST also includes links in responses, HATEOAS, but most practical APIs stop at correct resources, methods and status codes.
+    fb: Naming statelessness and caching shows you know REST is more than "JSON over HTTP".
+  - q: Explain what happens when a browser page calls an API on another domain.
+    keys:
+      - ["Same origin policy blocks reading cross origin responses by default", [same origin, origin, block]]
+      - ["Browser sends an OPTIONS preflight for non simple requests", [preflight, options]]
+      - ["API answers with Access-Control-Allow headers", [access-control, allow-origin, allow origin, header]]
+      - ["Only browsers enforce it, it is not API security", [browser, not security, curl, server side, only the browser]]
+    a: |
+      The browser applies the same origin policy. For requests with custom headers or methods like PUT, it first sends an OPTIONS preflight with `Origin` and `Access-Control-Request-Method`. If the API answers with `Access-Control-Allow-Origin` for that origin and allows the method and headers, the browser sends the real request and lets the page read the response. Otherwise the page sees a CORS error. CORS is enforced only by browsers, so it is not a replacement for authentication on the API.
+    fb: The last sentence, CORS is not API security, is what interviewers hope you add.
+
+desk:
+  title: Review a bookstore API
+  lede: A bookstore team wrote its first REST API. Review the calls and fix them.
+  situation: |
+    **PageTurn** has these calls. `GET /getBooks`, `GET /books/delete?id=3`, `POST /books/7` to replace a book, and every error returns `200` with `{"ok": false}`.
+  rounds:
+    - title: Round 1. Fix the calls
+      items:
+        - type: sort
+          q: What should each call become?
+          rows:
+            - ["GET /getBooks", "GET /books"]
+            - ["GET /books/delete?id=3", "DELETE /books/3"]
+            - ["POST /books/7 to replace a book", "PUT /books/7"]
+          opts: ["GET /books", "DELETE /books/3", "PUT /books/7"]
+          why: Nouns in paths, and the method says the action.
+        - q: A book is missing. What should the API return?
+          opts: ["200 with ok false", "404 Not Found", "500 Internal Server Error"]
+          a: 1
+          why: 404 says the resource does not exist.
+    - title: Round 2. Speed and browsers
+      items:
+        - type: fill
+          q: "To let clients keep the book list for 5 minutes, send the header `Cache-Control: max-age=____`."
+          a: ["300"]
+          why: max-age is in seconds. 5 minutes is 300 seconds.
+        - type: open
+          q: The web shop on `www.pageturn.example` gets CORS errors calling `api.pageturn.example`. What do you change?
+          a: "Make the API answer preflight OPTIONS requests and return Access-Control-Allow-Origin with https://www.pageturn.example, plus the allowed methods and headers. Allow only that origin, not all origins."
+  card: |
+    - Resources are nouns, methods are verbs.
+    - GET never changes data.
+    - Use ETag and Cache-Control.
+    - CORS is browser rules, not API security.
+    - Describe the API in OpenAPI.
+
+refs:
+  - "Roy Fielding. [Architectural styles and the design of network-based software architectures, chapter 5](https://ics.uci.edu/~fielding/pubs/dissertation/rest_arch_style.htm)."
+  - "IETF. [RFC 9110, HTTP semantics](https://www.rfc-editor.org/rfc/rfc9110)."
+  - "MDN. [Cross-Origin Resource Sharing](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)."
+  - "Martin Fowler. [Richardson maturity model](https://martinfowler.com/articles/richardsonMaturityModel.html)."
+  - "OpenAPI Initiative. [OpenAPI specification](https://spec.openapis.org/oas/latest.html)."

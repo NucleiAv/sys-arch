@@ -1,0 +1,181 @@
+- id: smtp
+  name: SMTP
+  full: Simple Mail Transfer Protocol
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "25 relay, 587 submission"
+  title: SMTP, an email crosses the internet.
+  lede: Your app submits the email to your provider, the provider finds the recipient mail server with DNS, and hands the email over in a short text conversation.
+  overview: |
+    Clients **submit** mail on port 587 with STARTTLS and a login. Mail servers **relay** to each other on port 25. The receiving server checks **SPF**, which servers may send for the domain, **DKIM**, a signature over the message, and **DMARC**, the domain owner policy for failures.
+  nodes:
+    app: [Mail app, asha@corp.example, laptop, 0, 1]
+    out: [Outgoing server, smtp.corp.example, mail, 3, 1]
+    dns: [DNS, MX lookup, dns, 3, 3]
+    inb: [Receiving server, mx.shop.example, mail, 6, 1]
+    box: [Mailbox, ben@shop.example, folder, 8, 1]
+  links: [[app, out], [out, dns], [out, inb], [inb, box]]
+  steps:
+    - t: Submit on port 587
+      tag: submit
+      d: The app connects to its provider on 587, upgrades with STARTTLS and logs in with AUTH. Then it sends the message.
+      p:
+        - [app, out, "EHLO, STARTTLS, AUTH", sec]
+        - [app, out, "MAIL FROM, RCPT TO, DATA", req]
+        - [out, app, "250 queued", res]
+    - t: Find the mail server
+      tag: dns
+      d: The outgoing server looks up the MX record of shop.example to find where its mail goes.
+      p:
+        - [out, dns, "MX shop.example?", req]
+        - [dns, out, "MX 10 mx.shop.example", res]
+    - t: Greeting and EHLO
+      tag: relay
+      d: The outgoing server connects to mx.shop.example on port 25. The receiver greets with 220. The sender says EHLO and learns the supported extensions, then upgrades with STARTTLS.
+      p:
+        - [inb, out, "220 mx.shop.example ESMTP", ctl, {raw: "220 mx.shop.example ESMTP ready\r\n"}]
+        - [out, inb, "EHLO smtp.corp.example", req]
+        - [inb, out, "250-STARTTLS ...", res]
+    - t: Envelope and data
+      tag: relay
+      d: The sender gives the envelope, then the message. A line with a single dot ends the data.
+      p:
+        - [out, inb, "MAIL FROM:<asha@corp.example>", req, {raw: "MAIL FROM:<asha@corp.example>\r\n"}]
+        - [inb, out, "250 OK", res]
+        - [out, inb, "RCPT TO:<ben@shop.example>", req]
+        - [inb, out, "250 OK", res]
+        - [out, inb, "DATA ... .", data, {raw: "DATA\r\nSubject: Invoice\r\nFrom: asha@corp.example\r\n\r\nHello Ben.\r\n.\r\n"}]
+        - [inb, out, "250 queued as 8F2A1", res]
+    - t: Checks and delivery
+      tag: deliver
+      d: The receiver checks SPF, DKIM and DMARC, scans for spam, and puts the message in the mailbox. The sender says QUIT.
+      p:
+        - [inb, box, "deliver to ben", data]
+        - [out, inb, "QUIT", ctl]
+  quiz:
+    - type: fill
+      q: "Email clients submit mail on port ____ with STARTTLS and a login."
+      a: ["587"]
+      why: Port 25 is for server to server relay.
+    - q: How does the sending server find where to deliver mail for shop.example?
+      opts: ["It guesses", "It looks up the MX record in DNS", "It asks the user"]
+      a: 1
+      why: MX records name the mail servers of a domain.
+  refs:
+    - "IETF. [RFC 5321, SMTP](https://www.rfc-editor.org/rfc/rfc5321)."
+    - "Cloudflare. [What are DMARC, DKIM and SPF?](https://www.cloudflare.com/learning/email-security/dmarc-dkim-spf/)"
+
+- id: pop3
+  name: POP3
+  full: Post Office Protocol v3
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "110, 995 with TLS"
+  title: POP3, download the mail and usually delete it.
+  lede: POP3 is the simple, old way to read email. The app logs in, downloads messages and often deletes them from the server. Mail then lives on one device only.
+  overview: |
+    POP3 has three states. **Authorization**, you log in. **Transaction**, you list and download. **Update**, after QUIT, the server really deletes the messages you marked. Use port 995, POP3 over TLS, so the password is protected.
+  nodes:
+    app: [Mail app, laptop, laptop, 0, 1]
+    srv: [POP3 server, pop.example, mail, 6, 1]
+  links: [[app, srv]]
+  steps:
+    - t: Greeting and login
+      tag: auth
+      d: After TLS on port 995, the server greets with +OK. The app sends USER and PASS.
+      p:
+        - [srv, app, "+OK POP3 ready", ctl, {raw: "+OK POP3 server ready\r\n"}]
+        - [app, srv, "USER asha", sec]
+        - [app, srv, "PASS ********", sec]
+        - [srv, app, "+OK logged in", res]
+    - t: How many messages?
+      tag: list
+      d: STAT returns the number of messages and their total size. LIST gives each size.
+      p:
+        - [app, srv, "STAT", req]
+        - [srv, app, "+OK 2 3200", res]
+    - t: Download
+      tag: retr
+      d: RETR 1 downloads the whole first message.
+      p:
+        - [app, srv, "RETR 1", req]
+        - [srv, app, "+OK message follows ... .", data]
+    - t: Delete and quit
+      tag: update
+      d: DELE marks message 1. QUIT ends the session, and only now does the server delete it.
+      p:
+        - [app, srv, "DELE 1", req]
+        - [app, srv, "QUIT", req]
+        - [srv, app, "+OK bye, 1 message deleted", res]
+  quiz:
+    - q: When does POP3 actually delete messages marked with DELE?
+      opts: ["Immediately", "After QUIT, in the update state", "Never"]
+      a: 1
+      why: If the connection drops before QUIT, nothing is deleted.
+    - type: fill
+      q: "POP3 over TLS uses port ____."
+      a: ["995"]
+      why: Plain POP3 uses 110.
+  refs:
+    - "IETF. [RFC 1939, POP3](https://www.rfc-editor.org/rfc/rfc1939)."
+
+- id: imap
+  name: IMAP
+  full: Internet Message Access
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "143, 993 with TLS"
+  title: IMAP, mail stays on the server and syncs everywhere.
+  lede: IMAP keeps your mail on the server. Phone, laptop and web all see the same folders and read marks. Commands carry tags so many can run at once.
+  overview: |
+    Every client command starts with a **tag**, such as `a1`. The server ends its answer with the same tag and OK, NO or BAD. Lines starting with `*` are untagged data. **IDLE** lets the server push new mail at once.
+  nodes:
+    phone: [Phone mail app, "", phone, 0, 1]
+    srv: [IMAP server, imap.example, mail, 6, 1]
+  links: [[phone, srv]]
+  steps:
+    - t: Log in
+      tag: auth
+      d: After TLS on port 993, the app logs in.
+      p:
+        - [srv, phone, "* OK IMAP4rev1 ready", ctl]
+        - [phone, srv, "a1 LOGIN asha ********", sec]
+        - [srv, phone, "a1 OK LOGIN completed", res]
+    - t: Open the inbox
+      tag: select
+      d: SELECT opens a folder. The server says how many messages exist.
+      p:
+        - [phone, srv, "a2 SELECT INBOX", req, {raw: "a2 SELECT INBOX\r\n"}]
+        - [srv, phone, "* 12 EXISTS, a2 OK", res, {raw: "* 12 EXISTS\r\n* 1 RECENT\r\na2 OK [READ-WRITE] SELECT completed\r\n"}]
+    - t: Fetch only headers
+      tag: fetch
+      d: The app fetches only the subject and sender for the list view. It downloads bodies only when you open a message.
+      p:
+        - [phone, srv, "a3 FETCH 1:12 (FLAGS ENVELOPE)", req]
+        - [srv, phone, "* 12 FETCH (...)", data]
+    - t: Mark as read
+      tag: flags
+      d: You open message 12. The app sets the Seen flag on the server. Your laptop will see it as read too.
+      p:
+        - [phone, srv, "a4 STORE 12 +FLAGS (\\Seen)", req]
+        - [srv, phone, "a4 OK", res]
+    - t: Wait for new mail
+      tag: idle
+      d: The app sends IDLE. When new mail arrives, the server pushes an untagged EXISTS line at once.
+      p:
+        - [phone, srv, "a5 IDLE", req]
+        - [srv, phone, "* 13 EXISTS", data]
+  quiz:
+    - q: What is the main difference between IMAP and POP3?
+      opts: ["IMAP is older", "IMAP keeps mail and flags on the server and syncs devices", "POP3 supports folders"]
+      a: 1
+      why: POP3 usually downloads and deletes.
+    - type: fill
+      q: "The IMAP command that lets the server push new mail at once is ____."
+      a: ["IDLE"]
+      why: IDLE keeps the connection waiting for updates.
+  refs:
+    - "IETF. [RFC 9051, IMAP4rev2](https://www.rfc-editor.org/rfc/rfc9051)."

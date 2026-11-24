@@ -1,0 +1,226 @@
+short: Real time, push and webhooks
+title: Real time updates, polling, SSE, WebSocket and webhooks
+time: about 50 minutes
+tags: [WebSocket, SSE, long polling, webhooks]
+lede: Normal HTTP waits for the client to ask. Many apps need the server to speak first. Learn the five ways to push data, how each one works on the wire, and how to choose.
+
+idea: |
+  In normal HTTP, the client always speaks first. The server can only answer. But a chat app, a live score or a payment notice needs the server to send news **when it happens**.
+
+  There are five common ways to do this.
+
+  1. **Short polling.** The client asks again and again.
+  2. **Long polling.** The client asks, and the server waits until it has news.
+  3. **Server-sent events, SSE.** One HTTP response stays open, and the server writes events into it.
+  4. **WebSocket.** One connection stays open, and both sides send at any time.
+  5. **Webhooks.** For servers, not browsers. The server calls another server's URL when an event happens.
+
+  !eli5 Short polling is a child who asks "are we there yet?" every minute. Long polling is asking once and the driver answers only when you arrive. SSE is a radio that plays news to you. A WebSocket is a phone call where both people talk. A webhook is a doorbell that rings when a parcel arrives.
+
+scenes:
+  - title: A WebSocket from handshake to close
+    stats: [Step, Connection state]
+    nodes:
+      br: {label: Browser, x: 0, y: 1, kind: box}
+      lb: {label: Load balancer, x: 2, y: 1, kind: raised, tag: must allow upgrade}
+      ws: {label: Chat server, x: 4, y: 1, kind: def}
+      bus: {label: Pub sub, x: 6, y: 1, kind: raised, tag: other servers}
+    links: [[br, lb], [lb, ws], [ws, bus]]
+    steps:
+      - title: Ask to upgrade
+        text: "The browser sends a normal HTTP GET with `Upgrade: websocket`, `Connection: Upgrade` and a random `Sec-WebSocket-Key`."
+        on: [br, lb, ws]
+        flow: [[br, lb, ink], [lb, ws, ink]]
+        stats: [Handshake, HTTP]
+      - title: Switch protocols
+        text: "The server answers `101 Switching Protocols` with `Sec-WebSocket-Accept`, a value computed from the key. From now on the same TCP connection carries WebSocket frames."
+        on: [ws, br]
+        flow: [[ws, lb, def], [lb, br, def]]
+        mark: {br: ok}
+        stats: [Open, WebSocket]
+      - title: Both sides talk
+        text: The browser sends a chat message frame. The server pushes a message from a friend at any time. No new request is needed.
+        on: [br, ws]
+        flow: [[br, lb, ink], [lb, ws, ink], [ws, lb, def], [lb, br, def]]
+        stats: [Messages, open]
+      - title: Reach other servers
+        text: The friend is connected to a different chat server. Servers share messages through a pub sub system such as Redis, so every user gets them.
+        on: [ws, bus]
+        flow: [[ws, bus, pen], [bus, ws, pen]]
+        stats: [Fan out, open]
+      - title: Keep alive and close
+        text: Ping and pong frames check the line is still alive. When the user leaves, one side sends a close frame and the other answers.
+        on: [br, ws]
+        flow: [[ws, br, ink], [br, ws, ink]]
+        stats: [Close, closed]
+
+terms:
+  - [Short polling, "The client sends a request on a timer, such as every 5 seconds."]
+  - [Long polling, "The server holds the request open until there is news or a timeout, then the client asks again."]
+  - [Server-sent events, "An HTTP response with type `text/event-stream` that stays open and carries events from server to browser."]
+  - [EventSource, "The browser API that reads server-sent events and reconnects by itself."]
+  - [WebSocket, "A full duplex connection over one TCP connection, started with an HTTP upgrade. Defined in RFC 6455."]
+  - [Frame, "One unit of WebSocket data, such as text, binary, ping, pong or close."]
+  - [Webhook, "An HTTP request that one server sends to another server's URL when an event happens."]
+  - [HMAC signature, "A code made from the body and a shared secret. The receiver checks it to know the webhook is real."]
+  - [Full duplex, "Both sides can send at the same time."]
+
+how: |
+  ### Compare the five ways
+
+  | Way | Direction | Connection | Good for |
+  | --- | --- | --- | --- |
+  | Short polling | Client asks | New request each time | Rare updates, very simple apps |
+  | Long polling | Client asks, server waits | One request at a time, held open | Fallback when nothing else works |
+  | SSE | Server to client | One long HTTP response | Live feeds, notifications, AI text streaming |
+  | WebSocket | Both ways | One long TCP connection | Chat, games, collaboration |
+  | Webhook | Server to server | One HTTP request per event | Payment events, Git pushes, integrations |
+
+  ### SSE on the wire
+
+  ```
+  HTTP/1.1 200 OK
+  Content-Type: text/event-stream
+
+  id: 41
+  data: {"score": "2-1"}
+
+  id: 42
+  data: {"score": "3-1"}
+  ```
+
+  Each event ends with an empty line. If the connection drops, the browser reconnects and sends `Last-Event-ID: 42`, so the server can send what was missed.
+
+  ### WebSocket at scale
+
+  - Each open connection uses memory on the server. One server can hold many thousands.
+  - Load balancers must support the upgrade and long idle times.
+  - Users on different servers need a shared **pub sub** layer to reach each other.
+  - Plan for reconnects. Clients should wait a random time before they reconnect, so a server restart does not cause a storm.
+
+  ### Webhooks done right
+
+  1. The sender signs the body with a shared secret, for example with HMAC SHA-256, and puts the result in a header.
+  2. The receiver checks the signature before it trusts the body.
+  3. The receiver answers `2xx` fast and does the real work later in a queue.
+  4. The sender retries on failure, so the receiver must be **idempotent**. It uses the event id to skip duplicates.
+
+  !key Browsers use polling, SSE or WebSocket. Servers use webhooks. If only the server needs to talk, SSE is simpler than WebSocket.
+
+diagrams:
+  - type: flow
+    title: Receiving a payment webhook safely
+    nodes: [["Provider sends event", "box"], ["Check HMAC signature", "def"], ["Skip if event id seen", "raised"], ["Put on queue, answer 200", "def"], ["Worker updates order", "box"]]
+    edges: ["POST", "", "", ""]
+    caption: Verify, deduplicate, answer fast, work later.
+
+life:
+  - ["AI chat apps stream with SSE", "Many AI chat products stream the answer token by token. The server only talks one way, so server-sent events fit well and work through normal HTTP infrastructure."]
+  - ["GitHub webhooks start builds", "When you push code, GitHub sends a webhook to your CI server with a signature in the `X-Hub-Signature-256` header. The CI server checks it and starts a build."]
+  - ["A reconnect storm", "A chat company restarted all WebSocket servers at once. A million clients reconnected in the same second and the login service fell over. Random reconnect delays and rolling restarts fixed it."]
+
+tradeoffs:
+  - ["Short polling", "Simplest, works everywhere.", "Wasteful, slow to notice changes."]
+  - ["Long polling", "Near real time with plain HTTP.", "Many held requests, complex timeouts."]
+  - ["SSE", "Simple, auto reconnect, plain HTTP.", "One way only, text only."]
+  - ["WebSocket", "Fast two way messages.", "Stateful connections, harder to scale and balance."]
+  - ["Webhooks", "No polling between servers.", "Receiver must be public, verify signatures, handle retries and duplicates."]
+
+mistakes:
+  - Using a WebSocket when the server only needs to push. SSE is simpler.
+  - Accepting webhooks without checking the signature.
+  - Doing slow work before answering a webhook, so the sender times out and retries.
+  - Restarting all WebSocket servers at once.
+  - Forgetting a pub sub layer, so users on different servers cannot reach each other.
+
+quiz:
+  - q: A live sports score page only needs updates from the server. What is the simplest good choice?
+    opts: ["WebSocket", "Server-sent events", "Short polling every 100 ms"]
+    a: 1
+    why: SSE is one way, uses plain HTTP and reconnects by itself.
+  - type: fill
+    q: "The HTTP status code that answers a WebSocket upgrade is ____ Switching Protocols."
+    a: ["101"]
+    why: After 101 the same TCP connection carries WebSocket frames.
+  - type: fill
+    q: "The content type of a server-sent events response is `text/____`."
+    a: ["event-stream"]
+    why: text/event-stream tells the browser to read it as a stream of events.
+  - q: Your server receives a webhook. What should it do first?
+    opts: ["Run the slow business logic", "Check the signature", "Send an email"]
+    a: 1
+    why: Never trust the body until the signature proves the sender.
+  - q: What does this browser code do?
+    info: |
+      ```
+      const es = new EventSource("/scores");
+      es.onmessage = (e) => show(JSON.parse(e.data));
+      ```
+    opts: ["Opens a WebSocket", "Opens a server-sent events stream and shows each event", "Polls every second"]
+    a: 1
+    why: EventSource is the browser API for SSE. It reconnects by itself.
+
+interview:
+  - q: Compare long polling, server-sent events and WebSockets. When do you use each?
+    keys:
+      - ["Long polling holds a request open until data or timeout", [long polling, hold, held, timeout]]
+      - ["SSE is one way server to client over HTTP with auto reconnect", [sse, server-sent, one way, eventsource, reconnect]]
+      - ["WebSocket is two way over one upgraded connection", [websocket, two way, both, duplex, upgrade]]
+      - ["Pick by direction and infrastructure, with examples", [chat, feed, notification, game, depends, example]]
+    a: |
+      Long polling is a normal request that the server holds until it has news or a timeout, then the client asks again. It works everywhere but wastes requests and is fiddly. SSE is one long HTTP response with type text/event-stream. It only goes from server to client, but it is simple, works through normal proxies and the browser reconnects by itself with the last event id. I use it for notifications, live feeds and streaming AI answers. A WebSocket upgrades one connection to full duplex frames, so both sides send at any time. I use it for chat, games and collaborative editing, and I accept the work of scaling stateful connections, with pub sub between servers and careful reconnects.
+    fb: Choosing by "who needs to talk" is the clearest rule. Add one example per option.
+  - q: How do you build a reliable webhook receiver?
+    keys:
+      - ["Verify the HMAC signature with the shared secret", [signature, hmac, secret, verify]]
+      - ["Answer quickly with 2xx and process later in a queue", [quick, fast, 200, 2xx, queue, async]]
+      - ["Handle duplicates with the event id, idempotency", [duplicate, idempot, event id, dedup]]
+      - ["Expect retries and out of order events", [retry, retries, order, out of order]]
+    a: |
+      First I verify the signature header with the shared secret and reject anything that fails, and I check the timestamp to block replays. Then I store the event id and put the event on a queue, and answer 200 within a second or two. A worker does the real work later. Because senders retry, I skip event ids I have already processed. Events can also arrive out of order, so the worker checks the current state, for example it ignores "payment pending" if the order is already paid.
+    fb: Mentioning out of order delivery is the extra detail that shows experience.
+
+desk:
+  title: Choose the push method for a delivery app
+  lede: A grocery delivery company needs live updates in several places. Pick the right tool for each.
+  situation: |
+    **FreshCart** shows live order status to customers in a browser. Pickers and riders chat with support. The payment provider must tell FreshCart when a payment succeeds. The admin dashboard refreshes stock counts every 10 minutes.
+  rounds:
+    - title: Round 1. Pick a tool
+      items:
+        - type: sort
+          q: Which push method fits each case?
+          rows:
+            - ["Live order status in the customer's browser", "Server-sent events"]
+            - ["Rider and support chat", "WebSocket"]
+            - ["Payment provider tells FreshCart about a payment", "Webhook"]
+            - ["Stock counts every 10 minutes on the admin page", "Short polling"]
+          opts: ["Server-sent events", "WebSocket", "Webhook", "Short polling"]
+          why: Direction and frequency decide. Rare updates can poll. Server to server uses webhooks.
+    - title: Round 2. Code check
+      items:
+        - q: Which line is missing from this webhook handler?
+          info: |
+            ```
+            def handle(request):
+                event = json.loads(request.body)
+                mark_order_paid(event["order_id"])
+                return 200
+            ```
+          opts: ["A check of the HMAC signature before trusting the body", "A sleep of 5 seconds", "A second database"]
+          a: 0
+          why: Without a signature check, anyone can mark orders as paid by sending a fake request.
+        - type: open
+          q: What else would you change in that handler?
+          a: "Skip duplicate event ids, put the event on a queue and answer 200 at once, and let a worker mark the order paid only if it is still waiting for payment."
+  card: |
+    - Server only talks, use SSE.
+    - Both talk, use WebSocket with pub sub.
+    - Server to server, use signed webhooks.
+    - Verify, deduplicate, answer fast.
+
+refs:
+  - "IETF. [RFC 6455, the WebSocket protocol](https://www.rfc-editor.org/rfc/rfc6455)."
+  - "MDN. [Using server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)."
+  - "GitHub Docs. [Validating webhook deliveries](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries)."
+  - "Stripe. [Receive Stripe events in your webhook endpoint](https://docs.stripe.com/webhooks)."

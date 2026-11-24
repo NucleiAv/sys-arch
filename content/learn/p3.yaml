@@ -1,0 +1,69 @@
+kind: practice
+title: Level 3 practice, many machines
+time: about 40 minutes
+lede: Mixed questions on consistency, queues, rate limits, ids and consensus. Think about what happens when machines fail or messages repeat.
+
+rounds:
+  - title: Round 1. Consistency
+    items:
+      - type: sort
+        q: Which guarantee does each feature need?
+        rows:
+          - ["Booking the last hotel room", "Strong"]
+          - ["Number of views on a video", "Eventual"]
+          - ["A user sees their own new comment", "Read your writes"]
+        opts: ["Strong", "Eventual", "Read your writes"]
+        why: Things that cost money need strong. Counts can lag. Users must see their own changes.
+      - type: fill
+        q: During a network ____, a system must choose between consistency and availability.
+        a: ["partition"]
+        why: That is the CAP theorem.
+  - title: Round 2. Messages
+    items:
+      - q: A queue delivers at least once. What must the consumer be?
+        opts: ["Fast", "Idempotent", "Single threaded"]
+        a: 1
+        why: The same message can arrive twice.
+      - q: What is wrong with this consumer?
+        info: |
+          ```
+          def on_message(msg):
+              queue.ack(msg)          # acknowledge first
+              send_email(msg.user)    # then do the work
+          ```
+        opts: ["Nothing", "If it crashes after ack and before the email, the message is lost", "It sends two emails always"]
+        a: 1
+        why: Acknowledge only after the work is done.
+      - type: fill
+        q: Messages that fail too many times go to a dead ____ queue.
+        a: ["letter"]
+        why: It stops one bad message from blocking the rest.
+  - title: Round 3. Limits and ids
+    items:
+      - q: A token bucket holds 10 tokens and refills 2 a second. The bucket is empty. A client waits 3 seconds. How many requests can it send at once?
+        opts: ["2", "6", "10"]
+        a: 1
+        why: 3 seconds times 2 tokens is 6 tokens.
+      - type: num
+        q: A Snowflake id has 10 bits for the machine number. How many machines can generate ids?
+        a: 1024
+        tol: 0
+        unit: machines
+        why: 2 to the power 10 is 1,024.
+      - type: num
+        q: A consensus cluster must keep working when 2 nodes fail. How many nodes does it need?
+        a: 5
+        tol: 0
+        unit: nodes
+        why: 2f plus 1, so 2 times 2 plus 1 is 5.
+  - title: Round 4. A small design
+    items:
+      - type: open
+        q: An online shop has order, stock and payment services with separate databases. The card is charged, then stock reservation fails. Describe what should happen.
+        a: "Use a saga. Each step has an undo. When stock reservation fails after the charge, the saga runs the compensating action, a refund, and cancels the order, then tells the customer. Better still, reserve stock before charging, so refunds are rare. Every step must be idempotent because retries will happen."
+card: |
+  - Pick consistency per feature.
+  - Ack after the work, consumers idempotent.
+  - Token bucket for bursts.
+  - 2f plus 1 nodes survive f failures.
+  - Sagas with undo steps across services.

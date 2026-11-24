@@ -1,0 +1,42 @@
+kind: practice
+title: Level 5 practice, mastery
+time: about 30 minutes
+lede: Questions on regions, disaster recovery and data processing. Then one full design question that uses all five levels.
+
+rounds:
+  - title: Round 1. Regions and recovery
+    items:
+      - type: sort
+        q: Which number does each sentence describe?
+        rows:
+          - ["We can lose at most 1 minute of orders", "RPO"]
+          - ["We must be back online within 15 minutes", "RTO"]
+        opts: ["RPO", "RTO"]
+        why: RPO is data loss, RTO is downtime.
+      - q: Which strategy keeps only a database replica in region 2, with no app servers running?
+        opts: ["Active active", "Pilot light", "Backup and restore"]
+        a: 1
+        why: Pilot light keeps the core data warm.
+  - title: Round 2. Data processing
+    items:
+      - type: sort
+        q: Batch or stream?
+        rows:
+          - ["Block a card used in two countries within 10 minutes", "Stream"]
+          - ["Monthly royalty payments for artists", "Batch"]
+        opts: ["Stream", "Batch"]
+        why: Seconds matter for fraud. Exact totals matter for money.
+      - type: fill
+        q: Turning every database change into an event is change data ____.
+        a: ["capture"]
+        why: CDC keeps warehouses and search indexes in sync.
+  - title: Round 3. Put it all together
+    items:
+      - type: open
+        q: Design a global photo sharing app for 50 million daily users in Asia, Europe and America. Say which parts you would use from each level, and name two trade-offs.
+        a: "Level 1. Stateless API servers behind load balancers, REST for apps, estimate about 50 million users times 20 reads is 1 billion reads a day, about 10 thousand a second. Level 2. Photos in object storage behind a CDN, metadata in SQL sharded by user id, Redis cache for feeds and profiles. Level 3. Upload events on a queue for thumbnails, eventual consistency for like counts, Snowflake ids. Level 4. Timeouts and circuit breakers, SLOs for upload and feed load, authorization on private photos. Level 5. Each user has a home region for writes, reads served in every region, async replication, a stream job for trending photos. Trade-offs. Like counts may be a few seconds behind. Users far from their home region have slower writes."
+card: |
+  - RPO is data, RTO is time.
+  - Reads anywhere, writes are the hard part.
+  - Stream for now, batch for exact.
+  - Use every level in a full design.

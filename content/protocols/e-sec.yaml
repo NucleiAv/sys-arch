@@ -1,0 +1,833 @@
+- id: tls
+  name: TLS/SSL
+  full: Transport Layer Security
+  layer: 6
+  cat: security
+  transport: TCP
+  port: "any, such as 443"
+  title: TLS 1.3, two parties agree on secret keys in public.
+  lede: TLS lets two machines that have never met agree on secret keys while an attacker watches, and lets the client prove who the server is.
+  overview: |
+    SSL is the old name. SSL 2.0 and 3.0 and TLS 1.0 and 1.1 are broken or deprecated. Use TLS 1.2 or 1.3.
+
+    TLS 1.3 uses **ephemeral Diffie Hellman**, usually X25519. Each side sends a public key share. Each side combines its own private key with the other public share and gets the same secret. An eavesdropper cannot compute it. New keys every session give **forward secrecy**. A stolen server key later cannot decrypt old traffic.
+  nodes:
+    c: [Client, 192.168.1.10, laptop, 0, 1]
+    eve: [Eavesdropper, sees all bytes, user, 3, 3]
+    s: [Server, 203.0.113.20, server, 6, 1]
+  links: [[c, s], [c, eve], [eve, s]]
+  steps:
+    - t: ClientHello with a key share
+      tag: hello
+      d: The client sends random bytes, the cipher suites it supports and an X25519 public key share. It guesses the group the server will pick, which saves a round trip.
+      f: {Version: "1.3", Cipher suite offer: "TLS_AES_128_GCM_SHA256, TLS_CHACHA20_POLY1305_SHA256", Key share: "X25519 public key"}
+      p:
+        - [c, s, "ClientHello + key share", sec]
+    - t: ServerHello with a key share
+      tag: hello
+      d: The server picks a suite and sends its own public share. Now both sides compute the same shared secret with Diffie Hellman. The eavesdropper saw both public shares, but cannot compute the secret.
+      f: {Chosen suite: TLS_AES_128_GCM_SHA256, Shared secret: "known to client and server only"}
+      p:
+        - [s, c, "ServerHello + key share", sec]
+      on: [c, s, eve]
+    - t: Encrypted handshake
+      tag: auth
+      d: From here everything is encrypted with handshake keys. The server sends EncryptedExtensions, its Certificate, a CertificateVerify signature over the handshake so far, and Finished, a MAC over the whole handshake.
+      p:
+        - [s, c, "EncryptedExtensions, Certificate", sec]
+        - [s, c, "CertificateVerify, Finished", sec]
+    - t: Client checks and finishes
+      tag: auth
+      d: The client checks the certificate chain and name, checks the signature with the public key in the certificate, then sends its own Finished. Any change by an attacker would break the Finished MAC.
+      p:
+        - [c, s, "Finished", sec]
+    - t: Application data
+      tag: data
+      d: Both sides derive traffic keys from the shared secret with HKDF and send application data protected with AES GCM. The eavesdropper sees only random looking records.
+      p:
+        - [c, s, "application data (encrypted)", data]
+        - [s, c, "application data (encrypted)", data]
+        - [eve, eve, "cannot read", bad]
+      bad: [eve]
+  quiz:
+    - q: What gives TLS 1.3 forward secrecy?
+      opts: ["Long certificates", "New ephemeral Diffie Hellman keys for every session", "Passwords"]
+      a: 1
+      why: Old sessions stay safe even if the server private key leaks later.
+    - type: fill
+      q: The last handshake message, a MAC over the whole handshake, is called ____.
+      a: ["Finished"]
+      why: It detects any tampering with earlier messages.
+  refs:
+    - "IETF. [RFC 8446, TLS 1.3](https://www.rfc-editor.org/rfc/rfc8446)."
+    - "Michael Driscoll. [The illustrated TLS 1.3 connection](https://tls13.xargs.org/)."
+
+- id: ssh
+  name: SSH
+  full: Secure Shell
+  layer: 7
+  cat: security
+  transport: TCP
+  port: "22"
+  title: SSH, a secure login to a remote machine.
+  lede: SSH sets up an encrypted channel, proves the server is the one you know, logs you in with a key, and runs your commands. Watch each stage.
+  overview: |
+    SSH has three layers. The **transport** layer does key exchange, encryption and server authentication. The **user authentication** layer logs you in, best with a public key. The **connection** layer carries channels, such as a shell, a command, port forwarding or SFTP.
+
+    The first time you connect, SSH shows the server key fingerprint. If you accept, it saves it in `known_hosts`. If it ever changes, SSH warns you loudly. That may be an attack.
+  nodes:
+    me: [Your laptop, 192.168.1.10, laptop, 0, 1]
+    srv: [Server, web-1 203.0.113.30, terminal, 6, 1]
+  links: [[me, srv]]
+  steps:
+    - t: Version exchange
+      tag: hello
+      d: After TCP connects to port 22, both sides send a version line in plain text.
+      p:
+        - [srv, me, "SSH-2.0-OpenSSH_9.6", ctl, {raw: "SSH-2.0-OpenSSH_9.6\r\n"}]
+        - [me, srv, "SSH-2.0-OpenSSH_9.8", ctl, {raw: "SSH-2.0-OpenSSH_9.8\r\n"}]
+    - t: Algorithm negotiation
+      tag: kex
+      d: Each side sends KEXINIT with its list of key exchange, host key, cipher and MAC algorithms. They pick the first match from the client list.
+      f: {Key exchange: curve25519-sha256, Host key: ssh-ed25519, Cipher: chacha20-poly1305}
+      p:
+        - [me, srv, "KEXINIT", sec]
+        - [srv, me, "KEXINIT", sec]
+    - t: Key exchange and host key
+      tag: kex
+      d: The client sends an ephemeral public key. The server answers with its ephemeral key, its long term host key and a signature. The client checks the host key against `known_hosts`. Both sides send NEWKEYS and switch to encryption.
+      f: {Host key fingerprint: "SHA256:k3X...9Qw", known_hosts: "match"}
+      p:
+        - [me, srv, "KEX_ECDH_INIT (ephemeral key)", sec]
+        - [srv, me, "KEX_ECDH_REPLY (host key, signature)", sec]
+        - [me, srv, "NEWKEYS", sec]
+    - t: Public key login
+      tag: auth
+      d: The client asks to log in as deploy with its ed25519 key. It signs data tied to this session with the private key. The server checks the signature with the public key in `authorized_keys`. The private key never leaves the laptop.
+      p:
+        - [me, srv, "USERAUTH_REQUEST deploy publickey + signature", sec]
+        - [srv, me, "USERAUTH_SUCCESS", res]
+    - t: Open a channel and run a command
+      tag: channel
+      d: The client opens a session channel and asks to run `uptime`. The output comes back in the encrypted channel.
+      p:
+        - [me, srv, "CHANNEL_OPEN session, exec uptime", req]
+        - [srv, me, "CHANNEL_DATA  12:01 up 41 days", res]
+  quiz:
+    - type: fill
+      q: "SSH uses TCP port ____ by default."
+      a: ["22"]
+      why: Some teams move it, but 22 is standard.
+    - q: SSH warns that the host key changed. What should you do?
+      opts: ["Delete known_hosts and continue", "Stop and check with the server owner, because it may be an attack or a rebuilt server", "Ignore it"]
+      a: 1
+      why: A changed key can mean a man in the middle.
+  refs:
+    - "IETF. [RFC 4253, SSH transport layer](https://www.rfc-editor.org/rfc/rfc4253)."
+    - "OpenSSH. [Manual pages](https://www.openssh.com/manual.html)."
+
+- id: sftp
+  name: SFTP and SCP
+  full: File transfer over SSH
+  layer: 7
+  cat: security
+  transport: SSH
+  port: "22"
+  title: SFTP, copying files inside SSH.
+  lede: SFTP runs as a subsystem inside an SSH connection, so the files and the login are encrypted. It is not FTP over TLS. It is a different protocol.
+  overview: |
+    After SSH logs you in, the client asks for the **sftp subsystem**. Then it sends binary SFTP packets, such as OPEN, READ, WRITE and CLOSE, each with a request id.
+
+    **SCP** is an older tool for copying over SSH. Since OpenSSH 9.0, the `scp` command uses the SFTP protocol by default.
+  nodes:
+    me: [Your laptop, 192.168.1.10, laptop, 0, 1]
+    srv: [File server, 203.0.113.31, folder, 6, 1]
+  links: [[me, srv]]
+  steps:
+    - t: SSH first
+      tag: ssh
+      d: The client does the full SSH handshake and logs in with a key, exactly as in the SSH animation.
+      p:
+        - [me, srv, "SSH handshake and login", sec]
+    - t: Start the sftp subsystem
+      tag: start
+      d: The client opens a session channel and requests the `sftp` subsystem. Then it sends INIT with version 3. The server answers VERSION 3.
+      p:
+        - [me, srv, "subsystem sftp", req]
+        - [me, srv, "SSH_FXP_INIT v3", req]
+        - [srv, me, "SSH_FXP_VERSION 3", res]
+    - t: Open the file
+      tag: transfer
+      d: The client opens `/reports/may.csv` for reading. The server answers with a handle, a short id for the open file.
+      p:
+        - [me, srv, "SSH_FXP_OPEN /reports/may.csv", req]
+        - [srv, me, "SSH_FXP_HANDLE h1", res]
+    - t: Read in pieces
+      tag: transfer
+      d: The client sends several READ requests at once, each for a piece of the file. The server answers with DATA. Many requests in flight keep the transfer fast.
+      p:
+        - [me, srv, "SSH_FXP_READ h1 offset 0", req]
+        - [me, srv, "SSH_FXP_READ h1 offset 32768", req]
+        - [srv, me, "SSH_FXP_DATA", data]
+        - [srv, me, "SSH_FXP_DATA", data]
+    - t: Close
+      tag: close
+      d: The client closes the handle. The server answers STATUS OK.
+      p:
+        - [me, srv, "SSH_FXP_CLOSE h1", req]
+        - [srv, me, "SSH_FXP_STATUS OK", res]
+  quiz:
+    - q: Is SFTP the same as FTP over TLS?
+      opts: ["Yes", "No, SFTP is a separate protocol that runs inside SSH"]
+      a: 1
+      why: FTP over TLS is called FTPS.
+    - type: fill
+      q: "SFTP runs as a ____ of an SSH connection."
+      a: ["subsystem"]
+      why: The sftp subsystem.
+  refs:
+    - "OpenSSH. [OpenSSH 9.0 release notes, scp uses SFTP](https://www.openssh.com/txt/release-9.0)."
+    - "IETF draft. [SSH File Transfer Protocol, version 3](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02)."
+
+- id: doh
+  name: DNS over HTTPS
+  full: Private DNS lookups
+  layer: 7
+  cat: security
+  transport: HTTPS
+  port: "443"
+  title: DNS over HTTPS, hiding your lookups.
+  lede: Normal DNS travels in plain text, so anyone on the path sees which sites you look up. DoH sends DNS questions inside HTTPS to a resolver you trust.
+  overview: |
+    DoH is defined in RFC 8484. The DNS message itself is the same binary format. It travels in an HTTPS POST or GET to a path such as `/dns-query`, with content type `application/dns-message`. **DNS over TLS**, DoT, does the same over TLS on port 853.
+
+    DoH hides lookups from the local network and the ISP, but the DoH resolver still sees them. Choose one you trust.
+  nodes:
+    pc: [Browser, 192.168.1.10, laptop, 0, 1]
+    isp: [Local network and ISP, can watch, router, 3, 1]
+    doh: [DoH resolver, 198.51.100.53, dns, 6, 1]
+  links: [[pc, isp], [isp, doh]]
+  steps:
+    - t: Plain DNS, for comparison
+      tag: compare
+      d: With normal DNS, the question "where is clinic.example" crosses the local network in plain text on UDP 53. Anyone on the path can read and even change it.
+      p:
+        - [pc, isp, "DNS query clinic.example (plain)", bad]
+      bad: [isp]
+    - t: Open HTTPS to the resolver
+      tag: tls
+      d: With DoH, the browser opens a TLS connection to its DoH resolver on port 443, or reuses one.
+      p:
+        - [pc, doh, "TLS handshake", sec]
+    - t: Ask inside HTTPS
+      tag: query
+      d: The browser sends the DNS message as the body of a POST. The network sees only encrypted HTTPS to the resolver.
+      f: {Method: POST, Path: /dns-query, Content-Type: application/dns-message}
+      p:
+        - [pc, doh, "POST /dns-query (encrypted)", sec]
+    - t: Answer inside HTTPS
+      tag: answer
+      d: The resolver answers with the DNS response in the body. The browser connects to the site as usual.
+      p:
+        - [doh, pc, "200 application/dns-message (encrypted)", res]
+  quiz:
+    - type: fill
+      q: "The content type of a DoH message is application/____."
+      a: ["dns-message"]
+      why: The body is a normal binary DNS message.
+    - q: Who can still see your DoH lookups?
+      opts: ["Your ISP", "The DoH resolver you send them to", "Nobody"]
+      a: 1
+      why: DoH moves trust to the resolver.
+  refs:
+    - "IETF. [RFC 8484, DNS queries over HTTPS](https://www.rfc-editor.org/rfc/rfc8484)."
+
+- id: dnssec
+  name: DNSSEC
+  full: Signed DNS answers
+  layer: 7
+  cat: security
+  transport: UDP and TCP
+  port: "53"
+  title: DNSSEC, a chain of signatures from the root.
+  lede: DNSSEC lets a resolver check that a DNS answer really comes from the domain owner and was not changed. It signs answers. It does not hide them.
+  overview: |
+    Each signed zone has keys in **DNSKEY** records and signatures in **RRSIG** records. The parent zone holds a **DS** record, a hash of the child key. So the root vouches for .com, .com vouches for example.com, and so on. The resolver trusts only the root key, called the **trust anchor**.
+
+    DNSSEC gives integrity and authenticity, not privacy. For privacy, use DoH or DoT.
+  nodes:
+    res: [Validating resolver, trusts root key, dns, 0, 2]
+    root: [Root zone, DNSKEY, globe, 3, 0]
+    com: [.com zone, DS and DNSKEY, dns, 6, 1]
+    ex: [example.com zone, DS and DNSKEY, dns, 6, 3]
+    bad: [Forged answer, attacker, user, 3, 4]
+  links: [[res, root], [res, com], [res, ex], [res, bad]]
+  steps:
+    - t: Get the answer and its signature
+      tag: query
+      d: The resolver asks for www.example.com A with the DO bit set. The answer comes with an RRSIG signed by the example.com zone key.
+      p:
+        - [res, ex, "query A, DO bit", req]
+        - [ex, res, "A 203.0.113.10 + RRSIG", res]
+    - t: Check the zone key
+      tag: chain
+      d: The resolver gets the example.com DNSKEY and checks the RRSIG with it. Then it must trust that key.
+      p:
+        - [res, ex, "query DNSKEY", req]
+        - [ex, res, "DNSKEY + RRSIG", res]
+    - t: Walk up the chain
+      tag: chain
+      d: The .com zone has a DS record, a hash of the example.com key, signed by .com. The root has a DS for .com, signed by the root key, which the resolver already trusts.
+      p:
+        - [res, com, "query DS example.com", req]
+        - [com, res, "DS + RRSIG", res]
+        - [res, root, "query DS com", req]
+        - [root, res, "DS + RRSIG", res]
+    - t: Answer is valid
+      tag: valid
+      d: Every link checks out. The resolver returns the answer with the AD flag, authenticated data.
+      on: [res]
+    - t: A forged answer fails
+      tag: attack
+      d: An attacker injects a fake answer. It has no valid signature from the zone key, so the resolver rejects it and returns SERVFAIL instead of a lie.
+      p:
+        - [bad, res, "A 198.51.100.66 (no valid RRSIG)", bad]
+      bad: [bad]
+  quiz:
+    - q: Does DNSSEC encrypt DNS?
+      opts: ["Yes", "No, it signs answers so they cannot be forged"]
+      a: 1
+      why: Use DoH or DoT for privacy.
+    - type: fill
+      q: "The record in the parent zone that holds a hash of the child key is the ____ record."
+      a: ["DS"]
+      why: Delegation Signer.
+  refs:
+    - "Cloudflare. [How DNSSEC works](https://www.cloudflare.com/learning/dns/dnssec/how-dnssec-works/)."
+    - "IETF. [RFC 4033, DNSSEC introduction](https://www.rfc-editor.org/rfc/rfc4033)."
+
+- id: wifi
+  name: Wi-Fi
+  full: Joining a network (WPA2)
+  layer: 2
+  cat: security
+  transport: "802.11"
+  port: "none"
+  title: Joining a WPA2 Wi-Fi network.
+  lede: Your phone finds the network, associates, then proves it knows the password with the 4 way handshake. The password itself never goes over the air.
+  overview: |
+    In WPA2 Personal, both sides turn the password and the network name into the same **PMK**, using PBKDF2 with 4096 rounds. The **4 way handshake** mixes the PMK with two random numbers, ANonce and SNonce, into a fresh **PTK** for this session. A **GTK** protects broadcast traffic.
+
+    Weakness. Anyone who captures the 4 way handshake can try password guesses offline. Use a long password, or WPA3.
+  nodes:
+    phone: [Phone, "a4:..:01", phone, 0, 1]
+    ap: [Access point, SSID HomeNet, ap, 4, 1]
+    eve: [Listener, nearby, user, 4, 3]
+  links: [[phone, ap], [ap, eve], [phone, eve]]
+  steps:
+    - t: Find the network
+      tag: discover
+      d: The access point sends beacons about 10 times a second with the SSID and its security settings. The phone can also send a probe request.
+      p:
+        - [ap, phone, "Beacon SSID HomeNet, WPA2", ctl]
+    - t: Authenticate and associate
+      tag: join
+      d: An open system authentication exchange, then association. These do not check the password. They just start the link.
+      p:
+        - [phone, ap, "Authentication request", ctl]
+        - [ap, phone, "Authentication response", ctl]
+        - [phone, ap, "Association request", ctl]
+        - [ap, phone, "Association response", ctl]
+    - t: 4 way handshake, messages 1 and 2
+      tag: handshake
+      d: The AP sends a random ANonce. The phone makes a random SNonce, computes the PTK from the PMK, both nonces and both MAC addresses, and sends SNonce with a MIC. The MIC proves it knows the PMK.
+      p:
+        - [ap, phone, "M1 ANonce", sec]
+        - [phone, ap, "M2 SNonce + MIC", sec]
+    - t: Messages 3 and 4
+      tag: handshake
+      d: The AP checks the MIC, sends the GTK encrypted with the new keys, and the phone confirms. Both install the keys. Traffic is now encrypted with AES CCMP.
+      p:
+        - [ap, phone, "M3 GTK (encrypted) + MIC", sec]
+        - [phone, ap, "M4 ACK", sec]
+    - t: The offline guessing risk
+      tag: risk
+      d: A listener who captured M1 and M2 can try millions of password guesses offline and check each against the MIC. Short passwords fall quickly.
+      p:
+        - [eve, eve, "offline guesses vs captured MIC", bad]
+      bad: [eve]
+  quiz:
+    - q: Does the Wi-Fi password travel over the air in WPA2?
+      opts: ["Yes, encrypted", "No, both sides derive keys from it and prove it with a MIC"]
+      a: 1
+      why: The handshake proves knowledge without sending the password.
+    - type: fill
+      q: The two random numbers in the 4 way handshake are the ANonce and the ____.
+      a: ["SNonce"]
+      why: One from the AP, one from the station.
+  refs:
+    - "Wi-Fi Alliance. [Wi-Fi security](https://www.wi-fi.org/discover-wi-fi/security)."
+
+- id: wpa3
+  name: WPA3
+  full: Wi-Fi Protected Access 3
+  layer: 2
+  cat: security
+  transport: "802.11"
+  port: "none"
+  title: WPA3, a handshake that stops offline guessing.
+  lede: WPA3 Personal replaces the shared key step with SAE, also called Dragonfly. An attacker who records the handshake can no longer test password guesses offline.
+  overview: |
+    In **SAE**, simultaneous authentication of equals, both sides use the password to do a special key exchange. Each guess needs a live exchange with the access point, so offline dictionary attacks stop. SAE also gives **forward secrecy**. **Protected Management Frames** are required, which blocks fake disconnect messages.
+  nodes:
+    phone: [Phone, "", phone, 0, 1]
+    ap: [Access point, WPA3 Personal, ap, 4, 1]
+    eve: [Listener, nearby, user, 4, 3]
+  links: [[phone, ap], [ap, eve], [phone, eve]]
+  steps:
+    - t: SAE Commit
+      tag: sae
+      d: Both sides turn the password into a secret point on an elliptic curve, then each sends a Commit with a random scalar and element. Nothing here lets a listener test guesses.
+      p:
+        - [phone, ap, "SAE Commit", sec]
+        - [ap, phone, "SAE Commit", sec]
+    - t: SAE Confirm
+      tag: sae
+      d: Each side sends a Confirm that proves it derived the same key. If the password were wrong, the confirm would fail. The result is a fresh PMK.
+      p:
+        - [phone, ap, "SAE Confirm", sec]
+        - [ap, phone, "SAE Confirm", sec]
+    - t: Association and 4 way handshake
+      tag: handshake
+      d: The phone associates, then the usual 4 way handshake runs with the new PMK to make session keys.
+      p:
+        - [phone, ap, "Association", ctl]
+        - [ap, phone, "4 way handshake M1 to M4", sec]
+    - t: Recording does not help
+      tag: risk
+      d: The listener recorded everything, but cannot test password guesses offline. Each guess needs a full live exchange with the access point, which can rate limit.
+      on: [eve]
+      good: Protected Management Frames also stop the fake disconnect frames that attackers once used to force reconnects.
+  quiz:
+    - q: What does SAE stop?
+      opts: ["Fast connections", "Offline dictionary attacks on a captured handshake", "Encryption"]
+      a: 1
+      why: Each guess needs a live exchange.
+    - type: fill
+      q: "WPA3 Personal uses a key exchange called ____, also known as Dragonfly."
+      a: ["SAE"]
+      why: Simultaneous Authentication of Equals.
+  refs:
+    - "Wi-Fi Alliance. [WPA3 specification](https://www.wi-fi.org/discover-wi-fi/security)."
+
+- id: radius
+  name: RADIUS
+  full: 802.1X Enterprise Wi-Fi
+  layer: 2
+  cat: security
+  transport: "EAPOL and UDP"
+  port: "1812 and 1813"
+  title: Enterprise Wi-Fi, a personal login per user with 802.1X.
+  lede: In offices, each person logs in with their own account or certificate, not one shared password. The access point passes the login to a RADIUS server, which decides.
+  overview: |
+    Three roles. The **supplicant** is your device. The **authenticator** is the access point or switch. The **authentication server** is RADIUS. Between device and AP, EAP messages travel in **EAPOL** frames. Between AP and RADIUS, they travel inside RADIUS packets on UDP 1812.
+
+    Common methods are **EAP-TLS**, with client certificates, and **PEAP**, with a password inside a TLS tunnel.
+  nodes:
+    laptop: [Laptop, supplicant, laptop, 0, 1]
+    ap: [Access point, authenticator, ap, 3, 1]
+    rad: [RADIUS server, authentication server, key, 6, 1]
+    dir: [Directory, user accounts, db, 8, 1]
+  links: [[laptop, ap], [ap, rad], [rad, dir]]
+  steps:
+    - t: Start
+      tag: eap
+      d: The laptop associates and sends EAPOL-Start. The AP blocks all other traffic until the login succeeds.
+      p:
+        - [laptop, ap, "EAPOL-Start", ctl]
+    - t: Identity
+      tag: eap
+      d: The AP asks for an identity. The laptop answers. The AP wraps the answer in a RADIUS Access-Request.
+      p:
+        - [ap, laptop, "EAP Request Identity", ctl]
+        - [laptop, ap, "EAP Response Identity asha", req]
+        - [ap, rad, "Access-Request (EAP inside)", req]
+    - t: The EAP method runs
+      tag: tls
+      d: RADIUS and the laptop run EAP-TLS through the AP, in several Access-Challenge rounds. They build a TLS session and check each other's certificates.
+      p:
+        - [rad, ap, "Access-Challenge", sec]
+        - [ap, laptop, "EAP TLS ServerHello, certificate", sec]
+        - [laptop, ap, "EAP TLS client certificate", sec]
+        - [ap, rad, "Access-Request", sec]
+    - t: Accept and keys
+      tag: accept
+      d: RADIUS checks the account in the directory and sends Access-Accept with key material for the AP, and maybe a VLAN for this user.
+      f: {Result: Access-Accept, VLAN: "20 staff"}
+      p:
+        - [rad, dir, "check account", req]
+        - [rad, ap, "Access-Accept + keys + VLAN 20", res]
+    - t: 4 way handshake and access
+      tag: handshake
+      d: The AP and the laptop run the 4 way handshake with the new key. The port opens. Each user has their own keys, and IT can disable one account without changing a shared password.
+      p:
+        - [ap, laptop, "4 way handshake", sec]
+  quiz:
+    - type: fill
+      q: "RADIUS authentication uses UDP port ____."
+      a: ["1812"]
+      why: Accounting uses 1813.
+    - q: In 802.1X, which device decides if a user may connect?
+      opts: ["The access point", "The RADIUS authentication server", "The laptop"]
+      a: 1
+      why: The AP only passes messages and enforces the result.
+  refs:
+    - "IETF. [RFC 3579, RADIUS support for EAP](https://www.rfc-editor.org/rfc/rfc3579)."
+
+- id: captive
+  name: Captive Portal
+  full: Hotel and cafe Wi-Fi logins
+  layer: 7
+  cat: security
+  transport: HTTP
+  port: "80 and 443"
+  title: Captive portal, the hotel Wi-Fi login page.
+  lede: On hotel or airport Wi-Fi, a login page pops up before you can browse. The network catches your first web request and sends you to its portal until you agree.
+  overview: |
+    After you join, the operating system makes a test request to a known URL, such as Android's `connectivitycheck.gstatic.com/generate_204`, which normally returns 204. If something else comes back, such as a redirect, the OS knows there is a portal and opens a mini browser.
+
+    Newer networks announce the portal directly with DHCP option 114, the captive portal API in RFC 8910.
+
+    !warn Open hotel Wi-Fi is not encrypted. Use HTTPS sites and a VPN.
+  nodes:
+    phone: [Phone, 10.20.0.55, phone, 0, 1]
+    gw: [Hotel gateway, firewall, router, 3, 1]
+    portal: [Portal page, login.hotel.example, web, 3, 3]
+    net: [Internet, "", cloud, 6, 1]
+  links: [[phone, gw], [gw, portal], [gw, net]]
+  steps:
+    - t: Join and get an address
+      tag: join
+      d: The phone joins the open network and gets an IP with DHCP. The gateway lets it reach DNS and the portal only.
+      on: [phone, gw]
+    - t: Connectivity check
+      tag: probe
+      d: The phone requests `http://connectivitycheck.gstatic.com/generate_204`. It expects 204 No Content.
+      p:
+        - [phone, gw, "GET /generate_204", req]
+    - t: Intercepted
+      tag: redirect
+      d: The gateway intercepts the request and answers with a 302 redirect to the portal. Not a 204, so the phone opens the login sheet.
+      p:
+        - [gw, phone, "302 Location login.hotel.example", bad]
+    - t: Log in
+      tag: login
+      d: You enter your room number and accept the terms. The portal tells the gateway to allow your device by its MAC and IP.
+      p:
+        - [phone, portal, "POST room 412, accept terms", req]
+        - [portal, gw, "allow 10.20.0.55", ctl]
+    - t: Online
+      tag: done
+      d: The connectivity check now reaches the real server and gets 204. Normal browsing works.
+      p:
+        - [phone, net, "GET /generate_204", req]
+        - [net, phone, "204 No Content", res]
+  quiz:
+    - q: How does a phone detect a captive portal?
+      opts: ["It reads the SSID", "It requests a known test URL and checks for the expected answer, such as 204", "It asks the user"]
+      a: 1
+      why: Any other answer, often a redirect, means a portal is in the way.
+    - type: fill
+      q: "The DHCP option for the captive portal API is option ____."
+      a: ["114"]
+      why: RFC 8910.
+  refs:
+    - "IETF. [RFC 8910, captive portal identification](https://www.rfc-editor.org/rfc/rfc8910)."
+
+- id: wireguard
+  name: WireGuard
+  full: A modern VPN
+  layer: 3
+  cat: security
+  transport: UDP
+  port: "often 51820"
+  title: WireGuard, a fast VPN with one round trip.
+  lede: WireGuard sets up an encrypted tunnel with a single round trip, using public keys like SSH. Then it carries whole IP packets through the tunnel.
+  overview: |
+    Each peer has a key pair. You list the public keys of the peers you trust and which IP ranges belong to each, called **AllowedIPs**. This is **cryptokey routing**. The handshake follows the **Noise IK** pattern. Data uses ChaCha20 Poly1305. Keys are renewed every two minutes.
+
+    WireGuard does not answer packets that are not authenticated, so a scanner cannot even tell it is there.
+  nodes:
+    laptop: [Laptop, tunnel 10.8.0.2, laptop, 0, 1]
+    net: [Internet, "", cloud, 3, 1]
+    vpn: [VPN server, 198.51.100.40, lock, 5, 1]
+    db: [Office database, 10.0.5.20, db, 8, 1]
+  links: [[laptop, net], [net, vpn], [vpn, db]]
+  steps:
+    - t: Handshake initiation
+      tag: handshake
+      d: The laptop sends one message with an ephemeral public key, its own static public key encrypted, and an encrypted timestamp that stops replays.
+      f: {Message: Handshake Initiation, Size: "148 bytes", Contains: "ephemeral key, encrypted static key, encrypted timestamp, MACs"}
+      p:
+        - [laptop, vpn, "Handshake Initiation", sec]
+    - t: Handshake response
+      tag: handshake
+      d: The server knows the laptop public key, so it can check the message. It replies with its own ephemeral key. Both sides now derive the session keys.
+      f: {Message: Handshake Response, Size: "92 bytes"}
+      p:
+        - [vpn, laptop, "Handshake Response", sec]
+    - t: Tunnel a packet
+      tag: data
+      d: The laptop sends an IP packet for 10.0.5.20. WireGuard encrypts the whole packet and sends it in UDP to the server. The server decrypts it and checks the inner source is in the AllowedIPs of this peer.
+      p:
+        - [laptop, vpn, "Transport data (encrypted IP packet)", data]
+        - [vpn, db, "IP packet 10.8.0.2 to 10.0.5.20", data]
+    - t: Reply through the tunnel
+      tag: data
+      d: The reply goes back the same way. After two minutes the peers do a new handshake for fresh keys.
+      p:
+        - [db, vpn, "IP reply", res]
+        - [vpn, laptop, "Transport data (encrypted)", data]
+  quiz:
+    - q: What is cryptokey routing?
+      opts: ["Routing by MAC address", "Each peer public key is tied to the IP ranges it may use", "Routing by DNS"]
+      a: 1
+      why: AllowedIPs ties keys to addresses in both directions.
+    - type: fill
+      q: "WireGuard runs over ____."
+      a: ["UDP"]
+      why: It sends encrypted IP packets inside UDP.
+  refs:
+    - "WireGuard. [Protocol and cryptography](https://www.wireguard.com/protocol/)."
+    - "Jason Donenfeld. [WireGuard whitepaper](https://www.wireguard.com/papers/wireguard.pdf)."
+
+- id: ipsec
+  name: IPsec
+  full: IKEv2 and ESP
+  layer: 3
+  cat: security
+  transport: "UDP 500 and 4500, ESP"
+  port: "500 and 4500"
+  title: IPsec, a site to site tunnel with IKEv2 and ESP.
+  lede: IPsec connects whole offices securely. IKEv2 agrees on keys and checks identities, then ESP encrypts every IP packet between the sites.
+  overview: |
+    **IKEv2** runs on UDP 500. **IKE_SA_INIT** does a Diffie Hellman exchange and picks algorithms. **IKE_AUTH** proves identities with certificates or a pre shared key and sets up the first **Child SA**, the tunnel for data. Data uses **ESP**, IP protocol 50. When NAT is in the way, IKE moves to UDP 4500 and ESP goes inside UDP 4500 too, called NAT traversal.
+  nodes:
+    pc: [Office A PC, 10.1.0.15, laptop, 0, 1]
+    gwa: [Gateway A, 198.51.100.10, lock, 2, 1]
+    net: [Internet, "", cloud, 4, 1]
+    gwb: [Gateway B, 203.0.113.10, lock, 6, 1]
+    srv: [Office B server, 10.2.0.20, server, 8, 1]
+  links: [[pc, gwa], [gwa, net], [net, gwb], [gwb, srv]]
+  steps:
+    - t: IKE_SA_INIT
+      tag: ike
+      d: Gateway A proposes algorithms and sends a Diffie Hellman key share and a nonce. B picks algorithms and sends its own. Now they share a secret for the next messages.
+      p:
+        - [gwa, gwb, "IKE_SA_INIT SA, KE, Ni", sec]
+        - [gwb, gwa, "IKE_SA_INIT SA, KE, Nr", sec]
+    - t: IKE_AUTH
+      tag: ike
+      d: Encrypted now, each gateway proves its identity with a certificate signature. They agree on traffic selectors, 10.1.0.0/16 to 10.2.0.0/16, and set up the Child SA.
+      f: {Traffic selectors: "10.1.0.0/16 <-> 10.2.0.0/16", Auth: certificates}
+      p:
+        - [gwa, gwb, "IKE_AUTH IDi, AUTH, SA, TS", sec]
+        - [gwb, gwa, "IKE_AUTH IDr, AUTH, SA, TS", sec]
+    - t: ESP carries the data
+      tag: esp
+      d: The office PC sends a normal packet to 10.2.0.20. Gateway A encrypts the whole packet in ESP tunnel mode, with a new outer header between the gateway addresses.
+      p:
+        - [pc, gwa, "IP 10.1.0.15 to 10.2.0.20", data]
+        - [gwa, gwb, "ESP (encrypted inner packet)", data]
+        - [gwb, srv, "IP 10.1.0.15 to 10.2.0.20", data]
+    - t: Rekey
+      tag: ike
+      d: Before the keys get old, the gateways run CREATE_CHILD_SA to make new ones, with no break in traffic.
+      p:
+        - [gwa, gwb, "CREATE_CHILD_SA", sec]
+        - [gwb, gwa, "CREATE_CHILD_SA", sec]
+  quiz:
+    - type: fill
+      q: "ESP is IP protocol number ____."
+      a: ["50"]
+      why: AH is protocol 51, rarely used today.
+    - q: When does IKEv2 move to UDP port 4500?
+      opts: ["Always", "When NAT is detected between the peers", "Never"]
+      a: 1
+      why: NAT traversal puts ESP inside UDP so NAT devices can pass it.
+  refs:
+    - "IETF. [RFC 7296, IKEv2](https://www.rfc-editor.org/rfc/rfc7296)."
+
+- id: kerberos
+  name: Kerberos
+  full: Tickets for single sign on
+  layer: 7
+  cat: security
+  transport: UDP and TCP
+  port: "88"
+  title: Kerberos, logging in once and using tickets.
+  lede: In a Windows domain, you type your password once. Kerberos then gives you tickets that prove who you are to each service, without sending your password again.
+  overview: |
+    The **KDC**, key distribution center, has two parts. The **authentication service** gives you a **TGT**, a ticket granting ticket. The **ticket granting service** swaps the TGT for **service tickets**. Each ticket is encrypted with the key of the service it is for, so only that service can read it. Clocks must be close, usually within 5 minutes.
+  nodes:
+    pc: [User PC, asha, laptop, 0, 1]
+    kdc: [Domain controller, KDC, key, 4, 0]
+    web: [Intranet web app, HTTP/intranet, web, 4, 2]
+  links: [[pc, kdc], [pc, web]]
+  steps:
+    - t: AS-REQ
+      tag: login
+      d: At login, the PC sends AS-REQ with a timestamp encrypted with a key made from your password. This is pre authentication.
+      p:
+        - [pc, kdc, "AS-REQ (encrypted timestamp)", sec]
+    - t: AS-REP with a TGT
+      tag: login
+      d: The KDC decrypts the timestamp with its copy of your key, so it knows you. It returns a TGT, encrypted with the KDC own key, plus a session key encrypted with your key.
+      f: {TGT: "encrypted with krbtgt key", Session key: "encrypted with user key", Lifetime: "about 10 hours"}
+      p:
+        - [kdc, pc, "AS-REP (TGT + session key)", sec]
+    - t: TGS-REQ for a service
+      tag: ticket
+      d: You open the intranet. The PC sends the TGT and an authenticator to the KDC and asks for a ticket for `HTTP/intranet.corp.example`.
+      p:
+        - [pc, kdc, "TGS-REQ (TGT, SPN HTTP/intranet)", sec]
+    - t: TGS-REP with a service ticket
+      tag: ticket
+      d: The KDC returns a service ticket encrypted with the web app key. The PC cannot read it. It only passes it on.
+      p:
+        - [kdc, pc, "TGS-REP (service ticket)", sec]
+    - t: AP-REQ to the service
+      tag: access
+      d: The browser sends the service ticket and an authenticator in the HTTP Authorization header. The web app decrypts the ticket with its own key and knows it is you. No password was sent to the web app.
+      p:
+        - [pc, web, "AP-REQ (Authorization Negotiate)", sec]
+        - [web, pc, "200 OK, welcome asha", res]
+  quiz:
+    - q: Who can read a service ticket?
+      opts: ["The user", "Only the service it is for, because it is encrypted with that service key", "Anyone on the network"]
+      a: 1
+      why: The user just carries it.
+    - type: fill
+      q: "The ticket you get at login, used to request other tickets, is the ____."
+      a: ["TGT", "ticket granting ticket"]
+      why: Ticket granting ticket.
+  refs:
+    - "MIT. [Kerberos, the network authentication protocol](https://web.mit.edu/kerberos/)."
+    - "IETF. [RFC 4120, Kerberos V5](https://www.rfc-editor.org/rfc/rfc4120)."
+
+- id: ldap
+  name: LDAP
+  full: Directory lookups and logins
+  layer: 7
+  cat: security
+  transport: TCP
+  port: "389, 636 for LDAPS"
+  title: LDAP, asking the company directory.
+  lede: LDAP is how apps look up users and groups in a directory such as Active Directory or OpenLDAP, and how many apps check passwords.
+  overview: |
+    Entries live in a tree. Each entry has a **distinguished name**, such as `uid=asha,ou=people,dc=corp,dc=example`. Apps **bind**, which means log in, then **search** with a filter, such as `(uid=asha)`.
+
+    A simple bind sends the password as it is. Always use **StartTLS** on port 389 or **LDAPS** on port 636.
+  nodes:
+    app: [Web app, 10.0.1.40, web, 0, 1]
+    ldap: [Directory server, 10.0.0.10, db, 6, 1]
+  links: [[app, ldap]]
+  steps:
+    - t: StartTLS
+      tag: tls
+      d: The app connects to port 389 and asks to upgrade to TLS with the StartTLS extended operation. Then it does a TLS handshake.
+      p:
+        - [app, ldap, "ExtendedRequest StartTLS", sec]
+        - [ldap, app, "ExtendedResponse success, TLS handshake", sec]
+    - t: Bind as a service account
+      tag: bind
+      d: The app binds as its own service account to be allowed to search.
+      p:
+        - [app, ldap, "BindRequest cn=webapp", sec]
+        - [ldap, app, "BindResponse success", res]
+    - t: Search for the user
+      tag: search
+      d: A user logs in as asha. The app searches for her entry and her groups.
+      f: {Base: "ou=people,dc=corp,dc=example", Scope: subtree, Filter: "(uid=asha)"}
+      p:
+        - [app, ldap, "SearchRequest (uid=asha)", req]
+        - [ldap, app, "SearchResultEntry uid=asha, memberOf=staff", res]
+        - [ldap, app, "SearchResultDone", res]
+    - t: Check her password
+      tag: bind
+      d: The app binds as asha with the password she typed. Success means the password is right.
+      p:
+        - [app, ldap, "BindRequest uid=asha", sec]
+        - [ldap, app, "BindResponse success", res]
+  quiz:
+    - type: fill
+      q: "LDAP over TLS from the start, LDAPS, uses port ____."
+      a: ["636"]
+      why: Plain LDAP and StartTLS use 389.
+    - q: Why must LDAP simple binds use TLS?
+      opts: ["They are slow", "The password is sent as it is", "They need UDP"]
+      a: 1
+      why: Without TLS, anyone on the path can read the password.
+  refs:
+    - "IETF. [RFC 4511, LDAP protocol](https://www.rfc-editor.org/rfc/rfc4511)."
+
+- id: oauth
+  name: OAuth 2.0
+  full: Authorization code with PKCE
+  layer: 7
+  cat: security
+  transport: HTTPS
+  port: "443"
+  title: OAuth 2.0, Sign in with a provider, step by step.
+  lede: OAuth lets an app get limited access for you without seeing your password. With OpenID Connect on top, the app also learns who you are. Watch the authorization code flow with PKCE.
+  overview: |
+    The roles are the **user**, the **client app**, the **authorization server** and the **resource server**, the API. The app gets a short **code**, then swaps it for **tokens** on a back channel. **PKCE** binds the code to the app that asked for it, using a secret `code_verifier` and its hash, the `code_challenge`.
+  nodes:
+    user: [User and browser, "", user, 0, 1]
+    app: [Photo app, client, web, 3, 0]
+    auth: [Login provider, authorization server, key, 6, 1]
+    api: [Photos API, resource server, server, 3, 3]
+  links: [[user, app], [user, auth], [app, auth], [app, api]]
+  steps:
+    - t: Redirect to the provider
+      tag: authorize
+      d: The app makes a random code_verifier and sends the browser to the provider with the hash of it, the scopes it wants and a state value.
+      f: {response_type: code, scope: "openid photos.read", code_challenge_method: S256}
+      p:
+        - [app, user, "302 to /authorize?...code_challenge", req]
+        - [user, auth, "GET /authorize", req]
+    - t: Log in and consent
+      tag: login
+      d: You log in at the provider, not at the app, and agree to "read your photos". The app never sees your password.
+      p:
+        - [user, auth, "password, MFA, consent", sec]
+    - t: Code comes back
+      tag: code
+      d: The provider redirects the browser back to the app with a one time code and the same state.
+      p:
+        - [auth, user, "302 to app/callback?code=...&state=...", res]
+        - [user, app, "GET /callback?code=...", res]
+    - t: Swap the code for tokens
+      tag: token
+      d: The app sends the code and the original code_verifier to the token endpoint. The provider checks the hash matches and returns an access token and, for OpenID Connect, an ID token.
+      p:
+        - [app, auth, "POST /token code + code_verifier", sec]
+        - [auth, app, "access_token, id_token", sec]
+    - t: Call the API
+      tag: api
+      d: The app calls the photos API with the access token as a Bearer token. The API checks it and returns only what the scope allows.
+      p:
+        - [app, api, "GET /photos, Authorization Bearer", req]
+        - [api, app, "200 photos", res]
+  quiz:
+    - q: What does PKCE protect against?
+      opts: ["Slow logins", "A stolen authorization code being used by another app", "Weak passwords"]
+      a: 1
+      why: Only the app with the code_verifier can redeem the code.
+    - type: fill
+      q: "The token that tells the app who the user is, in OpenID Connect, is the ____ token."
+      a: ["ID", "id_token", "identity"]
+      why: The access token is for calling APIs.
+  refs:
+    - "IETF. [RFC 6749, OAuth 2.0](https://www.rfc-editor.org/rfc/rfc6749) and [RFC 7636, PKCE](https://www.rfc-editor.org/rfc/rfc7636)."
+    - "OAuth.net. [OAuth 2.0](https://oauth.net/2/)."

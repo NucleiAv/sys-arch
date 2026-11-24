@@ -1,0 +1,405 @@
+- id: ftp
+  name: FTP
+  full: File Transfer Protocol
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "21 control, extra port for data"
+  title: FTP, a control line and a separate data line.
+  lede: FTP uses one connection for commands and a second one for each file. Watch a login, passive mode and a download, all in plain text.
+  overview: |
+    FTP is from the 1970s. Commands go over port 21. In **passive mode**, the server opens a port and tells the client which one, and the client connects to it for the data. The port is written as two numbers, so port = first times 256 plus second.
+
+    !warn FTP sends the password and files in plain text. Use SFTP, or FTPS which adds TLS.
+  nodes:
+    cli: [FTP client, 192.168.1.10, laptop, 0, 1]
+    srv: [FTP server, 203.0.113.50, folder, 6, 1]
+  links: [[cli, srv]]
+  steps:
+    - t: Greeting and login
+      tag: auth
+      d: The client connects to port 21. The server greets with 220. USER and PASS follow, in plain text.
+      p:
+        - [srv, cli, "220 FTP ready", ctl, {raw: "220 (vsFTPd 3.0.5)\r\n"}]
+        - [cli, srv, "USER asha", req]
+        - [srv, cli, "331 Please specify the password", ctl]
+        - [cli, srv, "PASS secret123 (plain text)", bad, {raw: "PASS secret123\r\n"}]
+        - [srv, cli, "230 Login successful", res]
+    - t: Passive mode
+      tag: pasv
+      d: The client sends PASV. The server answers with an address and two port numbers. 195 times 256 plus 80 is port 50000.
+      f: {Reply: "227 (203,0,113,50,195,80)", Data port: "50000"}
+      p:
+        - [cli, srv, "PASV", req]
+        - [srv, cli, "227 Entering Passive Mode (203,0,113,50,195,80)", res]
+    - t: Download a file
+      tag: data
+      d: The client opens a second connection to port 50000, then sends RETR on the control line. The file flows on the data line.
+      p:
+        - [cli, srv, "data connection to :50000", ctl]
+        - [cli, srv, "RETR report.pdf", req]
+        - [srv, cli, "150 Opening data connection", ctl]
+        - [srv, cli, "file bytes (data line)", data]
+        - [srv, cli, "226 Transfer complete", res]
+    - t: Quit
+      tag: close
+      d: The client says QUIT and the server answers 221.
+      p:
+        - [cli, srv, "QUIT", req]
+        - [srv, cli, "221 Goodbye", res]
+  quiz:
+    - type: num
+      q: "A PASV reply ends with (...,19,137). What is the data port?"
+      a: 5001
+      tol: 0
+      unit: port
+      why: 19 times 256 plus 137 is 5001.
+    - q: What is the main risk of plain FTP?
+      opts: ["It is slow", "Passwords and files travel in plain text", "It cannot send PDFs"]
+      a: 1
+      why: Use SFTP or FTPS.
+  refs:
+    - "IETF. [RFC 959, FTP](https://www.rfc-editor.org/rfc/rfc959)."
+
+- id: smb
+  name: SMB
+  full: Windows file sharing
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "445"
+  title: SMB, opening a file on a Windows share.
+  lede: SMB is how Windows machines share files and printers. Watch dialect negotiation, login with Kerberos or NTLM, connecting to a share and reading a file.
+  overview: |
+    Modern SMB is version 2 or 3 on TCP 445. **SMB 3** adds encryption. **Signing** stops tampering and relay attacks. **SMB 1** is old and unsafe. The WannaCry worm in 2017 spread through an SMB 1 bug called EternalBlue. Turn SMB 1 off, and never expose port 445 to the internet.
+  nodes:
+    pc: [Windows PC, 10.0.0.25, laptop, 0, 1]
+    fs: [File server, fs01, folder, 6, 1]
+    dc: [Domain controller, Kerberos KDC, key, 3, 3]
+  links: [[pc, fs], [pc, dc]]
+  steps:
+    - t: Negotiate
+      tag: negotiate
+      d: The client lists the SMB dialects it speaks. The server picks the highest common one, here 3.1.1, and says signing is required.
+      f: {Dialects offered: "2.0.2, 2.1, 3.0, 3.0.2, 3.1.1", Chosen: "3.1.1"}
+      p:
+        - [pc, fs, "NEGOTIATE dialects 2.0.2 to 3.1.1", req]
+        - [fs, pc, "NEGOTIATE response 3.1.1", res]
+    - t: Session setup
+      tag: auth
+      d: The client logs in with SPNEGO. It gets a Kerberos ticket for `cifs/fs01` from the domain controller and sends it. NTLM is the fallback.
+      p:
+        - [pc, dc, "TGS-REQ cifs/fs01", sec]
+        - [dc, pc, "service ticket", sec]
+        - [pc, fs, "SESSION_SETUP (Kerberos ticket)", sec]
+        - [fs, pc, "SESSION_SETUP success", res]
+    - t: Connect to the share
+      tag: tree
+      d: TREE_CONNECT opens the share `\\fs01\finance`. The server checks share permissions.
+      p:
+        - [pc, fs, "TREE_CONNECT \\\\fs01\\finance", req]
+        - [fs, pc, "TREE_CONNECT response", res]
+    - t: Open, read and close
+      tag: file
+      d: CREATE opens `budget.xlsx` and returns a file id. READ gets the data. CLOSE releases it. With SMB 3 encryption on, all of this is encrypted.
+      p:
+        - [pc, fs, "CREATE budget.xlsx", req]
+        - [fs, pc, "FileId 0x51", res]
+        - [pc, fs, "READ FileId 0x51", req]
+        - [fs, pc, "data", data]
+        - [pc, fs, "CLOSE", req]
+  quiz:
+    - type: fill
+      q: "Modern SMB runs on TCP port ____."
+      a: ["445"]
+      why: Old NetBIOS based SMB also used 139.
+    - q: Which SMB version should be turned off everywhere?
+      opts: ["SMB 3.1.1", "SMB 1", "SMB 2.1"]
+      a: 1
+      why: SMB 1 is insecure and was used by WannaCry.
+  refs:
+    - "Microsoft. [SMB overview](https://learn.microsoft.com/en-us/windows-server/storage/file-server/file-server-smb-overview)."
+    - "Microsoft. [Stop using SMB1](https://techcommunity.microsoft.com/blog/filecab/stop-using-smb1/425858)."
+
+- id: nfs
+  name: NFS
+  full: Network File System
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "2049, 111 for rpcbind"
+  title: NFS, mounting a remote folder on Linux.
+  lede: NFS lets Linux machines mount a folder from a server as if it were local. Watch the older v3 flow with rpcbind and mountd, then file reads by file handle.
+  overview: |
+    NFS uses ONC RPC. In **NFSv3**, the client asks **rpcbind** on port 111 where **mountd** runs, mounts the export to get a **file handle**, then talks to the NFS service on 2049. **NFSv4** uses only port 2049.
+
+    !warn With the default AUTH_SYS, the server trusts the user and group numbers that the client sends. Anyone who controls a client can claim any user id. Limit exports to trusted hosts, keep `root_squash` on, or use Kerberos with `sec=krb5`.
+  nodes:
+    cli: [Linux client, 10.0.0.40, terminal, 0, 1]
+    rpc: [rpcbind, port 111, server, 4, 0]
+    srv: [NFS server, 10.0.0.5 nfsd 2049, folder, 6, 2]
+  links: [[cli, rpc], [cli, srv], [rpc, srv]]
+  steps:
+    - t: Where is mountd?
+      tag: rpc
+      d: "`mount 10.0.0.5:/exports/data /mnt` first asks rpcbind for the port of the mount service."
+      p:
+        - [cli, rpc, "GETPORT mountd v3", req]
+        - [rpc, cli, "port 20048", res]
+    - t: Mount and get a file handle
+      tag: mount
+      d: The client asks mountd to mount `/exports/data`. The server checks `/etc/exports` and returns a root file handle.
+      p:
+        - [cli, srv, "MNT /exports/data", req]
+        - [srv, cli, "file handle 0x1a2b...", res]
+    - t: Find a file
+      tag: nfs
+      d: To open report.txt, the client sends LOOKUP with the folder handle and the name. It gets the file handle back.
+      f: {Credentials: "AUTH_SYS uid 1000 gid 1000"}
+      p:
+        - [cli, srv, "LOOKUP report.txt (uid 1000)", req]
+        - [srv, cli, "file handle 0x7c9e...", res]
+    - t: Read it
+      tag: nfs
+      d: READ requests with the file handle, an offset and a count bring the data.
+      p:
+        - [cli, srv, "READ offset 0 count 65536", req]
+        - [srv, cli, "data", data]
+  quiz:
+    - type: fill
+      q: "NFS runs on port ____."
+      a: ["2049"]
+      why: rpcbind is 111.
+    - q: What does the server trust with AUTH_SYS?
+      opts: ["A password", "The user and group numbers that the client sends", "A certificate"]
+      a: 1
+      why: That is why exports must be limited and root_squash kept on.
+  refs:
+    - "IETF. [RFC 1813, NFS version 3](https://www.rfc-editor.org/rfc/rfc1813)."
+    - "Linux man pages. [exports](https://man7.org/linux/man-pages/man5/exports.5.html)."
+
+- id: rsync
+  name: rsync
+  full: Fast file sync
+  layer: 7
+  cat: app
+  transport: TCP or SSH
+  port: "873, or 22 over SSH"
+  title: rsync, sending only what changed.
+  lede: rsync copies folders and big files fast, because it sends only the changed parts of each file. Watch the daemon greeting and the delta algorithm.
+  overview: |
+    rsync usually runs over SSH. It can also run as a **daemon** on port 873, with named **modules**. The **delta algorithm** works like this. The receiver splits its old copy into blocks and sends a weak rolling checksum and a strong hash for each. The sender slides over the new file, finds matching blocks, and sends only references to them plus the new bytes.
+
+    !warn A daemon module without `auth users` lets anyone read it. Never expose an open rsync daemon to the internet.
+  nodes:
+    cli: [Backup server, receiver, server, 0, 1]
+    srv: [rsync daemon, files.example 873, folder, 6, 1]
+  links: [[cli, srv]]
+  steps:
+    - t: Greeting
+      tag: hello
+      d: The client connects to port 873. Both sides send their protocol version.
+      p:
+        - [srv, cli, "@RSYNCD: 31.0", ctl, {raw: "@RSYNCD: 31.0\n"}]
+        - [cli, srv, "@RSYNCD: 31.0", ctl]
+    - t: Pick a module and log in
+      tag: auth
+      d: The client names the module `backups`. The server sends a challenge. The client answers with a hash of the challenge and the password.
+      p:
+        - [cli, srv, "backups", req]
+        - [srv, cli, "@RSYNCD: AUTHREQD challenge", sec]
+        - [cli, srv, "user + hashed response", sec]
+        - [srv, cli, "@RSYNCD: OK", res]
+    - t: File list
+      tag: list
+      d: The sender sends the list of files with sizes and times. Unchanged files are skipped by default.
+      p:
+        - [srv, cli, "file list", data]
+    - t: Block checksums
+      tag: delta
+      d: For a changed 1 GB file, the receiver sends checksums of the blocks it already has.
+      p:
+        - [cli, srv, "block checksums (weak + strong)", ctl]
+    - t: Only the delta
+      tag: delta
+      d: The sender finds matching blocks and sends "use block 17" and the few new bytes. A small edit in a big file costs a small transfer.
+      p:
+        - [srv, cli, "match refs + literal bytes", data]
+  quiz:
+    - q: Why is rsync fast for a big file with a small change?
+      opts: ["It compresses everything", "It sends only blocks that do not match the old copy", "It uses UDP"]
+      a: 1
+      why: Rolling checksums find the unchanged blocks.
+    - type: fill
+      q: "The rsync daemon listens on port ____."
+      a: ["873"]
+      why: Over SSH it uses 22 instead.
+  refs:
+    - "Andrew Tridgell and Paul Mackerras. [The rsync algorithm](https://rsync.samba.org/tech_report/)."
+    - "rsync. [rsyncd.conf manual](https://download.samba.org/pub/rsync/rsyncd.conf.5)."
+
+- id: telnet
+  name: Telnet
+  full: Old plain text remote login
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "23"
+  title: Telnet, why we replaced it with SSH.
+  lede: Telnet gives a remote terminal like SSH, but without any encryption. Watch the option negotiation, then a password that anyone on the path can read.
+  overview: |
+    Telnet sends options with **IAC**, the byte 255, followed by commands such as DO, DONT, WILL and WONT. Then text flows as it is. Some network devices still use it, but you should replace it with SSH everywhere.
+  nodes:
+    cli: [Laptop, 192.168.1.10, laptop, 0, 1]
+    eve: [Listener on the path, sees everything, user, 3, 3]
+    dev: [Old switch, 192.168.1.2, switch, 6, 1]
+  links: [[cli, dev], [cli, eve], [eve, dev]]
+  steps:
+    - t: Option negotiation
+      tag: options
+      d: After TCP connects to port 23, the device and client agree options, such as echo and terminal type, with IAC commands.
+      f: {IAC: "255", WILL: "251", DO: "253", ECHO: "option 1"}
+      p:
+        - [dev, cli, "IAC WILL ECHO, IAC DO TERMINAL-TYPE", ctl]
+        - [cli, dev, "IAC DO ECHO, IAC WILL TERMINAL-TYPE", ctl]
+    - t: Login prompt
+      tag: login
+      d: The device sends a login prompt. You type your username.
+      p:
+        - [dev, cli, "login:", ctl]
+        - [cli, dev, "admin", req]
+    - t: Password in plain text
+      tag: risk
+      d: You type the password. It crosses the network as plain characters. The listener reads it.
+      p:
+        - [cli, dev, "Sw1tchPass! (plain text)", bad, {raw: "Sw1tchPass!\r\n"}]
+      bad: [eve]
+    - t: Commands in plain text
+      tag: risk
+      d: Every command and every reply is readable and can even be changed in transit.
+      p:
+        - [cli, dev, "show running-config", req]
+        - [dev, cli, "config with secrets", data]
+  quiz:
+    - type: fill
+      q: "Telnet uses TCP port ____."
+      a: ["23"]
+      why: SSH uses 22.
+    - q: What should replace Telnet?
+      opts: ["FTP", "SSH", "HTTP"]
+      a: 1
+      why: SSH gives the same remote shell with encryption and host keys.
+  refs:
+    - "IETF. [RFC 854, Telnet protocol](https://www.rfc-editor.org/rfc/rfc854)."
+
+- id: snmp
+  name: SNMP
+  full: Network device monitoring
+  layer: 7
+  cat: app
+  transport: UDP
+  port: "161, 162 for traps"
+  title: SNMP, asking a router how it feels.
+  lede: Monitoring systems use SNMP to read counters from routers, switches and printers, and devices send traps when something breaks. Watch a get, a walk and a trap.
+  overview: |
+    Each value has an **OID**, a dotted number path in the **MIB** tree. `1.3.6.1.2.1.1.5.0` is the device name, sysName. **SNMPv1** and **v2c** use a **community string**, such as "public", sent in plain text, which acts as a password. **SNMPv3** adds real users, authentication and encryption.
+  nodes:
+    nms: [Monitoring server, 10.0.0.9, server, 0, 1]
+    rtr: [Router, agent 10.0.0.1, router, 6, 1]
+  links: [[nms, rtr]]
+  steps:
+    - t: GetRequest
+      tag: get
+      d: The monitoring server asks the router for its name with an SNMPv2c GetRequest on UDP 161.
+      f: {Version: v2c, Community: "monitor-ro (plain text)", OID: "1.3.6.1.2.1.1.5.0 sysName"}
+      p:
+        - [nms, rtr, "GetRequest 1.3.6.1.2.1.1.5.0", req]
+        - [rtr, nms, "Response sysName = core-rtr-1", res]
+    - t: Walk a table
+      tag: walk
+      d: GetBulk walks the interface table and gets traffic counters for every port in one go.
+      p:
+        - [nms, rtr, "GetBulkRequest ifTable", req]
+        - [rtr, nms, "Response ifInOctets, ifOutOctets ...", res]
+    - t: A trap
+      tag: trap
+      d: A link goes down. The router does not wait to be asked. It sends a trap to the monitoring server on UDP 162.
+      p:
+        - [rtr, nms, "Trap linkDown ifIndex 3", bad]
+    - t: The weak spot
+      tag: risk
+      d: The community string travels in plain text. Default strings such as "public" and "private" are well known. Use SNMPv3 with authentication and privacy, and read only access.
+      on: [nms, rtr]
+  quiz:
+    - type: fill
+      q: "SNMP agents listen on UDP port ____."
+      a: ["161"]
+      why: Traps go to 162 on the manager.
+    - q: Which SNMP version gives authentication and encryption?
+      opts: ["v1", "v2c", "v3"]
+      a: 2
+      why: v1 and v2c only have plain community strings.
+  refs:
+    - "IETF. [RFC 3411, SNMP architecture](https://www.rfc-editor.org/rfc/rfc3411)."
+
+- id: modbus
+  name: Modbus
+  full: Industrial control (OT)
+  layer: 7
+  cat: app
+  transport: TCP
+  port: "502"
+  title: Modbus, a control system reads and writes a machine.
+  lede: Factories, water plants and power systems still use Modbus. It is simple and fast, and it has no login at all. Anyone who can reach port 502 can read and change values.
+  overview: |
+    A Modbus TCP message has an **MBAP header**, a transaction id, a protocol id of 0, a length and a unit id, then a **function code** and data. Code 03 reads holding registers. Code 06 writes one register. An error reply sets the top bit of the function code, so 03 becomes 0x83.
+
+    !warn Modbus has no authentication or encryption. Keep it on isolated networks, behind industrial firewalls that allow only known masters and function codes.
+  nodes:
+    scada: [SCADA server, 10.50.0.10, server, 0, 1]
+    fw: [Industrial firewall, allow list, shield, 3, 1]
+    plc: [PLC, pump controller 10.50.1.20, plc, 6, 1]
+    x: [Unknown laptop, 10.50.0.99, laptop, 3, 3]
+  links: [[scada, fw], [fw, plc], [x, fw]]
+  steps:
+    - t: Read registers
+      tag: read
+      d: The SCADA server reads two holding registers starting at address 0, the tank level and the pump speed.
+      f: {Transaction: "0x0001", Unit: "1", Function: "03 read holding registers", Start: "0", Quantity: "2"}
+      p:
+        - [scada, plc, "FC 03 read 2 registers from 0", req, {fields: {MBAP: "0001 0000 0006 01", PDU: "03 0000 0002"}}]
+    - t: The values
+      tag: read
+      d: The PLC answers with a byte count of 4 and the two values, 1820 and 1450.
+      p:
+        - [plc, scada, "FC 03 bytes 4: 1820, 1450", res, {fields: {PDU: "03 04 071C 05AA"}}]
+    - t: Write a setpoint
+      tag: write
+      d: The operator lowers the pump speed. The server writes 1200 to register 1 with function code 06. The PLC echoes the request to confirm.
+      p:
+        - [scada, plc, "FC 06 write register 1 = 1200", req]
+        - [plc, scada, "FC 06 echo", res]
+    - t: An exception
+      tag: error
+      d: A request for register 9000 does not exist. The PLC answers with function code 0x83 and exception code 02, illegal data address.
+      p:
+        - [scada, plc, "FC 03 read from 9000", req]
+        - [plc, scada, "FC 0x83 exception 02", bad]
+    - t: An unknown device tries to write
+      tag: risk
+      d: A laptop that should not be here sends a write. Modbus itself would accept it. The industrial firewall blocks it, because this source is not on the allow list.
+      p:
+        - [x, fw, "FC 06 write (blocked)", bad]
+      bad: [x]
+  quiz:
+    - type: fill
+      q: "Modbus TCP uses port ____."
+      a: ["502"]
+      why: There is no built in authentication on that port.
+    - q: A reply has function code 0x83. What does it mean?
+      opts: ["Success", "An exception for function 03", "A write"]
+      a: 1
+      why: Errors add 0x80 to the function code.
+  refs:
+    - "Modbus Organization. [Modbus application protocol specification](https://www.modbus.org/specs.php)."
+    - "CISA. [Industrial control systems security](https://www.cisa.gov/topics/industrial-control-systems)."

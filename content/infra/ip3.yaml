@@ -1,0 +1,57 @@
+kind: practice
+title: Infra level 3 practice, the cloud
+time: about 30 minutes
+lede: IAM policies, network rules, storage choices and serverless limits on AWS.
+
+rounds:
+  - title: Round 1. IAM
+    items:
+      - q: Which policy follows least privilege for a function that only reads one table?
+        info: |
+          ```
+          A. {"Effect":"Allow","Action":"dynamodb:*","Resource":"*"}
+          B. {"Effect":"Allow","Action":["dynamodb:GetItem","dynamodb:Query"],
+              "Resource":"arn:aws:dynamodb:ap-south-1:111122223333:table/orders"}
+          ```
+        opts: ["A", "B"]
+        a: 1
+        why: Only the needed actions on only the needed table.
+      - type: fill
+        q: "An explicit ____ in any policy always wins over an allow."
+        a: ["deny"]
+        why: That is how IAM evaluates policies.
+  - title: Round 2. Network
+    items:
+      - type: sort
+        q: Which subnet does each resource belong in?
+        rows:
+          - ["Application Load Balancer", "Public subnet"]
+          - ["App containers", "Private subnet"]
+          - ["RDS database", "Private subnet"]
+          - ["NAT gateway", "Public subnet"]
+        opts: ["Public subnet", "Private subnet"]
+        why: Only what must face the internet goes in public subnets.
+      - type: num
+        q: How many addresses are in a /16 range?
+        a: 65536
+        tol: 0
+        unit: addresses
+        why: 2 to the power 16 is 65,536.
+  - title: Round 3. Storage and serverless
+    items:
+      - q: A job takes 40 minutes. Can it run in one Lambda call?
+        opts: ["Yes", "No, the limit is 15 minutes, use containers, AWS Batch or Step Functions"]
+        a: 1
+        why: Split the work or use a service built for long jobs.
+      - q: Messages in SQS are processed twice. The function takes 90 seconds. The visibility timeout is 30 seconds. What happened?
+        opts: ["SQS is broken", "The message became visible again before the function finished, so another call took it", "The function is too fast"]
+        a: 1
+        why: Set the visibility timeout above the processing time, often six times the function timeout for Lambda.
+      - type: open
+        q: You need to store 5 million product images and serve them worldwide. What do you use and how do you keep the bucket private?
+        a: "Store the images in S3 with Block Public Access on. Put CloudFront in front, with origin access control so only CloudFront can read the bucket. Users get images from CloudFront edges near them."
+card: |
+  - Least privilege, explicit deny wins.
+  - Public subnets for load balancers and NAT only.
+  - Lambda 15 minutes, visibility timeout above run time.
+  - Private S3 behind CloudFront.

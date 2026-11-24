@@ -1,0 +1,225 @@
+short: Docker
+title: Docker images and containers
+time: about 55 minutes
+tags: [Docker, Dockerfile, images, containers]
+lede: The old excuse "it works on my machine" stops when you ship the machine too. Learn images, containers and how to write a small, safe Dockerfile.
+
+idea: |
+  An app needs more than its code. It needs the right language version, libraries and settings. If a server has slightly different versions, the app breaks.
+
+  **Docker** packs the app and everything it needs into an **image**. An image is a read only template made of **layers**. When you run an image, you get a **container**, a running, isolated process with its own files, network and limits.
+
+  Containers are not virtual machines. A virtual machine has its own full operating system. A container shares the host's Linux kernel, so it starts in under a second and uses little memory.
+
+  !eli5 An image is a recipe plus all the ingredients in a sealed box. A container is the dish you cook from it. You can cook many identical dishes from one box, in any kitchen.
+
+scenes:
+  - title: From Dockerfile to running containers
+    stats: [Command, Result]
+    nodes:
+      df: {label: Dockerfile, x: 0, y: 1, kind: box}
+      img: {label: Image, x: 2, y: 1, kind: def, tag: shop:1.4}
+      reg: {label: Registry, x: 4, y: 0, kind: raised, tag: Docker Hub or ECR}
+      c1: {label: Container 1, x: 6, y: 1, kind: ok}
+      c2: {label: Container 2, x: 6, y: 3, kind: ok}
+    links: [[df, img], [img, reg], [reg, c1], [reg, c2]]
+    steps:
+      - title: Build
+        text: "`docker build -t shop:1.4 .` reads the Dockerfile. Each instruction makes a layer. Unchanged layers come from the cache."
+        on: [df, img]
+        flow: [[df, img, ink]]
+        stats: [docker build, image shop:1.4]
+      - title: Push
+        text: "`docker push registry.example.com/shop:1.4` uploads the image to a registry, a store for images."
+        on: [img, reg]
+        flow: [[img, reg, ink]]
+        stats: [docker push, image in registry]
+      - title: Run
+        text: "On any server, `docker run -d -p 8080:3000 shop:1.4` pulls the image and starts a container. Port 8080 on the host goes to port 3000 in the container."
+        on: [reg, c1]
+        flow: [[reg, c1, def]]
+        mark: {c1: ok}
+        stats: [docker run, one container]
+      - title: Run more
+        text: Run the same image again for a second identical container. Both behave exactly the same, because they come from the same image.
+        on: [reg, c2]
+        flow: [[reg, c2, def]]
+        mark: {c2: ok}
+        stats: [docker run, two containers]
+
+terms:
+  - [Image, "A read only package of an app and everything it needs, made of layers."]
+  - [Container, "A running instance of an image, isolated from other processes."]
+  - [Dockerfile, "A text file with instructions to build an image."]
+  - [Layer, "One step of an image. Layers are cached and shared between images."]
+  - [Registry, "A server that stores images, such as Docker Hub, GitHub Container Registry or Amazon ECR."]
+  - [Tag, "A name for an image version, such as `shop:1.4`."]
+  - [Volume, "Storage that lives outside the container, so data survives when the container is removed."]
+  - [Multi-stage build, "A Dockerfile with several stages, where the final image copies only what it needs from earlier stages."]
+  - [Namespaces and cgroups, "Linux features that isolate what a container sees and limit how much CPU and memory it uses."]
+
+how: |
+  ### A good Dockerfile for a Node.js app
+
+  ```
+  # stage 1, build
+  FROM node:22-slim AS build
+  WORKDIR /app
+  COPY package*.json ./
+  RUN npm ci
+  COPY . .
+  RUN npm run build
+
+  # stage 2, run
+  FROM node:22-slim
+  WORKDIR /app
+  ENV NODE_ENV=production
+  COPY package*.json ./
+  RUN npm ci --omit=dev
+  COPY --from=build /app/dist ./dist
+  USER node
+  EXPOSE 3000
+  CMD ["node", "dist/server.js"]
+  ```
+
+  Why this order? Docker reuses cached layers until one changes. Package files change rarely, code changes often. So copy the package files and install first. Then a code change does not reinstall every package.
+
+  ### The commands you use most
+
+  | Command | What it does |
+  | --- | --- |
+  | `docker build -t name:tag .` | Build an image from the Dockerfile in this folder |
+  | `docker run -d -p 8080:3000 name:tag` | Run in the background, map host port 8080 to container port 3000 |
+  | `docker ps` | List running containers |
+  | `docker logs -f id` | Follow a container's output |
+  | `docker exec -it id sh` | Open a shell inside a running container |
+  | `docker stop id` | Stop a container |
+  | `docker run -v data:/var/lib/data ...` | Keep data in a named volume |
+  | `docker run -e DATABASE_URL=... ...` | Pass an environment variable |
+
+  ### Rules for good images
+
+  1. Start from a small, official base image, such as a `slim` or `alpine` variant.
+  2. Use multi-stage builds, so build tools do not ship.
+  3. Run as a normal user with `USER`, not as root.
+  4. Add a `.dockerignore` file so `node_modules`, `.git` and `.env` stay out.
+  5. Never bake secrets into an image. Pass them at run time.
+  6. Tag images with a version or commit hash, not only `latest`.
+
+  !key `EXPOSE` only documents the port. It does not open it. You publish ports with `-p` when you run the container.
+
+diagrams:
+  - type: flow
+    title: Containers versus virtual machines
+    lanes:
+      - label: virtual machines
+        nodes: [["App", "box"], ["Full guest OS", "atk"], ["Hypervisor", "raised"], ["Hardware", "box"]]
+        edges: ["", "", ""]
+      - label: containers
+        labelkind: def
+        nodes: [["App", "def"], ["Container runtime", "raised"], ["Shared Linux kernel", "raised"], ["Hardware", "box"]]
+        edges: ["", "", ""]
+    caption: Containers skip the guest operating system, so they are smaller and start much faster. Virtual machines give stronger isolation.
+
+life:
+  - ["The 2 GB image", "A team copied the whole project folder, including `node_modules` and test data, into the image. It was 2 GB and slow to deploy. A `.dockerignore` file and a multi-stage build made it under 200 MB."]
+  - ["The secret inside an image", "A developer copied `.env` into an image and pushed it to a public registry. Anyone could pull the image and read the database password. Secrets must come from the environment at run time."]
+
+tradeoffs:
+  - ["Containers", "Same everywhere, fast start, small.", "Share the host kernel, weaker isolation than VMs."]
+  - ["Virtual machines", "Strong isolation, any operating system.", "Heavier, slower to start."]
+  - ["alpine base images", "Very small.", "Uses a different C library, some packages behave differently."]
+  - ["latest tag", "Convenient.", "You never know exactly which version runs."]
+
+mistakes:
+  - Running containers as root.
+  - Secrets inside images.
+  - Copying everything before installing packages, which breaks the cache.
+  - Storing data inside the container instead of a volume.
+  - Deploying `latest` and not knowing which version is live.
+
+quiz:
+  - q: What is the difference between an image and a container?
+    opts: ["None", "An image is a read only template, a container is a running instance of it", "A container is stored in a registry"]
+    a: 1
+    why: You build and push images. You run containers.
+  - type: fill
+    q: "In `docker run -p 8080:3000 shop`, port ____ is the port inside the container."
+    a: ["3000"]
+    why: The format is host port, then container port.
+  - q: Why copy package files and install before copying the rest of the code?
+    opts: ["It is required", "So code changes do not invalidate the cached install layer", "It makes the image bigger"]
+    a: 1
+    why: Docker reuses layers until something changes.
+  - q: What is wrong with this Dockerfile?
+    info: |
+      ```
+      FROM node:22
+      COPY . .
+      COPY .env .env
+      RUN npm install
+      CMD ["node", "server.js"]
+      ```
+    opts: ["Nothing", "It bakes secrets into the image, runs as root and breaks the layer cache", "CMD must be RUN"]
+    a: 1
+    why: Pass secrets at run time, add USER and copy package files first.
+  - type: fill
+    q: "To open a shell inside a running container, run `docker ____ -it id sh`."
+    a: ["exec"]
+    why: exec runs a command inside an existing container.
+
+interview:
+  - q: How are containers different from virtual machines, and why do we use them?
+    keys:
+      - ["Containers share the host kernel, VMs run a full guest OS", [kernel, guest, operating system, hypervisor]]
+      - ["Containers are lighter and start faster", [light, fast, start, small, seconds]]
+      - ["Same image runs the same everywhere", [same, everywhere, consistent, portable, works on my machine]]
+      - ["Isolation with namespaces and cgroups, weaker than VMs", [namespace, cgroup, isolat, weaker, security]]
+    a: |
+      A virtual machine emulates hardware and runs a full guest operating system on a hypervisor. A container is an isolated process on the host that shares the host's Linux kernel. Namespaces control what it can see and cgroups limit its CPU and memory. That makes containers small and quick to start, so you can run many per machine and scale fast. The image packs the app with its exact dependencies, so it runs the same on a laptop, in CI and in production. The trade-off is weaker isolation, which is why hostile multi tenant setups often add VMs or sandboxed runtimes.
+    fb: Naming namespaces and cgroups shows you know what a container really is.
+
+desk:
+  title: Shrink and secure an image
+  lede: A team's image is huge, slow to build and not safe. Fix the Dockerfile.
+  situation: |
+    **Quillpad** builds a Python API. Every small code change takes 6 minutes to build, the image is 1.8 GB, and it runs as root.
+  rounds:
+    - title: Round 1. Read the Dockerfile
+      info: |
+        ```
+        FROM python:3.12
+        COPY . /app
+        WORKDIR /app
+        RUN pip install -r requirements.txt
+        CMD ["python", "main.py"]
+        ```
+      items:
+        - q: Why does every code change reinstall all packages?
+          opts: ["pip is slow", "COPY . comes before the install, so any change breaks the cache for the install layer", "Python 3.12"]
+          a: 1
+          why: Copy requirements.txt first, install, then copy the code.
+        - type: fill
+          q: "Add this line before CMD so the app does not run as root. `____ app`"
+          a: ["USER"]
+          why: Create a user, then switch with USER.
+    - title: Round 2. Make it small
+      items:
+        - type: sort
+          q: Match each fix to what it saves.
+          rows:
+            - ["Use python:3.12-slim", "Smaller base"]
+            - ["Add .dockerignore with .git and tests", "Fewer files copied"]
+            - ["pip install --no-cache-dir", "No pip cache in the image"]
+          opts: ["Smaller base", "Fewer files copied", "No pip cache in the image"]
+          why: Every byte you do not ship is faster to push, pull and scan.
+  card: |
+    - Image is the template, container is the running copy.
+    - Copy dependency files first for the cache.
+    - Slim base, multi-stage, USER, .dockerignore.
+    - Secrets at run time, version tags always.
+
+refs:
+  - "Docker Docs. [Get started with Docker](https://docs.docker.com/get-started/)."
+  - "Docker Docs. [Building best practices](https://docs.docker.com/build/building/best-practices/)."
+  - "Docker Docs. [Multi-stage builds](https://docs.docker.com/build/building/multi-stage/)."

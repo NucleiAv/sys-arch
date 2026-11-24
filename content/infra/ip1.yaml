@@ -1,0 +1,65 @@
+kind: practice
+title: Infra level 1 practice, Git, GitHub and Actions
+time: about 30 minutes
+lede: Commands, conflicts and workflow files. Answer each one without looking back.
+
+rounds:
+  - title: Round 1. Git commands
+    items:
+      - type: sort
+        q: Which command does each job?
+        rows:
+          - ["Stage a file for the next commit", "git add"]
+          - ["Save a snapshot with a message", "git commit"]
+          - ["Upload commits to GitHub", "git push"]
+          - ["Download and merge new commits", "git pull"]
+          - ["Undo a shared commit with a new commit", "git revert"]
+        opts: ["git add", "git commit", "git push", "git pull", "git revert"]
+        why: Learn these five first. They cover most days.
+      - type: fill
+        q: "Create a branch called fix-cart and move to it with `git switch ____ fix-cart`."
+        a: ["-c"]
+        why: -c creates the branch.
+  - title: Round 2. Read the output
+    items:
+      - q: What happened?
+        info: |
+          ```
+          $ git merge feature/prices
+          Auto-merging prices.py
+          CONFLICT (content): Merge conflict in prices.py
+          Automatic merge failed; fix conflicts and then commit the result.
+          ```
+        opts: ["The merge finished", "Both branches changed the same lines in prices.py, and you must fix it by hand", "The file was deleted"]
+        a: 1
+        why: Edit the file, remove markers, git add, git commit.
+      - q: Is it safe to run `git rebase main` on a branch your teammate also works on and has pulled?
+        opts: ["Yes", "No, rebase rewrites commits your teammate already has"]
+        a: 1
+        why: Rebase only private work.
+  - title: Round 3. Workflow file
+    items:
+      - q: When does this workflow run?
+        info: |
+          ```
+          on:
+            pull_request:
+              branches: [main]
+            schedule:
+              - cron: "0 2 * * *"
+          ```
+        opts: ["Only on push", "On pull requests into main, and every day at 02:00 UTC", "Never"]
+        a: 1
+        why: GitHub Actions cron schedules use UTC.
+      - type: fill
+        q: "The first step of most jobs, which downloads your repository to the runner, is `uses: actions/____@v4`."
+        a: ["checkout"]
+        why: Runners start empty.
+      - type: open
+        q: Your deploy job uses a long lived AWS access key stored as a secret. What should you change and why?
+        a: "Use OIDC. Give the workflow permission id-token write, create an IAM role that trusts GitHub's OIDC provider for this repository and branch, and use aws-actions/configure-aws-credentials to get short lived credentials. There is then no long lived key to leak or rotate."
+card: |
+  - add, commit, push, pull, revert.
+  - Conflicts, choose, clean, add, commit.
+  - Workflows in .github/workflows, needs and if.
+  - OIDC, not stored cloud keys.

@@ -1,0 +1,247 @@
+short: Kubernetes in practice
+title: Kubernetes in practice, config, health, scaling and updates
+time: about 60 minutes
+tags: [Ingress, probes, HPA, Helm]
+lede: A real app on Kubernetes needs a way in from the internet, settings and secrets, health checks, resource limits, autoscaling and safe updates. Learn each one with a small YAML example.
+
+idea: |
+  Infra lesson 2.4 showed the basic objects. Real apps need more.
+
+  - **Ingress** sends outside HTTP traffic to the right Service, by host name and path.
+  - **ConfigMaps** and **Secrets** hold settings outside the image.
+  - **Probes** tell Kubernetes if a container is alive and ready for traffic.
+  - **Requests and limits** say how much CPU and memory a container needs and may use.
+  - The **Horizontal Pod Autoscaler** adds and removes pods with the load.
+  - **Rolling updates** replace pods a few at a time, so there is no downtime.
+
+  !eli5 You hired a robot gardener in the last lesson. Now you give it a gate for visitors, a notebook of instructions, a way to check each plant is healthy, a water budget per plant, permission to plant more in summer, and a rule to replace plants one row at a time.
+
+scenes:
+  - title: A rolling update with readiness probes
+    stats: [Step, Old pods, New pods]
+    nodes:
+      ing: {label: Ingress, x: 0, y: 1, kind: raised, tag: shop.example.com}
+      svc: {label: Service, x: 2, y: 1, kind: def}
+      o1: {label: v1.4 pod, x: 4, y: 0, kind: raised}
+      o2: {label: v1.4 pod, x: 4, y: 2, kind: raised}
+      n1: {label: v1.5 pod, x: 6, y: 1, kind: ok}
+    links: [[ing, svc], [svc, o1], [svc, o2], [svc, n1]]
+    steps:
+      - title: Change the image
+        text: You change the image to `shop:1.5` and apply. The Deployment starts one new pod. maxSurge 1 allows one extra pod during the update.
+        on: [n1]
+        flow: [[ing, svc, ink], [svc, o1, ink], [svc, o2, ink]]
+        stats: [Start, "2", "1 starting"]
+      - title: Wait for ready
+        text: The readiness probe calls `/ready` every few seconds. Until it passes, the Service sends no traffic to the new pod.
+        on: [n1]
+        mark: {n1: warn}
+        stats: [Probe, "2", "1 not ready"]
+      - title: Shift traffic
+        text: The probe passes. The new pod joins the Service. One old pod is stopped. The pattern repeats until all pods run v1.5.
+        on: [svc, n1, o1]
+        flow: [[svc, n1, def], [svc, o1, ink]]
+        mark: {n1: ok, o2: bad}
+        stats: [Replace, "1", "1 ready"]
+      - title: Something is wrong
+        text: Errors go up after the update. `kubectl rollout undo deployment shop` goes back to the previous ReplicaSet in seconds.
+        on: [svc, o1]
+        flow: [[svc, o1, def]]
+        stats: [Undo, back to v1.4, "0"]
+
+terms:
+  - [Ingress, "Rules that send outside HTTP and HTTPS traffic to Services by host and path. An ingress controller, such as NGINX, does the work."]
+  - [ConfigMap, "Non secret settings, such as a log level, given to pods as environment variables or files."]
+  - [Secret, "Sensitive values, such as passwords. Stored base64 encoded, which is not encryption."]
+  - [Liveness probe, "If it fails, Kubernetes restarts the container."]
+  - [Readiness probe, "If it fails, the pod gets no traffic, but it is not restarted."]
+  - [Requests, "The CPU and memory a container needs. The scheduler uses them to place pods."]
+  - [Limits, "The most CPU and memory a container may use. Over the memory limit, the container is killed."]
+  - [HPA, "Horizontal Pod Autoscaler. Changes the replica count based on metrics such as CPU."]
+  - [Helm, "A package manager for Kubernetes that installs apps from templated charts."]
+  - [StatefulSet, "Like a Deployment, but each pod keeps a stable name and its own storage. Used for databases."]
+
+how: |
+  ### Config and secrets
+
+  ```
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: shop-config
+  data:
+    LOG_LEVEL: info
+  ---
+  # in the container spec
+  envFrom:
+    - configMapRef:
+        name: shop-config
+  env:
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: shop-db
+          key: password
+  ```
+
+  !warn Secrets are only base64 encoded by default. Turn on encryption at rest for etcd, limit who can read Secrets, or use an external secrets manager.
+
+  ### Probes and resources
+
+  ```
+  readinessProbe:
+    httpGet: { path: /ready, port: 3000 }
+    periodSeconds: 5
+  livenessProbe:
+    httpGet: { path: /healthz, port: 3000 }
+    initialDelaySeconds: 10
+  resources:
+    requests: { cpu: 250m, memory: 256Mi }
+    limits:   { memory: 512Mi }
+  ```
+
+  `250m` means a quarter of one CPU core. A liveness probe should only check the process itself. If it checks the database, a database blip restarts every pod.
+
+  ### Autoscaling
+
+  ```
+  apiVersion: autoscaling/v2
+  kind: HorizontalPodAutoscaler
+  metadata:
+    name: shop
+  spec:
+    scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: shop }
+    minReplicas: 3
+    maxReplicas: 20
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target: { type: Utilization, averageUtilization: 70 }
+  ```
+
+  The HPA keeps average CPU near 70 percent of the requested CPU. It needs requests to be set.
+
+  ### Ingress
+
+  ```
+  apiVersion: networking.k8s.io/v1
+  kind: Ingress
+  metadata:
+    name: shop
+  spec:
+    rules:
+      - host: shop.example.com
+        http:
+          paths:
+            - path: /
+              pathType: Prefix
+              backend:
+                service: { name: shop, port: { number: 80 } }
+  ```
+
+  ### Packaging with Helm
+
+  Helm charts bundle many YAML files with variables. `helm install shop ./chart -f prod-values.yaml` installs the app with production values. `helm rollback shop 3` goes back to release 3.
+
+diagrams:
+  - type: flow
+    title: The path of a request into the cluster
+    nodes: [["User", "box"], ["Cloud load balancer", "raised"], ["Ingress controller", "def"], ["Service", "def"], ["Ready pods", "box"]]
+    edges: ["HTTPS", "", "host and path", "labels"]
+    caption: Only pods that pass their readiness probe get traffic.
+
+life:
+  - ["The liveness probe that caused an outage", "A liveness probe checked the database. The database was slow for 20 seconds, every pod failed its probe, and Kubernetes restarted all of them at once. The probe was changed to check only the process."]
+  - ["Out of memory kills", "Pods kept restarting with reason OOMKilled. The memory limit was lower than the app needed at peak. Measuring real use and raising the limit fixed it."]
+
+tradeoffs:
+  - ["Tight limits", "Protect other pods on the node.", "Containers get killed or slowed when they spike."]
+  - ["No limits", "Apps can burst freely.", "One app can starve its neighbours."]
+  - ["Rolling update", "No downtime, simple.", "Two versions run at the same time for a while."]
+  - ["Kubernetes Secrets", "Built in and simple.", "Only base64 by default, needs extra protection."]
+
+mistakes:
+  - Liveness probes that check shared dependencies.
+  - No readiness probe, so traffic reaches pods that are still starting.
+  - No resource requests, so the scheduler and the HPA cannot work well.
+  - Thinking base64 Secrets are encrypted.
+  - Running a database in a Deployment instead of a StatefulSet or a managed service.
+
+quiz:
+  - q: A pod is still loading its cache and must not get traffic yet. Which probe handles this?
+    opts: ["Liveness", "Readiness", "Startup only"]
+    a: 1
+    why: Failing readiness removes the pod from the Service without restarting it.
+  - type: fill
+    q: "In Kubernetes, `500m` CPU means ____ of one core."
+    a: ["half", "0.5", "50%", "50 percent"]
+    why: 1000m is one full core.
+  - type: fill
+    q: "To go back to the previous version of a Deployment, run `kubectl rollout ____ deployment shop`."
+    a: ["undo"]
+    why: rollout undo returns to the previous ReplicaSet.
+  - q: Is this Secret protected?
+    info: |
+      ```
+      kind: Secret
+      data:
+        password: c3VwZXJzZWNyZXQ=
+      ```
+    opts: ["Yes, it is encrypted", "No, base64 is only an encoding, anyone can decode it", "Yes, Kubernetes hides it"]
+    a: 1
+    why: The value decodes to supersecret. Protect access and enable encryption at rest.
+  - q: The HPA does nothing although CPU is high. What is most likely missing?
+    opts: ["CPU requests on the containers", "An Ingress", "A ConfigMap"]
+    a: 0
+    why: Utilization is measured against requests. No requests, no percentage.
+
+interview:
+  - q: What is the difference between liveness and readiness probes, and how can they cause outages?
+    keys:
+      - ["Liveness failure restarts the container", [liveness, restart]]
+      - ["Readiness failure removes the pod from Service traffic", [readiness, traffic, endpoint, remove, service]]
+      - ["Probes that check shared dependencies can fail everywhere at once", [dependency, database, shared, all pods, every pod, cascade]]
+      - ["Keep liveness simple, use readiness and startup probes for warm up", [simple, startup, warm, initial, process only]]
+    a: |
+      A failed liveness probe makes the kubelet restart the container, so it is for a process that is stuck. A failed readiness probe only takes the pod out of the Service endpoints, so it is for a pod that is alive but not able to serve, for example while warming up. They cause outages when they check shared dependencies. If a liveness probe calls the database and the database is slow, every pod restarts at the same time and the outage gets worse. I keep liveness checks about the process itself, use readiness for "can I serve now", and use a startup probe for slow starting apps.
+    fb: The "liveness probe checks the database" outage story is the classic follow up. Mentioning it shows experience.
+
+desk:
+  title: Make a shop production ready on Kubernetes
+  lede: A shop runs on Kubernetes with only a basic Deployment. Add what it needs before a big sale.
+  situation: |
+    **Lumen Shop** runs 3 pods with no probes, no resource settings, a database password in the image, and a public LoadBalancer Service per app.
+  rounds:
+    - title: Round 1. Pick the object
+      items:
+        - type: sort
+          q: Which Kubernetes feature fixes each problem?
+          rows:
+            - ["Traffic reaches pods that are still starting", "Readiness probe"]
+            - ["The sale needs 4 times more pods for 2 hours", "Horizontal Pod Autoscaler"]
+            - ["Password baked into the image", "Secret"]
+            - ["Many public load balancers, one per app", "Ingress"]
+          opts: ["Readiness probe", "Horizontal Pod Autoscaler", "Secret", "Ingress"]
+          why: Each object has one clear job.
+    - title: Round 2. Write YAML
+      items:
+        - type: fill
+          q: "Complete the HPA line that sets the most pods. `____: 20`"
+          a: ["maxReplicas"]
+          why: minReplicas and maxReplicas bound the autoscaler.
+        - type: open
+          q: Before the sale, what else would you check?
+          a: "Set CPU and memory requests from real measurements, make sure the cluster can add nodes, test the rollout and rollback, load test with sale traffic, and make sure the database can take the extra load."
+  card: |
+    - Ingress in, Service, ready pods.
+    - Liveness restarts, readiness removes from traffic.
+    - Requests for scheduling and HPA, limits for safety.
+    - Secrets are base64, protect them.
+    - rollout undo is your friend.
+
+refs:
+  - "Kubernetes Docs. [Configure liveness, readiness and startup probes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)."
+  - "Kubernetes Docs. [Horizontal Pod Autoscaling](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)."
+  - "Kubernetes Docs. [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/)."
+  - "Helm. [Docs](https://helm.sh/docs/)."

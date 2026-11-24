@@ -1,0 +1,191 @@
+short: Git basics
+title: Git basics, save every version of your work
+time: about 45 minutes
+tags: [git, commit, staging]
+lede: Git keeps a history of every change to your project. You can see who changed what, go back to any old version, and work with others without losing work.
+
+idea: |
+  **Git** is a version control system. Linus Torvalds wrote it in 2005 to manage the Linux kernel. Today almost every software team uses it.
+
+  Git saves your project as a series of **commits**. A commit is a snapshot of all your files at one moment, with a message that says what changed and why. Each commit has a unique id, a long hash such as `3f9a2c1`.
+
+  Before you commit, you choose which changes go into the snapshot. You put them in the **staging area**. This lets you make one clean commit per idea.
+
+  !eli5 Git is like a photo album of your project. Each commit is a photo. The staging area is the table where you arrange things before you take the photo. You can always look at an old photo and put things back the way they were.
+
+scenes:
+  - title: The three places in Git
+    stats: [Command, Where the change is]
+    nodes:
+      wd: {label: Working folder, x: 0, y: 1, kind: box, tag: your files}
+      st: {label: Staging area, x: 3, y: 1, kind: raised, tag: next snapshot}
+      repo: {label: Repository, x: 6, y: 1, kind: def, tag: history of commits}
+    links: [[wd, st], [st, repo]]
+    steps:
+      - title: Edit a file
+        text: You change `app.py` in your working folder. Git notices, but nothing is saved in history yet. `git status` shows it as modified.
+        on: [wd]
+        mark: {wd: warn}
+        stats: [edit, working folder]
+      - title: Stage it
+        text: "`git add app.py` copies this version of the file to the staging area. It will go into the next commit."
+        on: [wd, st]
+        flow: [[wd, st, ink]]
+        stats: [git add, staging area]
+      - title: Commit it
+        text: "`git commit -m \"Add login check\"` saves a snapshot of everything staged, with your message, your name and the time."
+        on: [st, repo]
+        flow: [[st, repo, def]]
+        mark: {repo: ok}
+        stats: [git commit, repository]
+      - title: Look back
+        text: "`git log --oneline` lists the commits. `git diff` shows changes not yet staged. `git show 3f9a2c1` shows one commit."
+        on: [repo]
+        stats: [git log, history]
+
+terms:
+  - [Repository, "A project folder that Git tracks, with all its history. Also called a repo."]
+  - [Commit, "A saved snapshot of the project with a message, an author and a unique hash."]
+  - [Working folder, "The files you see and edit. Also called the working tree."]
+  - [Staging area, "The list of changes that will go into the next commit. Also called the index."]
+  - [HEAD, "A pointer to the commit you are on now."]
+  - [Hash, "The unique id of a commit, made from its content."]
+  - [.gitignore, "A file that lists files Git must not track, such as `node_modules/` or `.env`."]
+
+how: |
+  ### Your first repository
+
+  ```
+  git init                      # start tracking this folder
+  git status                    # what changed?
+  git add app.py                # stage one file
+  git add .                     # stage all changes in this folder
+  git commit -m "First version" # save a snapshot
+  git log --oneline             # list commits
+  ```
+
+  ### See what changed
+
+  ```
+  git diff            # changes not staged yet
+  git diff --staged   # changes staged for the next commit
+  git show HEAD       # the last commit
+  ```
+
+  ### Undo things safely
+
+  | You want to | Command |
+  | --- | --- |
+  | Throw away changes to a file you have not staged | `git restore app.py` |
+  | Unstage a file but keep your changes | `git restore --staged app.py` |
+  | Undo a commit that others already have | `git revert 3f9a2c1`, which makes a new commit that does the opposite |
+  | Fix the message of your last commit, before you share it | `git commit --amend` |
+
+  ### Good commits
+
+  1. One commit for one idea.
+  2. Write the message as a command, such as "Add login check".
+  3. Never commit secrets, such as passwords or keys. List files like `.env` in `.gitignore`.
+
+  !warn If a secret goes into a commit, it stays in the history even after you delete the file. Change the secret at once. Then clean the history if needed.
+
+diagrams:
+  - type: flow
+    title: The everyday loop
+    nodes: [["Edit files", "box"], ["git status and git diff", "raised"], ["git add", "raised"], ["git commit", "def"], ["git log", "box"]]
+    edges: ["", "", "", ""]
+    caption: Edit, check, stage, commit. Repeat many times a day.
+
+life:
+  - ["A bug that came from last week", "A page broke and nobody knew why. `git log` and `git diff` showed one changed line from last Tuesday. `git revert` undid it in one minute."]
+  - ["An API key on a public repository", "A student pushed a file with a cloud key. Bots found it within minutes and started paid servers. Deleting the file was not enough because it stayed in the history. The fix was to cancel the key and add `.env` to `.gitignore`."]
+
+tradeoffs:
+  - ["Many small commits", "Easy to read, easy to undo one change.", "More messages to write."]
+  - ["One big commit", "Fast to make.", "Hard to review and hard to undo only one part."]
+  - ["git revert", "Safe on shared history, keeps a record.", "Adds a new commit."]
+  - ["git reset", "Moves your branch back.", "Rewrites history. Do not use it on commits others already have."]
+
+mistakes:
+  - Committing secrets or large generated files.
+  - Messages like "fix" or "stuff".
+  - Using `git add .` without checking `git status` first.
+  - Using `git reset --hard` without knowing it deletes uncommitted work.
+
+quiz:
+  - q: What does `git add app.py` do?
+    opts: ["Saves a commit", "Puts the current version of app.py in the staging area", "Uploads the file to GitHub"]
+    a: 1
+    why: add stages. commit saves. push uploads.
+  - type: fill
+    q: "The command that saves a snapshot of staged changes with a message is `git ____ -m \"message\"`."
+    a: ["commit"]
+    why: A commit is the snapshot in history.
+  - type: fill
+    q: The file that lists files Git must not track is ____.
+    a: [".gitignore", "gitignore"]
+    why: Put secrets and build output in .gitignore.
+  - q: A teammate already has your bad commit. How do you undo it safely?
+    opts: ["git reset --hard", "git revert with the commit hash", "Delete the folder"]
+    a: 1
+    why: revert adds a new commit that undoes the change, without rewriting shared history.
+  - q: What will this show?
+    info: |
+      ```
+      $ git status
+      Changes to be committed:
+        modified:   login.py
+      Changes not staged for commit:
+        modified:   style.css
+      ```
+    opts: ["Both files go into the next commit", "Only login.py goes into the next commit", "Nothing is changed"]
+    a: 1
+    why: login.py is staged. style.css changed but is not staged.
+
+interview:
+  - q: Explain the working folder, the staging area and the repository in Git.
+    keys:
+      - ["Working folder is the files you edit", [working, files, edit, tree]]
+      - ["Staging area holds changes chosen for the next commit", [staging, index, next commit, git add]]
+      - ["Repository stores commits, the history", [repository, history, commit, snapshot]]
+      - ["Why staging helps, clean focused commits", [clean, focused, choose, one idea, part]]
+    a: |
+      The working folder holds the files I edit. When I run `git add`, Git copies the current version of those changes into the staging area, also called the index. When I run `git commit`, Git turns everything in the staging area into a snapshot in the repository, with a message, author and hash. Staging lets me choose exactly what goes into each commit, so I can split unrelated changes into separate, clean commits.
+    fb: Saying why the staging area exists, clean focused commits, is the part many people skip.
+
+desk:
+  title: Rescue a messy repository
+  lede: A new developer made a mess. Choose the right Git command for each problem.
+  situation: |
+    **Raj** is building a small blog. He changed three files, staged the wrong one, and committed a `.env` file with a database password yesterday.
+  rounds:
+    - title: Round 1. Pick the command
+      items:
+        - type: sort
+          q: Which command fixes each problem?
+          rows:
+            - ["Unstage notes.txt but keep the changes", "git restore --staged notes.txt"]
+            - ["Throw away unstaged changes in style.css", "git restore style.css"]
+            - ["See the changes that are staged", "git diff --staged"]
+          opts: ["git restore --staged notes.txt", "git restore style.css", "git diff --staged"]
+          why: restore with --staged touches the staging area. restore alone touches the working folder.
+    - title: Round 2. The password
+      items:
+        - q: What is the first thing Raj must do about the committed password?
+          opts: ["Delete .env and commit", "Change the database password", "Rename the repository"]
+          a: 1
+          why: The old password is in the history and may already be copied. Change it first.
+        - type: fill
+          q: "To stop this from happening again, Raj adds the line `.env` to the file ____."
+          a: [".gitignore", "gitignore"]
+          why: Git then ignores .env.
+  card: |
+    - Edit, status, add, commit.
+    - One idea per commit, message as a command.
+    - revert for shared history.
+    - Secrets never go in Git.
+
+refs:
+  - "Scott Chacon and Ben Straub. [Pro Git book, chapter 2, Git basics](https://git-scm.com/book/en/v2/Git-Basics-Getting-a-Git-Repository)."
+  - "Git. [Reference manual](https://git-scm.com/docs)."
+  - "GitHub. [Removing sensitive data from a repository](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)."

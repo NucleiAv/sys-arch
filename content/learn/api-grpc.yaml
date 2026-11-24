@@ -1,0 +1,208 @@
+short: gRPC and Protocol Buffers
+title: gRPC and Protocol Buffers, fast calls between services
+time: about 45 minutes
+tags: [gRPC, protobuf, HTTP/2, streaming]
+lede: Inside a company, services call each other millions of times a second. gRPC makes those calls fast, typed and easy to write. Learn the .proto contract, the four call types and deadlines.
+
+idea: |
+  **gRPC** is a framework for one program to call a function in another program over the network, as if it were a local function. This idea is called a **remote procedure call**, or RPC. Google made gRPC open source in 2015.
+
+  You describe the service once in a **.proto** file, using **Protocol Buffers**, or protobuf. A tool then generates client and server code in many languages. Messages travel as compact binary data over **HTTP/2**.
+
+  !eli5 Two friends who speak different languages share one dictionary. Each friend uses it to turn words into a short code and back. The .proto file is the dictionary. The short codes are small and fast to send.
+
+scenes:
+  - title: A gRPC call from checkout to inventory
+    stats: [Step, What travels]
+    nodes:
+      co: {label: Checkout service, x: 0, y: 1, kind: def, tag: generated client}
+      h2: {label: HTTP/2 connection, x: 2, y: 1, kind: raised, tag: kept open}
+      inv: {label: Inventory service, x: 4, y: 1, kind: def, tag: generated server}
+      db: {label: Stock database, x: 6, y: 1, kind: raised}
+    links: [[co, h2], [h2, inv], [inv, db]]
+    steps:
+      - title: Call like a function
+        text: "The checkout code calls `inventory.Reserve(sku, qty)` with a deadline of 200 ms. The generated client turns the request into protobuf bytes."
+        on: [co]
+        stats: [Encode, about 20 bytes]
+      - title: Send over HTTP/2
+        text: "The bytes go as a `POST` to `/shop.Inventory/Reserve` on a connection that is already open. Many calls share one connection at the same time."
+        on: [co, h2, inv]
+        flow: [[co, h2, ink], [h2, inv, ink]]
+        stats: [Send, headers and one data frame]
+      - title: Do the work
+        text: The generated server decodes the bytes and calls your Reserve function. It reserves the stock.
+        on: [inv, db]
+        flow: [[inv, db, ink], [db, inv, def]]
+        stats: [Handle, local function call]
+      - title: Return with a status
+        text: "The response message comes back, followed by a trailer with `grpc-status: 0`, which means OK. The client code just gets a return value."
+        on: [inv, h2, co]
+        flow: [[inv, h2, def], [h2, co, def]]
+        mark: {co: ok}
+        stats: [Return, message and status]
+
+terms:
+  - [RPC, "Remote procedure call. Calling a function that runs on another machine."]
+  - [Protocol Buffers, "Google's format to define and encode structured data in compact binary."]
+  - [.proto file, "The contract file that defines messages and services."]
+  - [Stub, "The generated client code that you call like a normal function."]
+  - [HTTP/2, "A newer version of HTTP that sends many requests at once over one connection, with binary frames."]
+  - [Streaming, "Sending many messages over one call, in one or both directions."]
+  - [Deadline, "The latest time by which a call must finish. After it, the call is cancelled."]
+  - [Status code, "gRPC's own result codes, such as OK, NOT_FOUND, UNAVAILABLE and DEADLINE_EXCEEDED."]
+  - [gRPC-Web, "A variant that lets browsers call gRPC services through a proxy."]
+
+how: |
+  ### The contract
+
+  ```
+  syntax = "proto3";
+  package shop;
+
+  service Inventory {
+    rpc Reserve (ReserveRequest) returns (ReserveReply);
+    rpc WatchStock (StockQuery) returns (stream StockUpdate);
+  }
+
+  message ReserveRequest {
+    string sku = 1;
+    int32 qty = 2;
+  }
+  message ReserveReply {
+    bool ok = 1;
+    int32 left = 2;
+  }
+  ```
+
+  The numbers, such as `= 1`, are **field numbers**. They go on the wire instead of field names. That is one reason protobuf is small. Never reuse or change a field number. Add new fields with new numbers. Then old and new clients keep working.
+
+  ### Four kinds of call
+
+  | Kind | Client sends | Server sends | Example |
+  | --- | --- | --- | --- |
+  | Unary | One message | One message | Reserve stock |
+  | Server streaming | One message | Many messages | Watch stock changes |
+  | Client streaming | Many messages | One message | Upload sensor readings |
+  | Bidirectional streaming | Many messages | Many messages | Chat between two services |
+
+  ### Deadlines and status codes
+
+  Always set a **deadline**. If the checkout gives inventory 200 ms, inventory knows when to stop. Deadlines pass down the chain, so deeper services stop too. Failed calls return a status code, such as `UNAVAILABLE`, which is safe to retry, or `INVALID_ARGUMENT`, which is not.
+
+  ### gRPC in browsers
+
+  Browsers cannot use all the HTTP/2 features gRPC needs. Use **gRPC-Web** with a proxy, or put a REST or GraphQL layer in front for browsers.
+
+  !key A common pattern. REST or GraphQL at the edge for apps and partners, gRPC inside between services.
+
+diagrams:
+  - type: flow
+    title: From contract to running code
+    nodes: [["Write .proto", "def"], ["Run protoc", "raised"], ["Generated client stub", "box"], ["Generated server base", "box"], ["Your code fills in logic", "def"]]
+    edges: ["", "", "", ""]
+    caption: One contract, code for every language. Clients and servers cannot drift apart silently.
+
+life:
+  - ["Google's internal RPC", "gRPC grew from Stubby, the RPC system Google used inside its data centers for many years. It was designed for very high call volumes between services."]
+  - ["A field number reused by mistake", "A team removed field 3, then later added a new field with number 3 and a different type. Old services read garbage from it. The rule is to mark removed numbers as `reserved`."]
+  - ["Deadlines stop a pile up", "Without deadlines, a slow pricing service made checkout calls wait for 30 seconds. With a 300 ms deadline passed down every call, the system failed fast and stayed up."]
+
+tradeoffs:
+  - ["gRPC", "Fast, small messages, typed contracts, streaming, code generation.", "Not human readable, browsers need gRPC-Web, needs HTTP/2."]
+  - ["REST with JSON", "Readable, works everywhere, easy to debug with curl.", "Bigger messages, no enforced contract unless you add OpenAPI."]
+  - ["Protobuf field numbers", "Safe evolution of messages.", "Rules you must follow strictly."]
+
+mistakes:
+  - Calls without deadlines.
+  - Reusing or changing protobuf field numbers.
+  - Exposing gRPC directly to browsers without gRPC-Web or a gateway.
+  - Retrying calls that are not safe to repeat.
+  - Long lived HTTP/2 connections behind a layer 4 load balancer, so all calls go to one server. Use client side or layer 7 balancing.
+
+quiz:
+  - q: How does gRPC send messages?
+    opts: ["XML over SMTP", "Protocol Buffers binary data over HTTP/2", "JSON over UDP"]
+    a: 1
+    why: gRPC uses protobuf encoding over HTTP/2 by default.
+  - type: fill
+    q: "In `string sku = 1;`, the number 1 is the field ____."
+    a: ["number", "tag", "field number"]
+    why: Field numbers identify fields on the wire. Never reuse them.
+  - type: fill
+    q: The latest time by which a gRPC call must finish is its ____.
+    a: ["deadline", "timeout"]
+    why: Deadlines stop slow calls and pass down the call chain.
+  - q: A service sends live stock updates to a client after one request. Which call type is it?
+    opts: ["Unary", "Server streaming", "Client streaming"]
+    a: 1
+    why: One request, many responses.
+  - q: What is wrong with this change to a .proto file?
+    info: |
+      ```
+      // before
+      message User { string name = 1; string email = 2; }
+      // after
+      message User { string name = 1; int64 phone = 2; }
+      ```
+    opts: ["Nothing", "Field number 2 now means something else, so old clients read wrong data", "proto3 does not allow int64"]
+    a: 1
+    why: Add phone with a new number, such as 3, and mark 2 as reserved.
+
+interview:
+  - q: Why do many companies use gRPC between internal services instead of REST?
+    keys:
+      - ["Binary protobuf is smaller and faster to encode", [binary, protobuf, small, compact, fast]]
+      - ["HTTP/2 multiplexing over one connection", [http/2, http2, multiplex, one connection]]
+      - ["Strong contract with code generation", [contract, generat, typed, proto file]]
+      - ["Streaming support and deadlines", [stream, deadline]]
+      - ["Costs, readability, browser support, load balancing", [browser, readab, debug, load balanc, grpc-web]]
+    a: |
+      Internal calls happen at huge volume, so efficiency matters. Protobuf messages are small binary data and fast to encode. HTTP/2 lets many calls share one connection. The .proto file is a strict contract, and code generation gives typed clients in every language, so services cannot drift apart. gRPC also has streaming and deadlines built in. The costs are that messages are not human readable, browsers need gRPC-Web, and long lived connections need layer 7 or client side load balancing. Those costs matter less inside the company than at the public edge.
+    fb: Mentioning the load balancing gotcha with long lived HTTP/2 connections shows real production experience.
+  - q: How do you change a protobuf message without breaking clients?
+    keys:
+      - ["Add new fields with new numbers", [new field, new number, add]]
+      - ["Never reuse or change existing numbers or types", [never, reuse, change, type]]
+      - ["Mark removed fields as reserved", [reserved]]
+      - ["Old clients ignore unknown fields and new fields have defaults", [ignore, unknown, default]]
+    a: |
+      Only add fields, each with a new field number. Never change the type or meaning of an existing number. When I remove a field, I mark its number and name as `reserved` so nobody reuses them. This works because old clients skip unknown fields, and new clients see default values for fields that old servers do not send.
+    fb: The word reserved is the detail that shows hands on experience.
+
+desk:
+  title: Design the contract for a delivery tracker
+  lede: Two backend teams need a service contract for live delivery tracking. Choose the call types and protect the contract.
+  situation: |
+    **Parcelly** has a dispatch service and a tracking service. Dispatch asks tracking for a parcel's location. The customer app wants live updates. Drivers' phones send a GPS point every 5 seconds.
+  rounds:
+    - title: Round 1. Pick call types
+      items:
+        - type: sort
+          q: Which gRPC call type fits each need?
+          rows:
+            - ["Dispatch asks for one parcel's current location", "Unary"]
+            - ["A gateway wants a stream of location changes for one parcel", "Server streaming"]
+            - ["A driver app sends many GPS points and gets one summary at the end", "Client streaming"]
+          opts: ["Unary", "Server streaming", "Client streaming"]
+          why: Count the messages in each direction.
+    - title: Round 2. Write and protect
+      items:
+        - type: fill
+          q: "Complete the line in the .proto file for server streaming. `rpc Watch (ParcelId) returns (____ Location);`"
+          a: ["stream"]
+          why: The keyword stream before the response type makes it server streaming.
+        - type: open
+          q: The customer app runs in a browser. How does it get the live updates?
+          a: "The browser cannot call gRPC directly. Use gRPC-Web through a proxy such as Envoy, or have a gateway turn the gRPC stream into server-sent events or a WebSocket for the browser."
+  card: |
+    - One .proto contract, generated code.
+    - Unary, server, client and bidirectional streaming.
+    - Always set deadlines.
+    - Add fields, never reuse numbers.
+
+refs:
+  - "gRPC. [Introduction to gRPC](https://grpc.io/docs/what-is-grpc/introduction/) and [core concepts](https://grpc.io/docs/what-is-grpc/core-concepts/)."
+  - "Protocol Buffers. [Language guide, proto3](https://protobuf.dev/programming-guides/proto3/)."
+  - "gRPC Blog. [gRPC on HTTP/2, engineering a robust, high performance protocol](https://grpc.io/blog/grpc-on-http2/)."
+  - "gRPC. [Status codes](https://grpc.io/docs/guides/status-codes/)."

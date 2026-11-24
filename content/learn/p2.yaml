@@ -1,0 +1,79 @@
+kind: practice
+title: Level 2 practice, data
+time: about 40 minutes
+lede: Mixed questions on databases, indexes, replication, sharding, caching and CDNs. Some questions show SQL or config to read.
+
+rounds:
+  - title: Round 1. Pick the store
+    items:
+      - type: sort
+        q: Where should each kind of data live?
+        rows:
+          - ["Money transfers between accounts", "SQL database"]
+          - ["User session lookups by id, millions a second", "Key value store"]
+          - ["User uploaded videos", "Object storage"]
+          - ["Search products by words in the description", "Search engine"]
+        opts: ["SQL database", "Key value store", "Object storage", "Search engine"]
+        why: Choose by the main access pattern.
+      - type: fill
+        q: In ACID, the D means ____, saved data survives a crash.
+        a: ["durable", "durability"]
+        why: The write-ahead log makes data durable.
+  - title: Round 2. Read the SQL
+    items:
+      - q: Which index makes this query fast?
+        info: |
+          ```
+          SELECT * FROM orders
+          WHERE customer_id = 42
+          ORDER BY created_at DESC
+          LIMIT 20;
+          ```
+        opts: ["(created_at)", "(customer_id, created_at)", "(total)"]
+        a: 1
+        why: Filter column first, then the sort column.
+      - q: Why can this query not use a normal index on email?
+        info: |
+          ```
+          SELECT id FROM users WHERE LOWER(email) = 'asha@mail.com';
+          ```
+        opts: ["Because of LIMIT", "Because the function LOWER changes the column value, so the plain index does not match", "Because of SELECT"]
+        a: 1
+        why: Store emails lowercased, or create an index on LOWER(email).
+  - title: Round 3. Copies and pieces
+    items:
+      - type: num
+        q: You have 3 copies and write to 2 of them. What is the smallest read count R so that every read sees the latest write?
+        a: 2
+        tol: 0
+        unit: copies
+        why: W plus R must be greater than N. 2 plus 2 is 4, which is more than 3.
+      - q: A user edits a profile and then sees the old profile. Reads go to replicas. Best fix?
+        opts: ["Turn off replicas", "Read from the leader for a short time after that user writes", "Add more cache"]
+        a: 1
+        why: This is called read your own writes.
+      - q: You shard messages by created_at date. What goes wrong?
+        opts: ["Nothing", "All new messages go to one shard, a hot spot", "Messages are lost"]
+        a: 1
+        why: Shard by a key that spreads writes, such as conversation_id.
+      - type: num
+        q: 20,000 reads a second with a 98 percent cache hit ratio. How many reads a second reach the database?
+        a: 400
+        tol: 0
+        unit: per second
+        why: 2 percent of 20,000 is 400.
+  - title: Round 4. Files and caches
+    items:
+      - type: fill
+        q: "To let a phone upload straight to object storage without your servers, give it a ____ URL."
+        a: ["presigned", "pre-signed", "signed"]
+        why: A presigned URL allows one upload for a short time.
+      - type: open
+        q: Your product images use the name logo.png and the CDN caches it for 7 days. Marketing changes the logo today. What is the best long term fix?
+        a: "Put a version or content hash in each file name, such as logo.3f9a.png, and change the page to point to the new name. The CDN then never serves the old file for the new name, and you do not need to purge."
+card: |
+  - SQL by default, other stores for clear reasons.
+  - Filter column first in composite indexes.
+  - W plus R greater than N.
+  - Shard keys must spread writes.
+  - Version file names behind a CDN.

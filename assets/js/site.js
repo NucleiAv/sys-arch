@@ -7,6 +7,8 @@
     ["basics.html", "Start here"],
     ["plan.html", "Plan"],
     ["learn/index.html", "Concepts"],
+    ["infra/index.html", "Infra"],
+    ["protocols.html", "Protocols"],
     ["design/index.html", "Design it"],
     ["interview.html", "Interview"],
     ["library.html", "Library"]
@@ -14,7 +16,7 @@
   const REPO = "https://github.com/NucleiAv/sys-arch";
   const R = (document.body && document.body.dataset.root) || "";
   const TRACK = (document.body && document.body.dataset.track) || "";
-  const here = TRACK ? TRACK + "/index.html" : (location.pathname.split("/").pop() || "index.html").toLowerCase();
+  const here = TRACK === "protocols" ? "protocols.html" : TRACK ? TRACK + "/index.html" : (location.pathname.split("/").pop() || "index.html").toLowerCase();
 
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -55,8 +57,8 @@
       foot.innerHTML = `<div class="wrap">
         <div><p><b style="color:var(--ink)">Boxes and Arrows</b> teaches system design and architecture from zero to mastery, in plain words.</p>
         <p>Built and curated by <a href="https://anmol-vats-portfolio.vercel.app/" target="_blank" rel="noopener">Anmol Vats</a>. Links point to their own sites. Progress, ticks and answers you write here stay in this browser only.</p></div>
-        <div><h4>Learn</h4>${NAV.slice(1, 5).map(([h, t]) => `<a href="${R}${h}">${t}</a>`).join("")}</div>
-        <div><h4>More</h4>${NAV.slice(5).map(([h, t]) => `<a href="${R}${h}">${t}</a>`).join("")}<a href="${REPO}" target="_blank" rel="noopener">GitHub repository</a><a href="https://anmol-vats-portfolio.vercel.app/" target="_blank" rel="noopener">Author portfolio</a></div>
+        <div><h4>Learn</h4>${NAV.slice(1, 7).map(([h, t]) => `<a href="${R}${h}">${t}</a>`).join("")}</div>
+        <div><h4>More</h4>${NAV.slice(7).map(([h, t]) => `<a href="${R}${h}">${t}</a>`).join("")}<a href="${REPO}" target="_blank" rel="noopener">GitHub repository</a><a href="https://anmol-vats-portfolio.vercel.app/" target="_blank" rel="noopener">Author portfolio</a></div>
       </div>`;
     }
   }

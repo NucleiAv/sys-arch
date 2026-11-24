@@ -1,0 +1,50 @@
+kind: practice
+title: Infra level 4 practice, automation and delivery
+time: about 30 minutes
+lede: Terraform plans and release strategies. Then one question that connects the whole infra track.
+
+rounds:
+  - title: Round 1. Terraform
+    items:
+      - q: What will this plan do?
+        info: |
+          ```
+          Plan: 0 to add, 1 to change, 0 to destroy.
+            ~ resource "aws_instance" "web" {
+                ~ instance_type = "t3.small" -> "t3.medium"
+          ```
+        opts: ["Delete the server", "Change the instance type of the web server in place or with a restart", "Add a new server"]
+        a: 1
+        why: The tilde means update. A minus and plus pair would mean replace.
+      - type: sort
+        q: Put the commands in the order you run them on a new project.
+        rows:
+          - ["terraform init", "Step 1"]
+          - ["terraform plan", "Step 2"]
+          - ["terraform apply", "Step 3"]
+        opts: ["Step 1", "Step 2", "Step 3"]
+        why: Init sets up providers and state, plan shows, apply changes.
+      - type: fill
+        q: Terraform state should live in a remote ____ with locking, not in Git.
+        a: ["backend"]
+        why: For example S3 with locking.
+  - title: Round 2. Releases
+    items:
+      - type: sort
+        q: Which strategy fits each need?
+        rows:
+          - ["Switch everything back in seconds, and you can afford double capacity", "Blue green"]
+          - ["Test on 5 percent of real users first", "Canary"]
+          - ["Turn a feature off without a deploy", "Feature flag"]
+        opts: ["Blue green", "Canary", "Feature flag"]
+        why: Each strategy limits risk in a different way.
+  - title: Round 3. The whole track
+    items:
+      - type: open
+        q: Describe the path of one code change from a laptop to production for a containerized web app on AWS, using what you learned in all four levels.
+        a: "The developer commits on a branch and pushes to GitHub. A pull request runs GitHub Actions CI with lint and tests, and branch protection requires a review. On merge, a workflow builds a Docker image tagged with the commit hash and pushes it to Amazon ECR, using OIDC to get a short lived AWS role. Infrastructure, such as the VPC, EKS cluster and RDS database, is defined in Terraform and changed through reviewed plans. A GitOps tool such as Argo CD sees the new image tag in the config repository and rolls it out to Kubernetes as a canary, with readiness probes and metrics checks. If metrics go bad, it rolls back. The feature itself stays behind a flag until the team turns it on."
+card: |
+  - init, plan, review, apply.
+  - Read for replace in every plan.
+  - Blue green, canary, flags.
+  - Code, CI, image, infra as code, GitOps, canary.

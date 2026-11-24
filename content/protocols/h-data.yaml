@@ -1,0 +1,564 @@
+- id: redis
+  name: Redis
+  full: RESP, the Redis protocol
+  layer: 7
+  cat: data
+  transport: TCP
+  port: "6379"
+  title: Redis, simple text commands to a fast store.
+  lede: Redis speaks RESP, a simple text protocol. An app logs in, sets and gets keys, and every command is a short array of strings. Watch them on the wire.
+  overview: |
+    In RESP, `*3` means an array of 3 items, and `$3` means the next string has 3 bytes. Simple replies start with `+`, errors with `-`, numbers with `:` and strings with `$`.
+
+    !warn Never expose Redis to the internet. Since Redis 3.2, protected mode refuses outside connections when no password is set. Use ACL users with passwords, TLS and a private network.
+  nodes:
+    app: [App server, 10.0.1.20, server, 0, 1]
+    redis: [Redis, 10.0.2.30, db, 6, 1]
+  links: [[app, redis]]
+  steps:
+    - t: Log in
+      tag: auth
+      d: The app sends AUTH with an ACL user and password. Redis answers +OK.
+      p:
+        - [app, redis, "AUTH app ********", sec, {raw: "*3\r\n$4\r\nAUTH\r\n$3\r\napp\r\n$8\r\ns3cretpw\r\n"}]
+        - [redis, app, "+OK", res, {raw: "+OK\r\n"}]
+    - t: Set a key with a TTL
+      tag: write
+      d: SET with EX 300 stores the session for 300 seconds.
+      p:
+        - [app, redis, "SET session:42 alice EX 300", req, {raw: "*5\r\n$3\r\nSET\r\n$10\r\nsession:42\r\n$5\r\nalice\r\n$2\r\nEX\r\n$3\r\n300\r\n"}]
+        - [redis, app, "+OK", res]
+    - t: Get it back
+      tag: read
+      d: GET returns a bulk string of 5 bytes.
+      p:
+        - [app, redis, "GET session:42", req, {raw: "*2\r\n$3\r\nGET\r\n$10\r\nsession:42\r\n"}]
+        - [redis, app, "$5 alice", res, {raw: "$5\r\nalice\r\n"}]
+    - t: Pipelining
+      tag: speed
+      d: The app sends three INCR commands without waiting, then reads three replies. One round trip instead of three.
+      p:
+        - [app, redis, "INCR views:a, INCR views:b, INCR views:c", req]
+        - [redis, app, ":18, :4, :77", res]
+  quiz:
+    - type: fill
+      q: "Redis listens on TCP port ____ by default."
+      a: ["6379"]
+      why: Keep it on a private network.
+    - q: "In RESP, what does $5 mean?"
+      opts: ["Five commands", "A string of 5 bytes follows", "Error 5"]
+      a: 1
+      why: The length comes first, so binary data is safe.
+  refs:
+    - "Redis. [Redis serialization protocol specification](https://redis.io/docs/latest/develop/reference/protocol-spec/)."
+    - "Redis. [Security](https://redis.io/docs/latest/operate/oss_and_stack/management/security/)."
+
+- id: mysql
+  name: MySQL
+  full: MySQL client protocol
+  layer: 7
+  cat: data
+  transport: TCP
+  port: "3306"
+  title: MySQL, from greeting to a result set.
+  lede: In MySQL the server speaks first. It sends a greeting with a random scramble, the client switches to TLS, logs in, sends a query and reads rows.
+  overview: |
+    The server greeting, **Initial Handshake v10**, has the server version, a connection id, random **scramble** data and the auth plugin. MySQL 8 uses **caching_sha2_password** by default. The client can send an **SSLRequest** to switch to TLS before it sends any login data.
+  nodes:
+    app: [App server, 10.0.1.20, server, 0, 1]
+    db: [MySQL server, 10.0.2.40, db, 6, 1]
+  links: [[app, db]]
+  steps:
+    - t: Server greeting
+      tag: hello
+      d: After TCP connects, the server sends its greeting with version 8.0, a scramble and the auth plugin name.
+      f: {Protocol: "10", Version: "8.0.x", Plugin: caching_sha2_password}
+      p:
+        - [db, app, "Initial Handshake v10 + scramble", ctl]
+    - t: Switch to TLS
+      tag: tls
+      d: The client sends a short SSLRequest, then a TLS handshake. Everything after is encrypted.
+      p:
+        - [app, db, "SSLRequest", sec]
+        - [app, db, "TLS handshake", sec]
+    - t: Log in
+      tag: auth
+      d: The client sends HandshakeResponse with the user name and a response computed from the password and the scramble. The server answers OK.
+      p:
+        - [app, db, "HandshakeResponse user=shop", sec]
+        - [db, app, "OK", res]
+    - t: Query and result
+      tag: query
+      d: COM_QUERY carries the SQL. The result has a column count, column definitions, the rows, and an end marker.
+      p:
+        - [app, db, "COM_QUERY SELECT id,name FROM users LIMIT 2", req]
+        - [db, app, "column count 2, column defs", res]
+        - [db, app, "row 1, row 2, EOF/OK", data]
+  quiz:
+    - type: fill
+      q: "MySQL listens on TCP port ____ by default."
+      a: ["3306"]
+      why: Never expose it to the internet.
+    - q: Who sends the first message on a MySQL connection?
+      opts: ["The client", "The server, with its greeting"]
+      a: 1
+      why: The greeting carries the scramble the client needs.
+  refs:
+    - "MySQL. [Client server protocol, connection phase](https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_connection_phase.html)."
+
+- id: postgres
+  name: PostgreSQL
+  full: Postgres wire protocol
+  layer: 7
+  cat: data
+  transport: TCP
+  port: "5432"
+  title: PostgreSQL, startup, SCRAM login and a query.
+  lede: The Postgres client asks for TLS, sends a startup message, proves the password with SCRAM-SHA-256 without sending it, and runs a query.
+  overview: |
+    Every message has a one letter type, then a length. **Q** is a simple query, **T** is a row description, **D** is a data row, **C** is command complete, **Z** is ready for query. Since PostgreSQL 14, the default password method is **SCRAM-SHA-256**, which never sends the password itself.
+  nodes:
+    app: [App server, 10.0.1.20, server, 0, 1]
+    pg: [PostgreSQL, 10.0.2.50, db, 6, 1]
+  links: [[app, pg]]
+  steps:
+    - t: Ask for TLS
+      tag: tls
+      d: The client sends SSLRequest. The server answers with one byte, S, which means yes. A TLS handshake follows.
+      p:
+        - [app, pg, "SSLRequest", sec]
+        - [pg, app, "S", sec]
+        - [app, pg, "TLS handshake", sec]
+    - t: Startup message
+      tag: startup
+      d: The client sends the protocol version, the user and the database name.
+      f: {User: shop, Database: orders, Protocol: "3.0"}
+      p:
+        - [app, pg, "StartupMessage user=shop database=orders", req]
+    - t: SCRAM login
+      tag: auth
+      d: The server asks for SASL with SCRAM-SHA-256. Client and server swap nonces and proofs. The password never crosses the wire, and the client also checks the server.
+      p:
+        - [pg, app, "AuthenticationSASL SCRAM-SHA-256", sec]
+        - [app, pg, "SASLInitialResponse (client nonce)", sec]
+        - [pg, app, "SASLContinue (salt, iterations)", sec]
+        - [app, pg, "SASLResponse (client proof)", sec]
+        - [pg, app, "SASLFinal + AuthenticationOk", sec]
+    - t: Ready
+      tag: ready
+      d: The server sends ParameterStatus messages, BackendKeyData for cancelling queries, and ReadyForQuery Z.
+      p:
+        - [pg, app, "ParameterStatus, BackendKeyData, ReadyForQuery", res]
+    - t: Simple query
+      tag: query
+      d: The client sends Q with the SQL. The server returns T, then D for each row, then C and Z.
+      p:
+        - [app, pg, "Q SELECT id, total FROM orders LIMIT 2", req]
+        - [pg, app, "T RowDescription", res]
+        - [pg, app, "D row, D row", data]
+        - [pg, app, "C SELECT 2, Z", res]
+  quiz:
+    - type: fill
+      q: "PostgreSQL listens on TCP port ____."
+      a: ["5432"]
+      why: The default port.
+    - q: What is the benefit of SCRAM-SHA-256?
+      opts: ["Faster queries", "The password is never sent, and both sides prove themselves", "No TLS needed"]
+      a: 1
+      why: Still use TLS to protect the data.
+  refs:
+    - "PostgreSQL. [Frontend and backend protocol, message flow](https://www.postgresql.org/docs/current/protocol-flow.html)."
+
+- id: mssql
+  name: MSSQL
+  full: TDS, Microsoft SQL Server
+  layer: 7
+  cat: data
+  transport: TCP
+  port: "1433, UDP 1434 browser"
+  title: SQL Server, TDS from prelogin to rows.
+  lede: SQL Server clients speak TDS, Tabular Data Stream. Watch the prelogin, TLS, the login, a SQL batch and the tokens that carry the result.
+  overview: |
+    A default instance listens on TCP 1433. Named instances use other ports, and the **SQL Server Browser** service on UDP 1434 tells clients which. In TDS 7.x, the **PRELOGIN** packet agrees on encryption, then the TLS handshake runs inside TDS packets. TDS 8.0 does TLS first. Results come as tokens, such as **COLMETADATA**, **ROW** and **DONE**.
+  nodes:
+    app: [App server, 10.0.1.20, server, 0, 1]
+    sql: [SQL Server, 10.0.2.60, db, 6, 1]
+  links: [[app, sql]]
+  steps:
+    - t: PRELOGIN
+      tag: hello
+      d: The client sends its version and asks for encryption. The server answers with its version and agrees.
+      f: {Encryption: required}
+      p:
+        - [app, sql, "PRELOGIN version, ENCRYPT_ON", ctl]
+        - [sql, app, "PRELOGIN response", ctl]
+    - t: TLS
+      tag: tls
+      d: The TLS handshake runs inside TDS packets. The login that follows is encrypted.
+      p:
+        - [app, sql, "TLS handshake (in TDS)", sec]
+    - t: LOGIN7
+      tag: auth
+      d: The client sends LOGIN7 with the user, the database and the app name. Integrated Windows login can use Kerberos instead of a password.
+      p:
+        - [app, sql, "LOGIN7 user=shop db=Sales", sec]
+        - [sql, app, "LOGINACK, ENVCHANGE database=Sales", res]
+    - t: SQL batch and result
+      tag: query
+      d: The client sends a SQL batch. The server returns COLMETADATA, ROW tokens and DONE with the row count.
+      p:
+        - [app, sql, "SQL Batch SELECT TOP 2 id, name FROM Customers", req]
+        - [sql, app, "COLMETADATA, ROW, ROW, DONE (2 rows)", data]
+  quiz:
+    - type: fill
+      q: "The default SQL Server instance listens on TCP port ____."
+      a: ["1433"]
+      why: UDP 1434 is the browser service for named instances.
+    - q: What does the PRELOGIN exchange decide?
+      opts: ["The SQL query", "Versions and whether to encrypt", "The database name"]
+      a: 1
+      why: Login comes after, in LOGIN7.
+  refs:
+    - "Microsoft. [MS-TDS, Tabular Data Stream protocol](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/b46a581a-39de-4745-b076-ec4dbb7d13ec)."
+
+- id: oracle-tns
+  name: Oracle TNS
+  full: Oracle Net listener
+  layer: 7
+  cat: data
+  transport: TCP
+  port: "1521"
+  title: Oracle TNS, the listener hands you to the database.
+  lede: Oracle clients first talk to a listener. The listener checks the service name in the connect request and accepts it, refuses it, or redirects the client to the database process.
+  overview: |
+    TNS packets have types such as **CONNECT**, **ACCEPT**, **REFUSE**, **REDIRECT** and **DATA**. The connect request carries a **connect descriptor** with the service name. An unknown service gives the error ORA-12514. After that, authentication and SQL travel in DATA packets. **Oracle Native Network Encryption** or TLS protects the traffic.
+  nodes:
+    app: [App server, 10.0.1.20, server, 0, 1]
+    lsn: [Listener, port 1521, server, 4, 0]
+    db: [Database instance, ORCLPDB1, db, 6, 2]
+  links: [[app, lsn], [app, db], [lsn, db]]
+  steps:
+    - t: CONNECT to the listener
+      tag: connect
+      d: The client sends a CONNECT packet with a connect descriptor naming the service.
+      p:
+        - [app, lsn, "CONNECT (SERVICE_NAME=ORCLPDB1)", req, {raw: "(DESCRIPTION=(CONNECT_DATA=(SERVICE_NAME=ORCLPDB1))(ADDRESS=(PROTOCOL=TCP)(HOST=10.0.2.70)(PORT=1521)))"}]
+    - t: Accept or redirect
+      tag: connect
+      d: The listener knows the service. It accepts the connection, or redirects the client to a dispatcher port. An unknown service would get REFUSE with ORA-12514.
+      p:
+        - [lsn, app, "ACCEPT", res]
+    - t: Negotiate and authenticate
+      tag: auth
+      d: DATA packets negotiate options and run the login. The server sends a session key and salt, and the client proves the password without sending it in clear.
+      p:
+        - [app, db, "DATA protocol and option negotiation", ctl]
+        - [db, app, "DATA auth session key + salt", sec]
+        - [app, db, "DATA auth response", sec]
+    - t: Run SQL
+      tag: query
+      d: SQL and rows now travel in DATA packets.
+      p:
+        - [app, db, "DATA SELECT ...", req]
+        - [db, app, "DATA rows", data]
+  quiz:
+    - type: fill
+      q: "The Oracle listener uses TCP port ____ by default."
+      a: ["1521"]
+      why: It routes clients to the right database service.
+    - q: A client asks for a service the listener does not know. What happens?
+      opts: ["It connects anyway", "The listener refuses with ORA-12514", "It creates the service"]
+      a: 1
+      why: Check the service name in the connect descriptor.
+  refs:
+    - "Oracle. [Net Services administrator guide](https://docs.oracle.com/en/database/oracle/oracle-database/19/netag/)."
+
+- id: rdp
+  name: RDP
+  full: Remote Desktop Protocol
+  layer: 7
+  cat: data
+  transport: TCP and UDP
+  port: "3389"
+  title: RDP, a Windows desktop over the network.
+  lede: RDP shows a remote Windows desktop and sends your keyboard and mouse back. Watch the negotiation, TLS, the Network Level Authentication login and the screen updates.
+  overview: |
+    **Network Level Authentication**, NLA, uses **CredSSP** to log you in before the server creates a desktop session. That saves server resources and blocks many attacks, so keep it on. Never put RDP directly on the internet. Use a VPN or a gateway with MFA, because RDP is a top target for ransomware groups.
+  nodes:
+    pc: [Your PC, 192.168.1.10, laptop, 0, 1]
+    gw: [VPN or RD gateway, MFA, shield, 3, 1]
+    srv: [Windows server, 10.0.3.15, server, 6, 1]
+  links: [[pc, gw], [gw, srv]]
+  steps:
+    - t: Negotiate security
+      tag: negotiate
+      d: The client sends an X.224 Connection Request listing the security it supports, TLS and CredSSP. The server picks CredSSP, which means NLA.
+      p:
+        - [pc, srv, "X.224 Connection Request (TLS, CredSSP)", ctl]
+        - [srv, pc, "Connection Confirm (CredSSP)", ctl]
+    - t: TLS
+      tag: tls
+      d: A TLS handshake protects the rest. The client checks the server certificate.
+      p:
+        - [pc, srv, "TLS handshake", sec]
+    - t: NLA login with CredSSP
+      tag: auth
+      d: Inside TLS, CredSSP runs Kerberos or NTLM through SPNEGO. Only after success does the client send the credentials to the server for the session.
+      p:
+        - [pc, srv, "TSRequest (SPNEGO token)", sec]
+        - [srv, pc, "TSRequest (token)", sec]
+        - [pc, srv, "TSRequest (credentials)", sec]
+    - t: Set up the session
+      tag: setup
+      d: MCS Connect sends client details, such as screen size and keyboard. Then channels for clipboard and sound join, and the server sends its capabilities.
+      p:
+        - [pc, srv, "MCS Connect Initial (screen 1920x1080)", req]
+        - [srv, pc, "MCS Connect Response, Demand Active", res]
+        - [pc, srv, "Confirm Active", req]
+    - t: Screen and input
+      tag: data
+      d: The server sends compressed screen updates. The client sends keyboard and mouse events.
+      p:
+        - [srv, pc, "bitmap updates", data]
+        - [pc, srv, "input events", data]
+  quiz:
+    - type: fill
+      q: "RDP uses port ____ by default."
+      a: ["3389"]
+      why: Keep it behind a VPN or gateway.
+    - q: What does Network Level Authentication do?
+      opts: ["Makes the screen faster", "Logs the user in before the server creates a session", "Turns off TLS"]
+      a: 1
+      why: NLA uses CredSSP before any desktop is created.
+  refs:
+    - "Microsoft. [MS-RDPBCGR, basic connectivity and graphics](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpbcgr/5073f4ed-1e93-45e1-b039-6e30c385867c)."
+
+- id: winrm
+  name: WinRM
+  full: Windows Remote Management
+  layer: 7
+  cat: data
+  transport: HTTP or HTTPS
+  port: "5985, 5986 with HTTPS"
+  title: WinRM, running a command on a Windows server.
+  lede: WinRM is how PowerShell Remoting and many tools run commands on Windows machines. It sends SOAP messages over HTTP and logs in with Kerberos.
+  overview: |
+    WinRM implements **WS-Management**. A client POSTs SOAP envelopes to `/wsman`. To run a command, it creates a **shell**, sends a **command**, **receives** the output and deletes the shell. Authentication is usually **Negotiate**, Kerberos in a domain, which also encrypts the message body even on port 5985. Use 5986 with HTTPS outside domains.
+  nodes:
+    admin: [Admin PC, 10.0.0.30, laptop, 0, 1]
+    dc: [Domain controller, KDC, key, 3, 3]
+    srv: [Windows server, web-02 10.0.3.22, server, 6, 1]
+  links: [[admin, srv], [admin, dc]]
+  steps:
+    - t: Get a Kerberos ticket
+      tag: auth
+      d: "`Enter-PSSession web-02` gets a Kerberos ticket for `HTTP/web-02` from the domain controller."
+      p:
+        - [admin, dc, "TGS-REQ HTTP/web-02", sec]
+        - [dc, admin, "service ticket", sec]
+    - t: First request and login
+      tag: auth
+      d: The client POSTs to `/wsman` with an Authorization Negotiate header that carries the ticket. The server accepts it.
+      p:
+        - [admin, srv, "POST /wsman Authorization Negotiate", sec]
+        - [srv, admin, "200 OK", res]
+    - t: Create a shell
+      tag: shell
+      d: A SOAP Create request opens a remote shell and returns a ShellId.
+      p:
+        - [admin, srv, "SOAP Create shell", req]
+        - [srv, admin, "ShellId 7A3F...", res]
+    - t: Run and read
+      tag: command
+      d: A Command request runs `hostname`. A Receive request gets the output, base64 encoded in the SOAP body.
+      p:
+        - [admin, srv, "SOAP Command hostname", req]
+        - [admin, srv, "SOAP Receive", req]
+        - [srv, admin, "stdout WEB-02", data]
+    - t: Clean up
+      tag: close
+      d: A Delete request closes the shell.
+      p:
+        - [admin, srv, "SOAP Delete shell", req]
+  quiz:
+    - type: fill
+      q: "WinRM over HTTPS uses port ____."
+      a: ["5986"]
+      why: HTTP is 5985.
+    - q: Which login does WinRM prefer inside a Windows domain?
+      opts: ["Basic over HTTP", "Kerberos through Negotiate", "No login"]
+      a: 1
+      why: Kerberos also protects the message body.
+  refs:
+    - "Microsoft. [Installation and configuration for WinRM](https://learn.microsoft.com/en-us/windows/win32/winrm/installation-and-configuration-for-windows-remote-management)."
+
+- id: wmi
+  name: WMI
+  full: Windows management over DCOM
+  layer: 7
+  cat: data
+  transport: "MSRPC and DCOM"
+  port: "135, then a high port"
+  title: WMI, asking a Windows machine to run a process.
+  lede: WMI lets administrators query and control Windows machines remotely. The classic way uses DCOM, which starts at the RPC endpoint mapper on port 135 and moves to a random high port.
+  overview: |
+    The client asks the **endpoint mapper** on TCP 135 where the DCOM activation service lives. It gets a **dynamic port**, by default between 49152 and 65535. Then it authenticates with Kerberos or NTLM, connects to the WMI namespace `root\cimv2`, and calls methods, such as `Win32_Process.Create`.
+
+    Admins also use WMI through WinRM with CIM cmdlets, which is easier to firewall. Attackers use remote WMI to move between machines, so defenders log and alert on it.
+  nodes:
+    admin: [Admin PC, 10.0.0.30, laptop, 0, 1]
+    epm: [Endpoint mapper, port 135, server, 4, 0]
+    host: [Windows host, ws-17 10.0.4.17, server, 6, 2]
+  links: [[admin, epm], [admin, host], [epm, host]]
+  steps:
+    - t: Ask the endpoint mapper
+      tag: rpc
+      d: The client connects to TCP 135 and asks where the DCOM remote activation interface listens.
+      p:
+        - [admin, epm, "EPM Map (remote activation)", req]
+        - [epm, admin, "port 49712", res]
+    - t: Bind with authentication
+      tag: auth
+      d: The client connects to port 49712 and binds to the interface with Kerberos or NTLM.
+      p:
+        - [admin, host, "RPC Bind (Kerberos)", sec]
+        - [host, admin, "Bind Ack", sec]
+    - t: Log in to the namespace
+      tag: wmi
+      d: The client activates the WMI service and logs in to `root\cimv2`. It gets an IWbemServices interface.
+      p:
+        - [admin, host, "IWbemLevel1Login root\\cimv2", req]
+        - [host, admin, "IWbemServices", res]
+    - t: Run a method
+      tag: wmi
+      d: ExecMethod on Win32_Process.Create with a command line starts a process. The reply has the new process id and a return value of 0.
+      p:
+        - [admin, host, "ExecMethod Win32_Process.Create", req]
+        - [host, admin, "ProcessId 6120, ReturnValue 0", res]
+  quiz:
+    - type: fill
+      q: "DCOM based WMI starts at the RPC endpoint mapper on TCP port ____."
+      a: ["135"]
+      why: Then it moves to a dynamic high port.
+    - q: Why do defenders watch remote Win32_Process.Create calls?
+      opts: ["They are slow", "Attackers use remote WMI to run commands on other machines", "They break printing"]
+      a: 1
+      why: It is a common lateral movement method.
+  refs:
+    - "Microsoft. [Connecting to WMI on a remote computer](https://learn.microsoft.com/en-us/windows/win32/wmisdk/connecting-to-wmi-on-a-remote-computer)."
+
+- id: ipmi
+  name: IPMI
+  full: Server management controllers
+  layer: 7
+  cat: data
+  transport: UDP
+  port: "623"
+  title: IPMI, controlling a server even when it is off.
+  lede: Servers have a small management computer, the BMC, that can power cycle the machine and show its console. IPMI talks to it. Its login has a known weakness that defenders must plan around.
+  overview: |
+    **IPMI 2.0** uses RMCP+ on UDP 623. The **RAKP** login exchange has a design weakness. In RAKP message 2, the BMC sends an HMAC computed with the user password before the client has proved anything. Anyone who can reach port 623 and knows a user name can collect it and try password guesses offline.
+
+    !warn Keep BMCs on a separate management network, use long unique passwords, disable cipher suite 0, and prefer the newer Redfish API over HTTPS.
+  nodes:
+    admin: [Admin tool, 10.99.0.5, laptop, 0, 1]
+    bmc: [BMC, 10.99.1.21, server, 6, 1]
+    host: [Server, powered by BMC, server, 6, 3]
+  links: [[admin, bmc], [bmc, host]]
+  steps:
+    - t: Ask for capabilities
+      tag: hello
+      d: The tool asks which authentication types this channel supports.
+      p:
+        - [admin, bmc, "Get Channel Auth Capabilities", req]
+        - [bmc, admin, "supports IPMI 2.0 RMCP+", res]
+    - t: Open a session
+      tag: session
+      d: The tool proposes cipher suites and opens an RMCP+ session.
+      p:
+        - [admin, bmc, "Open Session Request", req]
+        - [bmc, admin, "Open Session Response", res]
+    - t: RAKP 1 and 2
+      tag: rakp
+      d: The tool sends a random number and the user name, admin. The BMC answers with its own random number and an HMAC keyed with the password. This is the value an attacker could collect.
+      p:
+        - [admin, bmc, "RAKP 1 (user admin)", sec]
+        - [bmc, admin, "RAKP 2 (HMAC with password)", bad]
+    - t: RAKP 3 and 4
+      tag: rakp
+      d: The tool proves it knows the password with its own HMAC. The BMC confirms. The session is ready.
+      p:
+        - [admin, bmc, "RAKP 3", sec]
+        - [bmc, admin, "RAKP 4", sec]
+    - t: Run a command
+      tag: control
+      d: The tool asks for the chassis status, then sends a power cycle.
+      p:
+        - [admin, bmc, "Get Chassis Status", req]
+        - [bmc, admin, "power on", res]
+        - [admin, bmc, "Chassis Control power cycle", req]
+        - [bmc, host, "power cycle", ctl]
+  quiz:
+    - type: fill
+      q: "IPMI over LAN uses UDP port ____."
+      a: ["623"]
+      why: Keep it on an isolated management network.
+    - q: Why is RAKP message 2 a risk?
+      opts: ["It is slow", "It contains an HMAC keyed with the password, sent before the client proves anything, so it can be cracked offline", "It turns the server off"]
+      a: 1
+      why: Long unique passwords and network isolation reduce the risk.
+  refs:
+    - "Rapid7. [A penetration tester's guide to IPMI and BMCs](https://www.rapid7.com/blog/post/2013/07/02/a-penetration-testers-guide-to-ipmi/)."
+    - "DMTF. [Redfish](https://www.dmtf.org/standards/redfish)."
+
+- id: r-services
+  name: r-services
+  full: rlogin, rsh and rexec
+  layer: 7
+  cat: data
+  transport: TCP
+  port: "512, 513, 514"
+  title: r-services, the old trust by address.
+  lede: Before SSH, Unix machines used rlogin and rsh. They trusted other hosts by IP address and user name, with no password and no encryption. Watch why that is unsafe.
+  overview: |
+    **rexec** uses port 512, **rlogin** 513 and **rsh** 514. The files `/etc/hosts.equiv` and `~/.rhosts` list trusted hosts and users. A client from a trusted host connects from a **privileged source port**, below 1024, which was supposed to prove it ran as root. The server then logs the user in without a password.
+
+    Anyone who controls a trusted host, or can fake its address, gets in. Everything is plain text. Replace r-services with SSH and remove `.rhosts` files.
+  nodes:
+    cli: [Trusted host, build-1 10.0.0.12, terminal, 0, 1]
+    srv: [Unix server, db-1 10.0.0.20, terminal, 6, 1]
+    eve: [Attacker, fakes 10.0.0.12, user, 3, 3]
+  links: [[cli, srv], [eve, srv]]
+  steps:
+    - t: Connect from a low port
+      tag: connect
+      d: "`rlogin db-1` connects to port 513 from source port 1022, a privileged port."
+      p:
+        - [cli, srv, "TCP SYN from :1022 to :513", ctl]
+    - t: Send the user names
+      tag: login
+      d: The client sends the local user, the remote user and the terminal type, separated by zero bytes.
+      p:
+        - [cli, srv, "\\0asha\\0asha\\0xterm/38400\\0", req]
+    - t: Trust check, no password
+      tag: trust
+      d: The server finds `build-1 asha` in `~/.rhosts` and logs asha in. No password is asked.
+      p:
+        - [srv, cli, "shell prompt (plain text)", res]
+    - t: Why it fails
+      tag: risk
+      d: An attacker who controls the trusted host, or can fake its address on the network, gets the same access. Every keystroke is plain text too.
+      p:
+        - [eve, srv, "rlogin as asha from fake 10.0.0.12", bad]
+      bad: [eve]
+  quiz:
+    - type: fill
+      q: "rlogin uses TCP port ____."
+      a: ["513"]
+      why: rexec 512, rlogin 513, rsh 514.
+    - q: What replaced the r-services?
+      opts: ["Telnet", "SSH with keys", "FTP"]
+      a: 1
+      why: SSH gives encryption and real authentication.
+  refs:
+    - "IETF. [RFC 1282, BSD rlogin](https://www.rfc-editor.org/rfc/rfc1282)."

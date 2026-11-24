@@ -78,7 +78,7 @@ how: |
 
   - **Single writer region**. All writes go to one home region, reads served locally. Simple, but far away users have slower writes.
   - **Home region per user**. Each user's data lives and is written in their nearest region. Works well, needs routing.
-  - **Multi leader with conflict resolution**. Any region writes, conflicts merged, lesson 8.
+  - **Multi leader with conflict resolution**. Any region writes, conflicts merged, lesson 2.3.
   - **Globally consistent databases** like Spanner or CockroachDB. Strong consistency, every write pays cross region latency.
 
   ### Practice or it does not work

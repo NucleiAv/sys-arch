@@ -83,8 +83,8 @@ how: |
   ### What you give up
 
   - Joins across shards are slow or impossible. Design so common queries stay in one shard.
-  - Transactions across shards need extra machinery, see lesson 16.
-  - Unique ids must work across shards, see lesson 15.
+  - Transactions across shards need extra machinery, see lesson 3.5.
+  - Unique ids must work across shards, see lesson 3.4.
   - Resharding later is hard. Plan for growth, often by starting with many small logical shards that can move between machines.
 
   !key Shard last, not first. Scale up, add replicas and caches first. Sharding solves real problems but makes every later change harder.

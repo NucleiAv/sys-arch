@@ -50,7 +50,7 @@ api: |
   POST /v1/messages/{id}/feedback              { rating, comment }
   ```
 
-  Server-sent events, lesson 2, are a natural fit. The server talks, the client listens.
+  Server-sent events, lesson 1.3, are a natural fit. The server talks, the client listens.
 
 data: |
   | Store | Holds |
@@ -117,7 +117,7 @@ diagrams:
 deep:
   - ["Latency", "Users judge speed by the first token. Stream with SSE, keep retrieval under 100 ms, keep prompts tight, and pick a smaller, faster model for simple questions."]
   - ["Cost", "Cost grows with tokens. Trim history to the last few turns or a summary, send fewer and shorter chunks, use a cheap model to route easy questions, cache common answers, and use the provider's prompt caching for the fixed system prompt."]
-  - ["Rate limits and outages", "Providers limit tokens per minute and sometimes slow down. The gateway queues with backpressure, retries with backoff, falls back to a second model or provider, and sheds free tier traffic first, lessons 14 and 17."]
+  - ["Rate limits and outages", "Providers limit tokens per minute and sometimes slow down. The gateway queues with backpressure, retries with backoff, falls back to a second model or provider, and sheds free tier traffic first, lessons 3.3 and 4.1."]
   - ["Prompt injection", "A help article or user message might contain text like \"ignore your instructions\". Mark retrieved text as untrusted, never let it trigger actions on its own, give tools least privilege, and check outputs before acting on them."]
   - ["Self hosting", "At high volume, running open models on your own GPUs can be cheaper. Then batching requests on each GPU, keeping models loaded, and autoscaling on queue length become the main concerns."]
 

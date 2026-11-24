@@ -1,0 +1,201 @@
+short: Serverless on AWS
+title: Serverless, Lambda, API Gateway, SQS and events
+time: about 50 minutes
+tags: [Lambda, SQS, SNS, EventBridge]
+lede: With serverless, you upload small functions and AWS runs them only when something happens. You never manage a server. Learn Lambda, the services around it and when serverless is a bad fit.
+
+idea: |
+  "Serverless" does not mean there are no servers. It means **you** do not manage them. You give AWS a function. AWS runs it when an **event** happens, such as an HTTP request, a new file in S3 or a message in a queue. It runs as many copies as needed, and stops them when there is no work. You pay only for the time your code runs.
+
+  **AWS Lambda** runs the functions. **API Gateway** turns HTTP requests into Lambda events. **SQS** is a queue. **SNS** sends one message to many subscribers. **EventBridge** routes events between services by rules.
+
+  !eli5 A normal server is a shop that stays open all day, even with no customers. Serverless is a food truck that appears only when someone is hungry, and you pay the cook only for the minutes they cook.
+
+scenes:
+  - title: An image upload handled with serverless parts
+    stats: [Step, Servers you manage]
+    nodes:
+      app: {label: Mobile app, x: 0, y: 1, kind: box}
+      api: {label: API Gateway, x: 2, y: 0, kind: raised}
+      fn: {label: Lambda upload URL, x: 4, y: 0, kind: def}
+      s3: {label: S3 bucket, x: 2, y: 2, kind: raised}
+      q: {label: SQS queue, x: 4, y: 2, kind: raised}
+      th: {label: Lambda thumbnails, x: 6, y: 2, kind: def}
+    links: [[app, api], [api, fn], [app, s3], [s3, q], [q, th]]
+    steps:
+      - title: Ask for an upload URL
+        text: The app calls `POST /uploads`. API Gateway runs a small Lambda that returns a presigned S3 URL.
+        on: [app, api, fn]
+        flow: [[app, api, ink], [api, fn, ink], [fn, app, def]]
+        stats: [Request, "0"]
+      - title: Upload to S3
+        text: The app uploads the photo directly to S3.
+        on: [app, s3]
+        flow: [[app, s3, ink]]
+        stats: [Upload, "0"]
+      - title: An event goes to a queue
+        text: S3 sends an "object created" event to an SQS queue. The queue holds it safely, even during a spike.
+        on: [s3, q]
+        flow: [[s3, q, def]]
+        stats: [Event, "0"]
+      - title: Process in parallel
+        text: Lambda reads batches of messages from the queue and makes thumbnails. A thousand uploads at once start many copies of the function.
+        on: [q, th]
+        flow: [[q, th, def]]
+        mark: {th: ok}
+        stats: [Process, "0"]
+
+terms:
+  - [Serverless, "You run code or use services without managing servers. You pay per use."]
+  - [Lambda function, "Code that AWS runs on an event. It can run up to 15 minutes per call."]
+  - [Trigger, "The event source that starts a function, such as API Gateway, S3, SQS or a schedule."]
+  - [Cold start, "The extra time when AWS must start a new copy of your function before it runs."]
+  - [Concurrency, "How many copies of a function run at the same moment."]
+  - [SQS, "Simple Queue Service. Standard queues deliver at least once. FIFO queues keep order and remove duplicates."]
+  - [Visibility timeout, "While one consumer works on a message, SQS hides it from others for this time."]
+  - [SNS, "Simple Notification Service. Publish once, deliver to many subscribers."]
+  - [EventBridge, "An event bus that routes events to targets by matching rules."]
+  - [Step Functions, "A service that runs a workflow of steps, with retries and branches."]
+
+how: |
+  ### A Lambda function in Python
+
+  ```
+  import json
+
+  def handler(event, context):
+      name = event.get("queryStringParameters", {}).get("name", "world")
+      return {
+          "statusCode": 200,
+          "headers": {"Content-Type": "application/json"},
+          "body": json.dumps({"hello": name}),
+      }
+  ```
+
+  AWS calls `handler` with the event. With API Gateway, the return value becomes the HTTP response.
+
+  ### Key limits and facts
+
+  | Fact | Value |
+  | --- | --- |
+  | Longest run time for one call | 15 minutes |
+  | Memory | 128 MB to 10,240 MB. CPU grows with memory. |
+  | You pay for | Number of requests, plus time multiplied by memory |
+  | Default concurrency per account per region | 1,000, can be raised |
+
+  ### Queues, topics and buses
+
+  | Service | Pattern | Example |
+  | --- | --- | --- |
+  | SQS | One message, one consumer | Resize each image once |
+  | SNS | One message, many subscribers | Order placed goes to email, analytics and stock |
+  | EventBridge | Route by rules on event content | Send only orders over 1,000 dollars to fraud review |
+
+  ### When serverless fits and when it does not
+
+  Good fit. Spiky or unpredictable traffic, event processing, scheduled jobs, glue between services, small APIs.
+
+  Poor fit. Long running jobs over 15 minutes, steady very high traffic where servers are cheaper, very low latency needs where cold starts hurt, and apps that need long open connections.
+
+  !key Lambda functions must be stateless. Keep state in DynamoDB, S3 or a cache. Make functions idempotent, because SQS and many triggers can deliver the same event twice.
+
+diagrams:
+  - type: split
+    title: SNS fan out to queues
+    source: ["SNS topic order-placed", "def"]
+    targets:
+      - ["SQS email queue", "box", "Lambda sends the receipt"]
+      - ["SQS stock queue", "box", "Lambda updates stock"]
+      - ["SQS analytics queue", "box", "Lambda writes to the warehouse"]
+    caption: Each consumer has its own queue, so a slow consumer never blocks the others.
+
+life:
+  - ["A spike with no servers to scale", "A ticket site's confirmation emails ran on Lambda behind SQS. On a sale day, messages grew to 200 thousand. Lambda scaled out, worked through the queue and scaled back to zero by evening."]
+  - ["A Lambda that cost more than a server", "A service handled thousands of requests every second, all day. The Lambda bill was higher than a few containers would cost. They moved the steady part to containers and kept Lambda for spikes and events."]
+
+tradeoffs:
+  - ["Lambda", "No servers, scales to zero, pay per use.", "Cold starts, 15 minute limit, can be costly at steady high load."]
+  - ["Containers on ECS or Kubernetes", "Steady cost, long running, any runtime.", "You manage scaling and capacity."]
+  - ["SQS standard", "Nearly unlimited throughput.", "At least once delivery and best effort ordering."]
+  - ["SQS FIFO", "Order kept, duplicates removed.", "Lower throughput limits."]
+
+mistakes:
+  - Storing state in the function's memory between calls.
+  - Non idempotent functions behind SQS.
+  - A visibility timeout shorter than the function's run time, so messages are processed twice.
+  - No dead letter queue for failed messages.
+  - Calling Lambda functions from Lambda functions in long chains instead of using queues or Step Functions.
+
+quiz:
+  - type: num
+    q: What is the longest time one Lambda call can run, in minutes?
+    a: 15
+    tol: 0
+    unit: minutes
+    why: Longer work needs containers, Step Functions or batch services.
+  - q: An order event must reach email, stock and analytics services. Which pattern fits?
+    opts: ["One SQS queue read by all three", "SNS topic fanning out to one queue per service", "Three Lambda functions calling each other"]
+    a: 1
+    why: Each service gets its own copy and works at its own pace.
+  - type: fill
+    q: "The time SQS hides a message while one consumer works on it is the ____ timeout."
+    a: ["visibility"]
+    why: Set it longer than your processing time.
+  - q: What does this function return to API Gateway?
+    info: |
+      ```
+      def handler(event, context):
+          return {"statusCode": 404, "body": "not found"}
+      ```
+    opts: ["An HTTP 200", "An HTTP 404 with the body not found", "Nothing"]
+    a: 1
+    why: The statusCode field becomes the HTTP status.
+  - type: fill
+    q: The extra delay when AWS starts a new copy of a function is a ____ start.
+    a: ["cold"]
+    why: Warm copies run without this delay.
+
+interview:
+  - q: When would you choose serverless functions over containers?
+    keys:
+      - ["Spiky, event driven or unpredictable load", [spiky, event, unpredictable, burst, scale to zero]]
+      - ["No servers to manage, pay per use", [manage, pay per, per use, operations]]
+      - ["Limits like run time, cold starts and steady load cost", [cold start, 15 minute, timeout, steady, cost, latency]]
+      - ["State kept outside and idempotent handlers", [stateless, state, idempot, dynamodb, outside]]
+    a: |
+      I choose functions for event driven and spiky work, such as processing uploads, queue consumers, webhooks, scheduled jobs and small APIs with uneven traffic. I get scaling from zero to thousands of copies and pay nothing when idle, with no servers to patch. I choose containers for steady high traffic, long running work over 15 minutes, very latency sensitive paths where cold starts hurt, or long lived connections. Either way, state lives in DynamoDB, S3 or a cache, and handlers are idempotent because events can arrive more than once.
+    fb: Mentioning the cost crossover at steady high load shows balanced judgment.
+
+desk:
+  title: Design a serverless form handler
+  lede: A small charity wants a donation form backend with no servers to manage. Pick the parts and check the code.
+  situation: |
+    **Kindwell** has a static website. When someone submits the donation form, the backend must save the donation, send a thank you email and notify the finance team. Traffic is near zero most days and huge during TV appeals.
+  rounds:
+    - title: Round 1. Choose parts
+      items:
+        - type: sort
+          q: Which service does each job?
+          rows:
+            - ["Receive the HTTPS form post", "API Gateway"]
+            - ["Run the code that validates and saves", "Lambda"]
+            - ["Store donations by id", "DynamoDB"]
+            - ["Tell both the email and finance consumers", "SNS"]
+          opts: ["API Gateway", "Lambda", "DynamoDB", "SNS"]
+          why: Each serverless service does one job.
+    - title: Round 2. Reliability
+      items:
+        - type: open
+          q: During a TV appeal the email provider is slow. How do you stop slow emails from making the form slow?
+          a: "The form Lambda only saves the donation and publishes to SNS, then answers at once. SNS delivers to an SQS email queue, and a separate Lambda sends emails at its own pace with retries and a dead letter queue. The email sender must skip donations it already thanked, because messages can repeat."
+  card: |
+    - Functions on events, pay per use.
+    - 15 minute limit, cold starts, steady load costs.
+    - SQS one consumer, SNS many, EventBridge by rules.
+    - Stateless, idempotent, dead letter queues.
+
+refs:
+  - "AWS. [What is AWS Lambda?](https://docs.aws.amazon.com/lambda/latest/dg/welcome.html)"
+  - "AWS. [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html)."
+  - "AWS. [Amazon SQS visibility timeout](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html)."
+  - "AWS. [Fanout to Amazon SQS queues with SNS](https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html)."

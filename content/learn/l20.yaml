@@ -80,8 +80,8 @@ how: |
 
   - **API gateway** for one front door.
   - **Service discovery**, often built into Kubernetes DNS.
-  - **Event bus** or stream for loose coupling, lesson 13.
-  - **Distributed tracing**, lesson 18.
+  - **Event bus** or stream for loose coupling, lesson 3.2.
+  - **Distributed tracing**, lesson 4.2.
   - **Service mesh** when you have many services and want mTLS, retries and metrics without code in every service.
 
   ### Moving from a monolith

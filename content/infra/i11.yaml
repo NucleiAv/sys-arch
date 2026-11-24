@@ -1,0 +1,215 @@
+short: AWS networks and storage
+title: AWS networks and storage, VPC, S3, RDS and DynamoDB
+time: about 60 minutes
+tags: [VPC, subnets, S3, RDS, DynamoDB]
+lede: Build a private network in the cloud, decide what is public and what is not, and pick the right place for files, relational data and key value data.
+
+idea: |
+  A **VPC**, virtual private cloud, is your own private network inside AWS. You split it into **subnets**. A **public subnet** can reach the internet directly. A **private subnet** cannot be reached from the internet. Your database belongs in a private subnet.
+
+  Then you choose where data lives.
+
+  - **S3** for files of any size.
+  - **RDS** for managed relational databases, such as PostgreSQL and MySQL.
+  - **DynamoDB** for a managed key value and document database that scales very far.
+
+  !eli5 A VPC is a fenced campus. The public subnet is the reception area by the gate. The private subnet is the back office with no door to the street. Visitors talk to reception, and reception walks to the back office for them.
+
+scenes:
+  - title: A classic three tier network
+    stats: [Hop, Subnet]
+    nodes:
+      user: {label: User, x: 0, y: 1, kind: box}
+      alb: {label: Load balancer, x: 2, y: 1, kind: raised, tag: public subnet}
+      app: {label: App servers, x: 4, y: 1, kind: def, tag: private subnet}
+      rds: {label: RDS database, x: 6, y: 0, kind: raised, tag: private subnet}
+      nat: {label: NAT gateway, x: 4, y: 3, kind: raised, tag: public subnet}
+      s3: {label: S3 bucket, x: 6, y: 2, kind: raised, tag: VPC endpoint}
+    links: [[user, alb], [alb, app], [app, rds], [app, nat], [app, s3]]
+    steps:
+      - title: In through the load balancer
+        text: Users reach only the Application Load Balancer in the public subnets. Its security group allows port 443 from anywhere.
+        on: [user, alb]
+        flow: [[user, alb, ink]]
+        stats: [Internet to ALB, public]
+      - title: To the app servers
+        text: The app servers sit in private subnets. Their security group allows traffic only from the load balancer's security group.
+        on: [alb, app]
+        flow: [[alb, app, ink]]
+        stats: [ALB to app, private]
+      - title: To the database
+        text: The RDS database allows port 5432 only from the app security group. Nothing on the internet can even reach it.
+        on: [app, rds]
+        flow: [[app, rds, def]]
+        mark: {rds: ok}
+        stats: [App to database, private]
+      - title: Out to the internet
+        text: App servers sometimes need to call outside APIs. They go out through a NAT gateway, which allows outbound connections but no inbound ones.
+        on: [app, nat]
+        flow: [[app, nat, ink]]
+        stats: [Outbound only, NAT]
+      - title: Files without the internet
+        text: A VPC gateway endpoint lets the servers reach S3 privately, without the NAT gateway. That is safer and cheaper.
+        on: [app, s3]
+        flow: [[app, s3, def]]
+        stats: [App to S3, endpoint]
+
+terms:
+  - [VPC, "Your private network in AWS, with an address range such as 10.0.0.0/16."]
+  - [CIDR, "A way to write an address range. /16 has 65,536 addresses, /24 has 256."]
+  - [Subnet, "A smaller range inside a VPC, in one availability zone."]
+  - [Internet gateway, "Connects a VPC to the internet. Public subnets route to it."]
+  - [NAT gateway, "Lets private servers start connections to the internet, but blocks connections from it."]
+  - [Security group, "A stateful firewall on a resource. Only allow rules. Return traffic is allowed automatically."]
+  - [Network ACL, "A stateless firewall on a subnet, with allow and deny rules."]
+  - [ALB and NLB, "Application Load Balancer works at layer 7, Network Load Balancer at layer 4."]
+  - [S3, "Object storage. Buckets hold objects of any size. Designed for 11 nines of durability."]
+  - [RDS, "Managed relational databases. AWS handles backups, patches and failover."]
+  - [Multi-AZ, "RDS keeps a standby copy in another zone and fails over to it automatically."]
+  - [DynamoDB, "Managed key value and document database. You choose a partition key, and it scales very far."]
+
+how: |
+  ### A typical VPC layout
+
+  | Subnet | Zone a | Zone b | Holds |
+  | --- | --- | --- | --- |
+  | Public | 10.0.0.0/24 | 10.0.1.0/24 | Load balancer, NAT gateway |
+  | Private app | 10.0.10.0/24 | 10.0.11.0/24 | App servers or containers |
+  | Private data | 10.0.20.0/24 | 10.0.21.0/24 | RDS, caches |
+
+  ### Security groups chain together
+
+  - Load balancer group. Allow 443 from `0.0.0.0/0`.
+  - App group. Allow 8080 only from the load balancer group.
+  - Database group. Allow 5432 only from the app group.
+
+  Refer to other security groups, not to IP addresses. Then new servers fit in automatically.
+
+  ### S3 basics
+
+  - Keep **Block Public Access** on, at the account level.
+  - Turn on **versioning** for important buckets, so you can recover deleted or overwritten objects.
+  - Use **lifecycle rules** to move old objects to cheaper storage classes, such as Glacier.
+  - Serve public files through **CloudFront**, the AWS CDN.
+
+  ### Choosing a database service
+
+  | Need | Service |
+  | --- | --- |
+  | Relational data with joins and transactions | RDS or Aurora |
+  | Huge scale lookups by key, steady low latency | DynamoDB |
+  | A cache in front of a database | ElastiCache for Redis or Valkey |
+  | Search | OpenSearch Service |
+
+  ### RDS high availability
+
+  **Multi-AZ** keeps a synchronous standby in a second zone. If the main one fails, RDS moves the database name to the standby, usually within a minute or two. **Read replicas** are separate copies for read traffic. They use asynchronous replication.
+
+  !key With DynamoDB, design the keys from your queries first. A good partition key, such as `user_id`, spreads traffic. A bad one, such as `date`, creates hot partitions.
+
+diagrams:
+  - type: layers
+    title: Layers of protection for the database
+    attack: a request from the internet to the database
+    layers:
+      - ["Private subnet", "No route from the internet at all", "stop"]
+      - ["Security group", "Only the app group may connect on 5432", "stop"]
+      - ["Database login", "User and password or IAM auth", "partial"]
+      - ["Encryption at rest", "Storage and backups encrypted with KMS", "partial"]
+    caption: Even if one layer is set up wrongly, the others still protect the data.
+
+life:
+  - ["Public buckets in the news", "Many data leaks came from S3 buckets that someone made public by mistake. AWS now turns on Block Public Access for new buckets by default."]
+  - ["The expensive NAT gateway", "A team's servers downloaded large files from S3 through a NAT gateway and paid processing fees on every gigabyte. A free S3 gateway endpoint removed most of that cost."]
+
+tradeoffs:
+  - ["Public subnet for app servers", "Simple.", "Servers are reachable from the internet, a bigger attack surface."]
+  - ["Private subnets with NAT", "Safer.", "NAT gateways cost money by the hour and by the gigabyte."]
+  - ["RDS", "Familiar SQL, joins, transactions.", "Vertical scaling limits, connections to manage."]
+  - ["DynamoDB", "Scales very far, no servers.", "Queries must follow the key design, joins are not possible."]
+
+mistakes:
+  - Putting databases in public subnets.
+  - Security groups that allow 0.0.0.0/0 on database or SSH ports.
+  - Turning off Block Public Access to share one file.
+  - Running production RDS without Multi-AZ or tested backups.
+  - Choosing DynamoDB keys before knowing the queries.
+
+quiz:
+  - q: Where should the RDS database go?
+    opts: ["A public subnet", "A private subnet", "Outside the VPC"]
+    a: 1
+    why: Nothing on the internet should be able to reach it.
+  - type: num
+    q: How many IP addresses does a /24 CIDR range contain?
+    a: 256
+    tol: 0
+    unit: addresses
+    why: 32 minus 24 is 8 bits, and 2 to the 8 is 256. AWS reserves 5 in each subnet.
+  - q: Security groups are...
+    opts: ["Stateless, with allow and deny rules", "Stateful, with allow rules only", "Only for S3"]
+    a: 1
+    why: Return traffic is allowed automatically. Network ACLs are the stateless ones.
+  - q: Which rule is safest for the database security group?
+    info: |
+      ```
+      A. inbound 5432 from 0.0.0.0/0
+      B. inbound 5432 from sg-app (the app servers' group)
+      C. inbound all ports from 10.0.0.0/8
+      ```
+    opts: ["A", "B", "C"]
+    a: 1
+    why: Only the app servers may connect, on only the database port.
+  - type: fill
+    q: The RDS option that keeps a standby copy in another zone and fails over automatically is ____.
+    a: ["Multi-AZ", "multi az", "multiaz"]
+    why: Read replicas are for reads. Multi-AZ is for failover.
+
+interview:
+  - q: Design the network for a web app on AWS.
+    keys:
+      - ["VPC across at least two availability zones", [vpc, two zones, availability zone, multi az, az]]
+      - ["Public subnets for the load balancer, private for app and data", [public subnet, private subnet, private]]
+      - ["Security groups chained by reference, least access", [security group, only from, reference, chain]]
+      - ["NAT gateway or endpoints for outbound access", [nat, endpoint, outbound]]
+      - ["Managed database in private subnets with Multi-AZ and encryption", [rds, multi-az, encrypt, private data]]
+    a: |
+      One VPC with subnets in at least two availability zones. Public subnets hold only the Application Load Balancer and NAT gateways. App servers or containers run in private subnets, and the database runs in separate private data subnets. Security groups chain by reference. The load balancer accepts 443 from the internet, the app accepts traffic only from the load balancer group, and the database accepts 5432 only from the app group. Outbound calls go through NAT, and S3 and DynamoDB are reached through VPC endpoints. RDS runs Multi-AZ with encryption at rest and automated backups. Public files go through CloudFront.
+    fb: Chaining security groups by reference, not by IP, is the detail that shows real AWS experience.
+
+desk:
+  title: Review a startup's AWS diagram
+  lede: A startup drew its AWS setup. Find the risky parts.
+  situation: |
+    **Orbitfit** runs two EC2 servers in a public subnet in one zone. Their security group allows SSH from anywhere. The RDS PostgreSQL database is in the same public subnet with a public IP. User photos are in an S3 bucket with public read access.
+  rounds:
+    - title: Round 1. Find the fixes
+      items:
+        - type: sort
+          q: Match each risk to its fix.
+          rows:
+            - ["Database with a public IP", "Move it to a private subnet"]
+            - ["SSH open to the world", "Remove it and use Session Manager or a bastion with a narrow rule"]
+            - ["Everything in one zone", "Use two zones and RDS Multi-AZ"]
+            - ["Photos bucket is public", "Keep it private and serve photos through CloudFront"]
+          opts: ["Move it to a private subnet", "Remove it and use Session Manager or a bastion with a narrow rule", "Use two zones and RDS Multi-AZ", "Keep it private and serve photos through CloudFront"]
+          why: Shrink what the internet can reach, and remove single points of failure.
+    - title: Round 2. Pick a database
+      items:
+        - q: Orbitfit wants to store workout events, read by user id and time, at very high volume. Which fits?
+          opts: ["DynamoDB with partition key user_id and sort key timestamp", "S3 only", "One huge RDS table with no index"]
+          a: 0
+          why: The access pattern is by key and time range, which DynamoDB serves well.
+  card: |
+    - Public subnets for load balancers only.
+    - Chain security groups by reference.
+    - Block Public Access on S3, use CloudFront.
+    - RDS Multi-AZ for failover, replicas for reads.
+    - DynamoDB keys come from queries.
+
+refs:
+  - "AWS. [How Amazon VPC works](https://docs.aws.amazon.com/vpc/latest/userguide/how-it-works.html)."
+  - "AWS. [Security group rules](https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html)."
+  - "AWS. [Blocking public access to your S3 storage](https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html)."
+  - "AWS. [Amazon RDS Multi-AZ](https://aws.amazon.com/rds/features/multi-az/)."
+  - "AWS. [Best practices for designing partition keys in DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-design.html)."

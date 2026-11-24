@@ -1,0 +1,14 @@
+intro: |
+  ### How to use this page
+
+  1. Choose a protocol from the list. On a phone, press **All protocols**.
+  2. Press **Play**, or use **Next** and **Back**. The arrow keys also move between steps.
+  3. Switch between **Network**, which shows packets moving between machines, and **Sequence**, which shows every message in time order.
+  4. Read the **Current step** panel. Click a packet in the **Packet inspector** to see its fields.
+  5. Open **Practice** and answer the questions.
+
+  ### What the layer numbers mean
+
+  The badges such as L7 refer to the OSI model, a seven layer way to describe networks. L2 is the local link, such as Ethernet and Wi-Fi. L3 is IP addressing and routing. L4 is transport, such as TCP and UDP. L5 to L7 are sessions, encryption and applications. Real protocols do not always fit one layer exactly, so the badge shows where each one mostly works.
+
+  !plain Addresses in the animations use documentation ranges, such as 192.0.2.0/24, 198.51.100.0/24 and 203.0.113.0/24, and private ranges such as 192.168.1.0/24. They are examples, not real servers.

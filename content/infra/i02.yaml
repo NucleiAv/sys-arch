@@ -1,0 +1,203 @@
+short: Git branches and merging
+title: Git branches, merging and rebasing
+time: about 50 minutes
+tags: [branch, merge, rebase, conflicts]
+lede: Branches let you work on a new idea without breaking the main code. Learn to create branches, join them with merge or rebase, and fix conflicts calmly.
+
+idea: |
+  A **branch** is a movable label that points to a commit. When you make a new commit on a branch, the label moves forward. The main branch is usually called `main`.
+
+  You make a branch for each new feature or fix. You work there safely. When it is ready, you **merge** it back into `main`.
+
+  Sometimes two branches change the same lines. Git cannot guess which one is right. That is a **merge conflict**. You choose the correct lines by hand.
+
+  !eli5 A branch is like a copy of a story where you try a new ending. The original story stays safe. If you like the new ending, you add it to the original. If two people rewrote the same sentence, you must decide which sentence to keep.
+
+scenes:
+  - title: A feature branch from start to merge
+    stats: [Command, Where main points]
+    nodes:
+      c1: {label: Commit A, x: 0, y: 1, kind: def, tag: main}
+      c2: {label: Commit B, x: 2, y: 1, kind: def}
+      f1: {label: Commit C, x: 3, y: 3, kind: raised, tag: feature}
+      f2: {label: Commit D, x: 5, y: 3, kind: raised, tag: feature}
+      m: {label: Merge commit, x: 6, y: 1, kind: ok, tag: main}
+    links: [[c1, c2], [c2, f1], [f1, f2], [c2, m], [f2, m]]
+    steps:
+      - title: Start a branch
+        text: "`git switch -c feature` makes a new branch at commit B and moves you onto it."
+        show: [c1, c2]
+        on: [c2]
+        stats: [git switch -c, B]
+      - title: Work on the branch
+        text: You make commits C and D. `main` still points to B. Nothing you do here can break main.
+        show: [c1, c2, f1, f2]
+        on: [f1, f2]
+        flow: [[c2, f1, ink], [f1, f2, ink]]
+        stats: [git commit, B]
+      - title: Merge it back
+        text: "`git switch main` then `git merge feature`. Main also moved on, so Git makes a **merge commit** with two parents, B and D."
+        on: [m]
+        flow: [[c2, m, def], [f2, m, def]]
+        mark: {m: ok}
+        stats: [git merge, merge commit]
+      - title: Clean up
+        text: "`git branch -d feature` deletes the label. The commits stay in history through the merge."
+        on: [m]
+        stats: [git branch -d, merge commit]
+
+terms:
+  - [Branch, "A movable label that points to a commit."]
+  - [main, "The usual name of the main branch. Older projects use master."]
+  - [Merge, "Joining the work of one branch into another."]
+  - [Fast forward, "A merge where the target branch has no new commits, so Git only moves the label forward."]
+  - [Merge commit, "A commit with two parents that joins two branches."]
+  - [Rebase, "Replaying your commits on top of another branch, which makes a straight history and new commit ids."]
+  - [Merge conflict, "Both branches changed the same lines. You must choose by hand."]
+  - [git stash, "Puts your unfinished changes aside so you can switch branches, and gives them back later."]
+
+how: |
+  ### Everyday branch commands
+
+  ```
+  git branch                 # list branches
+  git switch -c fix-login    # create a branch and move to it
+  git switch main            # move back to main
+  git merge fix-login        # bring fix-login into the branch you are on
+  git branch -d fix-login    # delete the label after the merge
+  ```
+
+  Older guides use `git checkout -b fix-login`. It does the same as `git switch -c fix-login`.
+
+  ### Merge or rebase
+
+  | | Merge | Rebase |
+  | --- | --- | --- |
+  | History | Keeps the real shape, with merge commits | One straight line |
+  | Commit ids | Unchanged | New ids for your rebased commits |
+  | Safe on shared branches | Yes | No. Rebase only your own unpushed or private work |
+
+  !warn The golden rule. Do not rebase commits that other people already pulled. Rebase rewrites them, and their copies no longer match.
+
+  ### Fixing a conflict
+
+  Git marks the clash in the file.
+
+  ```
+  <<<<<<< HEAD
+  price = 100
+  =======
+  price = 120
+  >>>>>>> feature
+  ```
+
+  1. Choose the correct text. Delete the markers.
+  2. Run `git add` on the file.
+  3. Run `git commit` to finish the merge, or `git rebase --continue` during a rebase.
+
+  ### A simple team flow
+
+  Keep `main` always working. Make short branches for each change. Merge them through pull requests, which you learn in the next lesson.
+
+diagrams:
+  - type: split
+    title: Branch from main for each change
+    source: ["main", "def"]
+    targets:
+      - ["feature/search", "box", "new feature"]
+      - ["fix/login-error", "box", "bug fix"]
+      - ["docs/readme", "box", "documentation"]
+    caption: Short lived branches with clear names. Each one merges back into main.
+
+life:
+  - ["Two developers, one price", "Two people changed the same price line on different branches. The second merge stopped with a conflict. They talked for one minute, kept the new price and merged."]
+  - ["A rebase that confused a team", "A developer rebased a shared branch and force pushed it. Teammates then had commits that no longer matched. The team agreed to rebase only private branches."]
+
+tradeoffs:
+  - ["Merge commits", "True history, safe.", "History looks busy."]
+  - ["Rebase before merging", "Clean straight history.", "Rewrites commits, risky on shared branches."]
+  - ["Long lived branches", "Big features stay isolated.", "Many conflicts when you finally merge."]
+  - ["Short branches", "Small, easy merges.", "Big features need feature flags to hide unfinished work."]
+
+mistakes:
+  - Working directly on main.
+  - Branches that live for weeks and drift far from main.
+  - Rebasing a branch that others use.
+  - Leaving conflict markers in the file and committing them.
+
+quiz:
+  - type: fill
+    q: "The newer command to create a branch and move to it is `git ____ -c new-branch`."
+    a: ["switch"]
+    why: git switch -c is the same as the older git checkout -b.
+  - q: When does Git make a fast forward merge?
+    opts: ["When both branches have new commits", "When the target branch has no new commits since the branch started", "Never"]
+    a: 1
+    why: Git only moves the label forward. No merge commit is needed.
+  - q: What must you do with this file?
+    info: |
+      ```
+      <<<<<<< HEAD
+      color = "blue"
+      =======
+      color = "green"
+      >>>>>>> redesign
+      ```
+    opts: ["Commit it as it is", "Pick the right line, delete the markers, then git add and commit", "Delete the file"]
+    a: 1
+    why: Conflict markers must be removed by hand before you finish the merge.
+  - q: Which is safe to rebase?
+    opts: ["main, after everyone pulled it", "Your own branch that nobody else has pulled", "Any shared branch"]
+    a: 1
+    why: Rebase rewrites commits. Only rewrite commits that nobody else has.
+  - type: fill
+    q: "To put unfinished changes aside so you can switch branches, run `git ____`."
+    a: ["stash"]
+    why: git stash pop gives the changes back.
+
+interview:
+  - q: What is the difference between merge and rebase, and when do you use each?
+    keys:
+      - ["Merge joins histories, may add a merge commit, keeps history", [merge commit, join, keeps, preserve, two parents]]
+      - ["Rebase replays commits on top, linear history, new ids", [replay, linear, straight, rewrite, new id, new hash]]
+      - ["Do not rebase shared or public branches", [shared, public, pushed, golden rule, others]]
+      - ["A practical team rule", [team, pull request, squash, local, before]]
+    a: |
+      Merge joins two branches. If both moved on, it creates a merge commit with two parents and keeps the real history. Rebase takes my commits and replays them on top of the other branch, which gives a straight history but creates new commit ids. Because it rewrites commits, I rebase only my own local or private branch, for example to update it with main before opening a pull request. Shared branches like main are only ever merged into. Many teams also squash merge pull requests, so main gets one clean commit per change.
+    fb: State the golden rule clearly. It is the point interviewers check.
+
+desk:
+  title: The release day conflict
+  lede: Two features must ship today and they touch the same file. Guide the team through it.
+  situation: |
+    **Mina** changed the checkout button text on branch `copy-update`. **Leo** changed the same line on branch `new-colors`. Leo's branch is already merged into main.
+  rounds:
+    - title: Round 1. What happens
+      items:
+        - q: Mina runs `git merge copy-update` on main. What happens?
+          opts: ["It merges silently", "Git stops with a conflict on the button line", "Git deletes Leo's change"]
+          a: 1
+          why: Both branches changed the same line since they split.
+        - type: sort
+          q: Put the steps to finish in order.
+          rows:
+            - ["Open the file and choose the right text", "Step 1"]
+            - ["Delete the conflict markers", "Step 2"]
+            - ["git add the file", "Step 3"]
+            - ["git commit to finish the merge", "Step 4"]
+          opts: ["Step 1", "Step 2", "Step 3", "Step 4"]
+          why: Choose, clean, stage, commit.
+    - title: Round 2. Next time
+      items:
+        - type: open
+          q: How can the team have fewer conflicts in the future?
+          a: "Keep branches short, merge small changes often, update your branch from main every day, and talk when two people plan to change the same area."
+  card: |
+    - One short branch per change.
+    - Merge for shared history, rebase only private work.
+    - Conflicts, choose, clean, add, commit.
+
+refs:
+  - "Pro Git book. [Git branching](https://git-scm.com/book/en/v2/Git-Branching-Branches-in-a-Nutshell)."
+  - "Atlassian. [Merging versus rebasing](https://www.atlassian.com/git/tutorials/merging-vs-rebasing)."
+  - "Git. [git switch documentation](https://git-scm.com/docs/git-switch)."

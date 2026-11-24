@@ -1,0 +1,228 @@
+short: Kubernetes basics
+title: Kubernetes basics, pods, deployments and services
+time: about 60 minutes
+tags: [Kubernetes, pods, deployments, services]
+lede: Kubernetes runs containers across many machines and keeps them in the state you asked for. Learn the cluster parts, pods, deployments, services and kubectl.
+
+idea: |
+  **Kubernetes**, often written **K8s**, is a system that runs containers on a group of machines called a **cluster**. Google released it as open source in 2014. The Cloud Native Computing Foundation looks after it now.
+
+  You do not tell Kubernetes "start this container on machine 3". You tell it the **desired state**. For example, "always run 3 copies of shop version 1.4". Kubernetes compares the real state with the desired state all the time, and fixes any difference. If a machine dies, it starts the lost copies elsewhere. This loop is called **reconciliation**.
+
+  !eli5 You tell a robot gardener "I want 3 tomato plants in this bed, always". You do not say how. If a plant dies, the robot plants a new one. If you change the number to 5, it plants 2 more.
+
+scenes:
+  - title: Desired state and self healing
+    stats: [Step, Desired, Running]
+    nodes:
+      you: {label: kubectl apply, x: 0, y: 1, kind: box}
+      cp: {label: Control plane, x: 2, y: 1, kind: def, tag: API server and etcd}
+      n1: {label: Node 1, x: 4, y: 0, kind: raised, tag: 2 pods}
+      n2: {label: Node 2, x: 4, y: 2, kind: raised, tag: 1 pod}
+      svc: {label: Service shop, x: 6, y: 1, kind: ok, tag: stable address}
+    links: [[you, cp], [cp, n1], [cp, n2], [svc, n1], [svc, n2]]
+    steps:
+      - title: Declare
+        text: "`kubectl apply -f shop.yaml` sends a Deployment that asks for 3 replicas of `shop:1.4`. The API server saves it in etcd."
+        on: [you, cp]
+        flow: [[you, cp, ink]]
+        stats: [Apply, "3", "0"]
+      - title: Schedule
+        text: The scheduler picks nodes with free CPU and memory. The kubelet on each node starts the containers.
+        on: [cp, n1, n2]
+        flow: [[cp, n1, ink], [cp, n2, ink]]
+        stats: [Schedule, "3", "3"]
+      - title: Expose
+        text: A Service named `shop` gives the pods one stable address and DNS name. It spreads traffic over the pods that match its label selector.
+        on: [svc, n1, n2]
+        flow: [[svc, n1, def], [svc, n2, def]]
+        stats: [Serve, "3", "3"]
+      - title: A node dies
+        text: Node 2 stops answering. Its pod is lost. Running is now 2, desired is 3.
+        on: [n2]
+        mark: {n2: bad}
+        stats: [Failure, "3", "2"]
+      - title: Self heal
+        text: The controller notices the difference and starts a new pod on node 1. The Service stops sending traffic to the dead pod. Users notice nothing.
+        on: [cp, n1]
+        flow: [[cp, n1, def]]
+        mark: {n1: ok}
+        stats: [Reconcile, "3", "3"]
+
+terms:
+  - [Cluster, "A set of machines that Kubernetes manages as one."]
+  - [Node, "One machine in the cluster that runs pods."]
+  - [Control plane, "The brain. API server, scheduler, controllers and etcd, the database of desired state."]
+  - [kubelet, "The agent on each node that starts and watches containers."]
+  - [Pod, "The smallest unit. One or more containers that share a network address and storage."]
+  - [Deployment, "Describes how many replicas of a pod to run and how to update them."]
+  - [ReplicaSet, "Keeps the right number of pod copies running. Deployments manage it for you."]
+  - [Service, "A stable address and DNS name in front of a changing set of pods."]
+  - [Label, "A key and value on an object, such as `app: shop`, used by selectors to find objects."]
+  - [Namespace, "A folder like group of objects inside a cluster, such as dev and prod."]
+  - [kubectl, "The command line tool to talk to the Kubernetes API."]
+
+how: |
+  ### A Deployment and a Service
+
+  ```
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: shop
+  spec:
+    replicas: 3
+    selector:
+      matchLabels:
+        app: shop
+    template:
+      metadata:
+        labels:
+          app: shop
+      spec:
+        containers:
+          - name: shop
+            image: registry.example.com/shop:1.4
+            ports:
+              - containerPort: 3000
+  ---
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: shop
+  spec:
+    selector:
+      app: shop
+    ports:
+      - port: 80
+        targetPort: 3000
+  ```
+
+  The Service finds pods by the label `app: shop`. Other pods in the namespace can now call `http://shop`.
+
+  ### Service types
+
+  | Type | Who can reach it |
+  | --- | --- |
+  | ClusterIP | Only inside the cluster. The default. |
+  | NodePort | A port on every node |
+  | LoadBalancer | A cloud load balancer with a public or private address |
+
+  ### kubectl commands
+
+  ```
+  kubectl apply -f shop.yaml          # create or update from a file
+  kubectl get pods                    # list pods
+  kubectl describe pod shop-7d9f-x2   # details and events
+  kubectl logs shop-7d9f-x2           # container output
+  kubectl scale deployment shop --replicas=5
+  kubectl rollout status deployment shop
+  ```
+
+  !key Pods are temporary. Never rely on a pod's IP address. Always reach pods through a Service.
+
+diagrams:
+  - type: flow
+    title: Who manages whom
+    nodes: [["Deployment", "def"], ["ReplicaSet", "raised"], ["Pods", "box"], ["Containers", "box"]]
+    edges: ["owns", "owns", "run"]
+    caption: You edit the Deployment. It manages ReplicaSets, which manage pods.
+  - type: cycle
+    title: The reconciliation loop
+    nodes: [["Read desired state", "def"], ["Observe real state", "raised"], ["Find the difference", "atk"], ["Act to fix it", "def"]]
+    center: Runs all the time
+    caption: Every Kubernetes controller runs this loop.
+
+life:
+  - ["A node lost at night", "A cloud machine failed at 3 AM. Kubernetes moved its pods to other nodes in about a minute. The team read about it in the morning."]
+  - ["Calling a pod by IP", "A service saved another pod's IP address in its config. After a restart, the pod got a new IP and calls failed. Using the Service name fixed it."]
+
+tradeoffs:
+  - ["Kubernetes", "Self healing, scaling, rolling updates, huge ecosystem.", "Complex to learn and to run."]
+  - ["Managed Kubernetes, such as EKS, GKE or AKS", "The cloud runs the control plane.", "Costs money, still a lot to learn."]
+  - ["Simpler container services, such as ECS or Cloud Run", "Much less to manage.", "Less flexible, tied to one cloud."]
+
+mistakes:
+  - Running pods directly instead of through a Deployment, so nothing replaces them.
+  - Labels in the Service selector that do not match the pod labels.
+  - Using `latest` image tags, so Kubernetes cannot tell versions apart.
+  - Using Kubernetes for one small app that one server could run.
+
+quiz:
+  - q: What is the smallest unit Kubernetes schedules?
+    opts: ["A container", "A pod", "A node"]
+    a: 1
+    why: A pod holds one or more containers that share network and storage.
+  - type: fill
+    q: The database of the control plane that stores the desired state is ____.
+    a: ["etcd"]
+    why: etcd is a Raft based key value store.
+  - q: Why does this Service send traffic to no pods?
+    info: |
+      ```
+      # pod template labels
+      labels:
+        app: shop-api
+      # service
+      selector:
+        app: shop
+      ```
+    opts: ["The port is wrong", "The selector app shop does not match the pod label app shop-api", "Services need 5 replicas"]
+    a: 1
+    why: Selectors must match labels exactly.
+  - type: fill
+    q: "To change shop to 5 copies, run `kubectl ____ deployment shop --replicas=5`."
+    a: ["scale"]
+    why: Better still, change replicas in the YAML file and apply it, so Git stays the truth.
+  - q: Which Service type is reachable only inside the cluster?
+    opts: ["ClusterIP", "LoadBalancer", "NodePort"]
+    a: 0
+    why: ClusterIP is the default and internal only.
+
+interview:
+  - q: Explain how Kubernetes keeps an application running when a machine fails.
+    keys:
+      - ["Desired state declared in a Deployment with replicas", [desired, deployment, replica, declar]]
+      - ["Controllers compare desired and actual state and reconcile", [controller, reconcil, compare, actual, loop]]
+      - ["Node failure detected and pods rescheduled on healthy nodes", [node, reschedul, new pod, another node, kubelet, heartbeat]]
+      - ["Services route only to healthy, ready pods", [service, endpoint, ready, traffic, label]]
+    a: |
+      I declare the desired state, for example a Deployment with 3 replicas. Controllers in the control plane keep comparing that with the actual state. Nodes report through the kubelet. When a node stops reporting, it is marked not ready and its pods are evicted after a timeout. The ReplicaSet controller sees only 2 running pods and creates a new one, which the scheduler places on a healthy node. The Service tracks pods by label and readiness, so traffic only goes to pods that are running and ready.
+    fb: Using the word reconciliation and describing the loop is the core of a strong answer.
+
+desk:
+  title: Deploy a first app on Kubernetes
+  lede: A team is moving a small API to Kubernetes. Check their YAML and commands.
+  situation: |
+    **Tidepool** runs an API called `quotes` on port 8000. They want 3 copies inside the cluster and a stable name for other services.
+  rounds:
+    - title: Round 1. Fill the YAML
+      items:
+        - type: fill
+          q: "In the Deployment, the line that asks for 3 copies is `____: 3`."
+          a: ["replicas"]
+          why: replicas sets the desired number of pods.
+        - type: fill
+          q: "In the Service, `targetPort` must be ____ so traffic reaches the container."
+          a: ["8000"]
+          why: targetPort is the container port. port is the Service port.
+    - title: Round 2. Debug
+      items:
+        - type: sort
+          q: Which command helps with each problem?
+          rows:
+            - ["See why a pod will not start", "kubectl describe pod"]
+            - ["See what the app printed before it crashed", "kubectl logs"]
+            - ["Watch a new version roll out", "kubectl rollout status"]
+          opts: ["kubectl describe pod", "kubectl logs", "kubectl rollout status"]
+          why: describe shows events such as image pull errors. logs shows app output.
+  card: |
+    - Declare desired state, Kubernetes reconciles.
+    - Deployment, ReplicaSet, pods.
+    - Services find pods by labels.
+    - Never use pod IPs.
+
+refs:
+  - "Kubernetes Docs. [Kubernetes components](https://kubernetes.io/docs/concepts/overview/components/)."
+  - "Kubernetes Docs. [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)."
+  - "Kubernetes Docs. [Service](https://kubernetes.io/docs/concepts/services-networking/service/)."

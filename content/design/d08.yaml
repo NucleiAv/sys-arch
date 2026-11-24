@@ -106,7 +106,7 @@ hld: |
   2. **Location index** in memory, like Redis with geo commands or a custom service, sharded by city and cell, latest position only.
   3. **Matcher** per city finds candidates, ranks by time to pickup, offers, and locks drivers atomically.
   4. **Trip service** with a SQL database for trip state, a state machine from requested to completed.
-  5. **Pricing** reads supply and demand per area from a stream job to compute surge, see lesson 22.
+  5. **Pricing** reads supply and demand per area from a stream job to compute surge, see lesson 5.2.
   6. **Payments** at the end, with idempotency keys, see design 10.
 
 diagrams:

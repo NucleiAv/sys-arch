@@ -1,0 +1,230 @@
+short: GraphQL
+title: GraphQL, ask for exactly what you need
+time: about 45 minutes
+tags: [GraphQL, schema, resolvers, N+1]
+lede: GraphQL lets the client write one query that names exactly the fields it wants, even across many related things. Learn schemas, queries, mutations, resolvers and the traps that come with this power.
+
+idea: |
+  With REST, a screen often needs many calls. One call for the user, one for the user's orders, one for each order's items. And each call may send fields the screen does not need.
+
+  **GraphQL** fixes this. The server publishes a **schema**, a typed list of everything you can ask for. The client sends one **query** that names the exact fields it wants. The server returns JSON in the same shape as the query.
+
+  Facebook built GraphQL in 2012 for its mobile apps and released it as open source in 2015. The GraphQL Foundation now looks after it.
+
+  !eli5 REST is like a set menu. You order "meal 3" and get what comes with it. GraphQL is like a form where you tick exactly the items you want. You get only those items, on one plate.
+
+scenes:
+  - title: One query, many resolvers
+    stats: [Step, Calls from the app, Database queries]
+    nodes:
+      app: {label: Mobile app, x: 0, y: 1, kind: box}
+      gql: {label: GraphQL server, x: 2, y: 1, kind: def, tag: one endpoint}
+      users: {label: Users service, x: 4, y: 0, kind: raised}
+      orders: {label: Orders service, x: 4, y: 2, kind: raised}
+      dl: {label: DataLoader batch, x: 6, y: 2, kind: def}
+    links: [[app, gql], [gql, users], [gql, orders], [orders, dl]]
+    steps:
+      - title: One query
+        text: "The app sends one POST to `/graphql`. The query asks for the user's name and the last 3 orders with their totals."
+        on: [app, gql]
+        flow: [[app, gql, ink]]
+        stats: [Send query, "1", "0"]
+      - title: Check against the schema
+        text: The server checks every field exists in the schema and the client may read it. Bad queries fail before any work starts.
+        on: [gql]
+        mark: {gql: ok}
+        stats: [Validate, "1", "0"]
+      - title: Resolvers run
+        text: Each field has a **resolver**, a small function that fetches its data. The user resolver calls the users service. The orders resolver calls the orders service.
+        on: [gql, users, orders]
+        flow: [[gql, users, ink], [gql, orders, ink]]
+        stats: [Resolve, "1", "2"]
+      - title: Batch the nested fields
+        text: Each order needs its items. Without care that is one query per order, the **N+1 problem**. A DataLoader collects all order ids and makes one batched query.
+        on: [orders, dl]
+        flow: [[orders, dl, def]]
+        stats: [Batch, "1", "3, not 5"]
+      - title: One answer, same shape
+        text: The server returns JSON with exactly the fields asked for, in the same shape as the query. One round trip for the whole screen.
+        on: [app, gql]
+        flow: [[gql, app, def]]
+        mark: {app: ok}
+        stats: [Respond, "1", "3"]
+
+terms:
+  - [Schema, "The typed description of all data and operations the API offers."]
+  - [Type, "A shape of data, such as `User` with fields `id`, `name` and `orders`."]
+  - [Query, "A read operation."]
+  - [Mutation, "A write operation, such as `createOrder`."]
+  - [Subscription, "A long lived operation where the server pushes updates, usually over WebSocket."]
+  - [Resolver, "The function on the server that returns the data for one field."]
+  - [N+1 problem, "One query for a list, then one more query for each item in the list."]
+  - [DataLoader, "A pattern and library that batches and caches many small lookups into one."]
+  - [Introspection, "A built in query that asks the server to describe its own schema."]
+  - [Persisted query, "A query stored on the server and called by id or hash, so clients send less and servers can allow only known queries."]
+
+how: |
+  ### A schema
+
+  ```
+  type User {
+    id: ID!
+    name: String!
+    orders(last: Int): [Order!]!
+  }
+  type Order {
+    id: ID!
+    total: Int!
+    items: [Item!]!
+  }
+  type Query {
+    user(id: ID!): User
+  }
+  type Mutation {
+    createOrder(items: [ItemInput!]!): Order!
+  }
+  ```
+
+  The `!` means the field can never be null.
+
+  ### A query and its answer
+
+  ```
+  query {
+    user(id: "7") {
+      name
+      orders(last: 3) { id total }
+    }
+  }
+  ```
+
+  ```
+  {"data": {"user": {"name": "Asha",
+    "orders": [{"id": "91", "total": 450}, {"id": "88", "total": 120}, {"id": "80", "total": 999}]}}}
+  ```
+
+  ### How it travels
+
+  Most servers use one URL, such as `POST /graphql`, with the query in a JSON body. Errors often come back inside an `errors` list, sometimes with status `200`. So monitoring must read the body, not only the status code.
+
+  ### The traps and their fixes
+
+  | Trap | Fix |
+  | --- | --- |
+  | N+1 database queries | Batch with DataLoader |
+  | Very deep or huge queries that overload the server | Depth limits, cost limits, timeouts |
+  | Hard to cache, every request is a POST to one URL | Persisted queries sent with GET, plus client side caches |
+  | Anyone can read the whole schema | Turn off introspection in production if needed, and check permissions per field |
+
+  !key GraphQL does not replace your services. It is usually a layer in front of them that shapes data for clients. Large companies join many service schemas into one with **federation**.
+
+diagrams:
+  - type: flow
+    title: REST versus GraphQL for one profile screen
+    lanes:
+      - label: REST, 3 trips
+        nodes: [["GET /users/7", "box"], ["GET /users/7/orders", "box"], ["GET /orders/91/items", "box"]]
+        edges: ["then", "then"]
+      - label: GraphQL, 1 trip
+        labelkind: def
+        nodes: [["POST /graphql with one query", "def"], ["Server resolves all fields", "def"], ["One JSON answer", "def"]]
+        edges: ["", ""]
+    caption: GraphQL moves the joining work from the phone to the server, where the network is fast.
+
+life:
+  - ["GitHub's public GraphQL API", "GitHub offers a GraphQL API next to its REST API. It limits each query with a points based cost, so one huge query cannot overload the servers."]
+  - ["A slow profile page", "A team added GraphQL and the page got slower. Each of 50 friends triggered its own database query. Adding DataLoader cut 51 queries to 2."]
+  - ["Mobile data savings", "A shop app used REST endpoints that returned 80 fields per product. The list screen needed 6. With GraphQL the product list payload became much smaller."]
+
+tradeoffs:
+  - ["GraphQL", "One round trip, exact fields, strong types, great for many client screens.", "Harder caching, query cost control, more server complexity."]
+  - ["REST", "Simple, HTTP caching works, every tool understands it.", "Over fetching, under fetching and many round trips for complex screens."]
+  - ["Federated GraphQL", "One graph across many teams.", "Another layer to run and govern."]
+
+mistakes:
+  - No depth or cost limits, so one query can overload the server.
+  - Resolvers that each hit the database, causing N+1 queries.
+  - Checking permissions only at the endpoint, not per field.
+  - Monitoring only HTTP status codes when errors come back with 200.
+  - Using GraphQL for simple service to service calls where gRPC or REST is simpler.
+
+quiz:
+  - q: What is a resolver?
+    opts: ["A cache in the browser", "The function that returns data for one field", "A database index"]
+    a: 1
+    why: Each field in the schema has a resolver on the server.
+  - type: fill
+    q: A GraphQL operation that changes data is a ____.
+    a: ["mutation"]
+    why: Queries read, mutations write, subscriptions push updates.
+  - type: fill
+    q: Loading 1 list and then 1 query for each of its items is the N+____ problem.
+    a: ["1", "one"]
+    why: DataLoader batches the per item lookups into one query.
+  - q: What does this query return?
+    info: |
+      ```
+      query { user(id: "7") { name } }
+      ```
+    opts: ["The whole user object with every field", "Only the user's name, in the shape data.user.name", "A list of all users"]
+    a: 1
+    why: GraphQL returns exactly the fields you ask for, in the same shape.
+  - q: Why is GraphQL harder to cache in a CDN than REST?
+    opts: ["It uses XML", "Requests are usually POSTs to one URL, so the URL does not identify the data", "It has no JSON"]
+    a: 1
+    why: HTTP caches key on method and URL. Persisted queries over GET help.
+
+interview:
+  - q: When would you choose GraphQL over REST?
+    keys:
+      - ["Many clients or screens with different data needs", [client, screen, mobile, different, needs]]
+      - ["Avoid over fetching and under fetching or many round trips", [over fetch, overfetch, under fetch, round trip, many calls]]
+      - ["Strong typed schema as a contract", [schema, typed, contract]]
+      - ["Costs, caching, query limits, N+1", [cach, limit, cost, n+1, complex, depth]]
+    a: |
+      I would choose GraphQL when many clients, such as web, iOS and Android, need different slices of related data, and REST would force either many round trips or big responses with unused fields. The typed schema also gives a clear contract and good tooling. I would accept the costs. HTTP caching is harder, so I would use persisted queries and client caches. I would add depth and cost limits so one query cannot overload the server, and DataLoader to avoid N+1 queries. For simple public APIs or service to service calls I would stay with REST or gRPC.
+    fb: Pair every benefit with its cost. That balance is what interviewers look for.
+  - q: How do you protect a GraphQL API from very expensive queries?
+    keys:
+      - ["Limit query depth", [depth]]
+      - ["Compute a cost or complexity score and reject above a limit", [cost, complexity, points, score]]
+      - ["Timeouts and pagination limits on lists", [timeout, first, limit, pagination, max]]
+      - ["Persisted or allow listed queries and rate limits", [persisted, allow list, allowlist, whitelist, rate limit]]
+    a: |
+      I limit how deep a query can nest. I compute a cost for each query, for example by counting the requested list sizes, and reject queries above a budget, like GitHub's points system. Every list field needs a maximum page size. The server has timeouts. For my own apps I use persisted queries, so the server runs only queries it already knows. Rate limits per client then work on cost, not only on request count.
+    fb: Mentioning cost based rate limiting shows you know how real public GraphQL APIs work.
+
+desk:
+  title: Speed up a recipe app with GraphQL
+  lede: A recipe app is moving to GraphQL. Find the problems in its first version.
+  situation: |
+    **Spoonful** shows a feed of 20 recipes, each with its author and the first 3 comments. The new GraphQL server runs one database query per recipe author and one per recipe's comments. There are no limits on queries.
+  rounds:
+    - title: Round 1. Count the work
+      items:
+        - type: num
+          q: How many database queries does one feed load cause? 1 for the recipes, 20 for authors, 20 for comments.
+          a: 41
+          tol: 0
+          unit: queries
+          why: 1 plus 20 plus 20 is 41. This is the N+1 problem twice.
+        - q: What is the fix?
+          opts: ["Bigger database", "Batch author and comment lookups with DataLoader", "Cache the whole feed for one day"]
+          a: 1
+          why: Batching turns 41 queries into 3.
+    - title: Round 2. Safety
+      items:
+        - type: open
+          q: A user writes a query that asks for recipes, their comments, each commenter's recipes, their comments and so on 10 levels deep. What do you add?
+          a: "A maximum query depth, for example 5, and a cost limit based on requested list sizes. Every list field must have a maximum page size, and the server needs a timeout."
+  card: |
+    - One endpoint, one query, exact fields.
+    - Resolvers per field, batch with DataLoader.
+    - Limit depth and cost.
+    - Persisted queries for caching and safety.
+
+refs:
+  - "GraphQL Foundation. [Introduction to GraphQL](https://graphql.org/learn/)."
+  - "GraphQL Foundation. [GraphQL specification](https://spec.graphql.org/)."
+  - "GitHub Docs. [Rate limits and query limits for the GraphQL API](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api)."
+  - "GraphQL. [DataLoader on GitHub](https://github.com/graphql/dataloader)."

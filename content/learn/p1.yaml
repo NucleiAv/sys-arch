@@ -1,0 +1,86 @@
+kind: practice
+title: Level 1 practice, foundations
+time: about 40 minutes
+lede: Mixed questions from every lesson in level 1. Do them without looking back. Then read the reason under each answer.
+
+rounds:
+  - title: Round 1. Words and ideas
+    items:
+      - q: Which choice is architecture?
+        opts: ["The TTL of a cache key", "The order service and the payment service talk only through a queue", "The name of a variable"]
+        a: 1
+        why: It shapes many parts and is expensive to change.
+      - type: fill
+        q: The service that turns a name like shop.com into an IP address is ____.
+        a: ["DNS"]
+        why: DNS is the phone book of the internet.
+      - type: sort
+        q: Match each API style to its best use.
+        rows:
+          - ["Public API for many partners", "REST"]
+          - ["Fast calls between internal services", "gRPC"]
+          - ["Mobile screens that need different fields of related data", "GraphQL"]
+          - ["Chat between browser and server", "WebSocket"]
+        opts: ["REST", "gRPC", "GraphQL", "WebSocket"]
+        why: Choose by who calls, how often and in which direction data moves.
+      - q: Which HTTP method should never change data?
+        opts: ["POST", "GET", "PATCH"]
+        a: 1
+        why: GET is safe. Crawlers and caches assume it does not change anything.
+  - title: Round 2. Numbers
+    items:
+      - type: num
+        q: 20 million requests a day. About how many requests a second on average?
+        a: 200
+        tol: 30
+        unit: per second
+        why: 20 million divided by 100 thousand seconds is 200.
+      - type: num
+        q: The average is 200 requests a second and the peak is 4 times the average. What is the peak?
+        a: 800
+        tol: 0
+        unit: per second
+        why: 4 times 200 is 800. Plan for the peak.
+      - type: num
+        q: One app server handles 300 requests a second. How many servers do you need for 800 requests a second, without spares?
+        a: 3
+        tol: 0
+        unit: servers
+        why: 800 divided by 300 is 2.7, so 3 servers. Add one or two spares.
+  - title: Round 3. Read the code
+    items:
+      - q: What is the problem with this server code when you run 3 copies behind a load balancer?
+        info: |
+          ```
+          sessions = {}            # in memory
+          def login(user):
+              sessions[user.token] = user
+          def me(token):
+              return sessions.get(token)
+          ```
+        opts: ["Nothing", "Each copy has its own sessions, so users seem logged out when a request reaches another copy", "It is too slow"]
+        a: 1
+        why: Keep sessions in a shared store such as Redis, or use signed tokens.
+      - q: What does this response tell the client?
+        info: |
+          ```
+          HTTP/1.1 429 Too Many Requests
+          Retry-After: 30
+          ```
+        opts: ["The server is broken", "Slow down and try again after 30 seconds", "The page moved"]
+        a: 1
+        why: 429 is a rate limit answer. Retry-After says how long to wait.
+      - type: fill
+        q: "A browser asks to change an HTTP connection into a WebSocket with the header `Upgrade: ____`."
+        a: ["websocket"]
+        why: The server answers 101 Switching Protocols.
+  - title: Round 4. A small design
+    items:
+      - type: open
+        q: A school wants a website where 2,000 students check exam results on one morning. Most check in the first 10 minutes. Sketch the simplest safe setup and say why.
+        a: "The results are the same for everyone who asks for one student, and they do not change. Pre build the result pages or cache them. Put two small stateless app servers behind a load balancer, with one database and a cache. 2,000 students in 10 minutes is only about 3 to 4 requests a second, maybe 30 at the peak, so no complex parts are needed. Two servers give a spare if one fails."
+card: |
+  - Architecture first, design second.
+  - Divide a day by 100 thousand seconds.
+  - Stateless servers scale out.
+  - Pick the API style by who talks and how often.
