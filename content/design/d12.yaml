@@ -170,3 +170,10 @@ refs:
   - "Redis. [Sorted sets](https://redis.io/docs/latest/develop/data-types/sorted-sets/)."
   - "Alex Xu. System Design Interview volume 2, chapter 10, real time gaming leaderboard."
   - "Advent of System Design. [Day 19, game leaderboard](https://www.devmaxx.dev/advent)."
+
+security: |
+  Leaderboards attract cheaters.
+
+  - Never trust scores sent by the client alone. Validate on the server or replay the game.
+  - Detect impossible scores and speed.
+  - Rate limit score submissions and sign them with a session key.

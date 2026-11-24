@@ -27,7 +27,7 @@
       d: SET with EX 300 stores the session for 300 seconds.
       p:
         - [app, redis, "SET session:42 alice EX 300", req, {raw: "*5\r\n$3\r\nSET\r\n$10\r\nsession:42\r\n$5\r\nalice\r\n$2\r\nEX\r\n$3\r\n300\r\n"}]
-        - [redis, app, "+OK", res]
+        - [redis, app, "+OK", res, {"raw": "+OK\r\n"}]
     - t: Get it back
       tag: read
       d: GET returns a bulk string of 5 bytes.
@@ -38,8 +38,8 @@
       tag: speed
       d: The app sends three INCR commands without waiting, then reads three replies. One round trip instead of three.
       p:
-        - [app, redis, "INCR views:a, INCR views:b, INCR views:c", req]
-        - [redis, app, ":18, :4, :77", res]
+        - [app, redis, "INCR views:a, INCR views:b, INCR views:c", req, {"raw": "*2\r\n$4\r\nINCR\r\n$7\r\nviews:a\r\n*2\r\n$4\r\nINCR\r\n$7\r\nviews:b\r\n*2\r\n$4\r\nINCR\r\n$7\r\nviews:c\r\n"}]
+        - [redis, app, ":18, :4, :77", res, {"raw": ":18\r\n:4\r\n:77\r\n"}]
   quiz:
     - type: fill
       q: "Redis listens on TCP port ____ by default."
@@ -74,26 +74,26 @@
       d: After TCP connects, the server sends its greeting with version 8.0, a scramble and the auth plugin name.
       f: {Protocol: "10", Version: "8.0.x", Plugin: caching_sha2_password}
       p:
-        - [db, app, "Initial Handshake v10 + scramble", ctl]
+        - [db, app, "Initial Handshake v10 + scramble", ctl, {"fields": {"Payload length": "74", "Sequence id": "0", "Protocol version": "10", "Server version": "8.0.40", "Connection id": "182", "Auth plugin": "caching_sha2_password", "Scramble": "20 random bytes"}}]
     - t: Switch to TLS
       tag: tls
       d: The client sends a short SSLRequest, then a TLS handshake. Everything after is encrypted.
       p:
-        - [app, db, "SSLRequest", sec]
-        - [app, db, "TLS handshake", sec]
+        - [app, db, "SSLRequest", sec, {"fields": {"Payload length": "32", "Sequence id": "1", "Capability flags": "CLIENT_SSL set", "Note": "SSLRequest, then TLS starts"}}]
+        - [app, db, "TLS handshake", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "512", "Handshake type": "0x01 ClientHello"}}]
     - t: Log in
       tag: auth
       d: The client sends HandshakeResponse with the user name and a response computed from the password and the scramble. The server answers OK.
       p:
-        - [app, db, "HandshakeResponse user=shop", sec]
-        - [db, app, "OK", res]
+        - [app, db, "HandshakeResponse user=shop", sec, {"fields": {"Payload length": "96", "Sequence id": "2", "Username": "shop", "Auth plugin": "caching_sha2_password", "Auth response": "32 byte scrambled hash", "Database": "shop"}}]
+        - [db, app, "OK", res, {"fields": {"Payload length": "7", "Sequence id": "3", "Header": "0x00 OK", "Affected rows": "0"}}]
     - t: Query and result
       tag: query
       d: COM_QUERY carries the SQL. The result has a column count, column definitions, the rows, and an end marker.
       p:
-        - [app, db, "COM_QUERY SELECT id,name FROM users LIMIT 2", req]
-        - [db, app, "column count 2, column defs", res]
-        - [db, app, "row 1, row 2, EOF/OK", data]
+        - [app, db, "COM_QUERY SELECT id,name FROM users LIMIT 2", req, {"fields": {"Payload length": "38", "Sequence id": "0", "Command": "0x03 COM_QUERY", "Query": "SELECT id,name FROM users LIMIT 2"}}]
+        - [db, app, "column count 2, column defs", res, {"fields": {"Payload length": "1", "Sequence id": "1", "Column count": "2", "Then": "two column definition packets, id and name"}}]
+        - [db, app, "row 1, row 2, EOF/OK", data, {"fields": {"Payload length": "9", "Sequence id": "4", "Row 1": "1, asha", "Row 2": "2, ben", "End": "0xfe OK packet"}}]
   quiz:
     - type: fill
       q: "MySQL listens on TCP port ____ by default."
@@ -126,37 +126,37 @@
       tag: tls
       d: The client sends SSLRequest. The server answers with one byte, S, which means yes. A TLS handshake follows.
       p:
-        - [app, pg, "SSLRequest", sec]
-        - [pg, app, "S", sec]
-        - [app, pg, "TLS handshake", sec]
+        - [app, pg, "SSLRequest", sec, {"fields": {"Length": "8", "Request code": "80877103 SSLRequest"}}]
+        - [pg, app, "S", sec, {"fields": {"Reply": "S", "Meaning": "yes, start TLS"}}]
+        - [app, pg, "TLS handshake", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "512", "Handshake type": "0x01 ClientHello"}}]
     - t: Startup message
       tag: startup
       d: The client sends the protocol version, the user and the database name.
       f: {User: shop, Database: orders, Protocol: "3.0"}
       p:
-        - [app, pg, "StartupMessage user=shop database=orders", req]
+        - [app, pg, "StartupMessage user=shop database=orders", req, {"fields": {"Length": "35", "Protocol": "0x00030000 version 3.0", "user": "shop", "database": "orders"}, "hex": "00 00 00 23 00 03 00 00 75 73 65 72 00 73 68 6f 70 00 64 61 74 61 62 61 73 65 00 6f 72 64 65 72 73 00 00"}]
     - t: SCRAM login
       tag: auth
       d: The server asks for SASL with SCRAM-SHA-256. Client and server swap nonces and proofs. The password never crosses the wire, and the client also checks the server.
       p:
-        - [pg, app, "AuthenticationSASL SCRAM-SHA-256", sec]
-        - [app, pg, "SASLInitialResponse (client nonce)", sec]
-        - [pg, app, "SASLContinue (salt, iterations)", sec]
-        - [app, pg, "SASLResponse (client proof)", sec]
-        - [pg, app, "SASLFinal + AuthenticationOk", sec]
+        - [pg, app, "AuthenticationSASL SCRAM-SHA-256", sec, {"fields": {"Type": "R", "Length": "23", "Auth type": "10 SASL", "Mechanism": "SCRAM-SHA-256"}}]
+        - [app, pg, "SASLInitialResponse (client nonce)", sec, {"fields": {"Type": "p", "Length": "54", "Mechanism": "SCRAM-SHA-256", "Data": "n,,n=,r=rOprNGfwEbeRWgbNEkqO"}}]
+        - [pg, app, "SASLContinue (salt, iterations)", sec, {"fields": {"Type": "R", "Length": "92", "Auth type": "11 SASL continue", "Data": "r=rOprNG...%hvYDpWUa2RaTCAfuxFIlj)hNlF$k0, s=W22ZaJ0SNY7soEsUEjb6gQ==, i=4096"}}]
+        - [app, pg, "SASLResponse (client proof)", sec, {"fields": {"Type": "p", "Length": "108", "Data": "c=biws, r=..., p=client proof, 32 bytes base64"}}]
+        - [pg, app, "SASLFinal + AuthenticationOk", sec, {"fields": {"Type": "R", "Length": "54", "Auth type": "12 SASL final, then 0 AuthenticationOk", "Data": "v=server signature"}}]
     - t: Ready
       tag: ready
       d: The server sends ParameterStatus messages, BackendKeyData for cancelling queries, and ReadyForQuery Z.
       p:
-        - [pg, app, "ParameterStatus, BackendKeyData, ReadyForQuery", res]
+        - [pg, app, "ParameterStatus, BackendKeyData, ReadyForQuery", res, {"fields": {"Type": "S", "Length": "25", "Then": "K BackendKeyData, Z ReadyForQuery idle", "Example": "server_version 16.4"}}]
     - t: Simple query
       tag: query
       d: The client sends Q with the SQL. The server returns T, then D for each row, then C and Z.
       p:
-        - [app, pg, "Q SELECT id, total FROM orders LIMIT 2", req]
-        - [pg, app, "T RowDescription", res]
-        - [pg, app, "D row, D row", data]
-        - [pg, app, "C SELECT 2, Z", res]
+        - [app, pg, "Q SELECT id, total FROM orders LIMIT 2", req, {"fields": {"Type": "Q", "Length": "41", "Query": "SELECT id, total FROM orders LIMIT 2"}}]
+        - [pg, app, "T RowDescription", res, {"fields": {"Type": "T", "Length": "48", "Fields": "2", "Names": "id, total"}}]
+        - [pg, app, "D row, D row", data, {"fields": {"Type": "D", "Length": "21", "Row 1": "1001, 59.90", "Row 2": "1002, 12.50"}}]
+        - [pg, app, "C SELECT 2, Z", res, {"fields": {"Type": "C", "Length": "13", "Tag": "SELECT 2", "Then": "Z ReadyForQuery idle"}}]
   quiz:
     - type: fill
       q: "PostgreSQL listens on TCP port ____."
@@ -190,25 +190,25 @@
       d: The client sends its version and asks for encryption. The server answers with its version and agrees.
       f: {Encryption: required}
       p:
-        - [app, sql, "PRELOGIN version, ENCRYPT_ON", ctl]
-        - [sql, app, "PRELOGIN response", ctl]
+        - [app, sql, "PRELOGIN version, ENCRYPT_ON", ctl, {"fields": {"Packet type": "0x12 PRELOGIN", "Status": "0x01 end of message", "Length": "47", "Options": "VERSION, ENCRYPTION, INSTOPT, THREADID", "ENCRYPTION": "0x01 ENCRYPT_ON"}}]
+        - [sql, app, "PRELOGIN response", ctl, {"fields": {"Packet type": "0x04 tabular result", "Status": "0x01 end of message", "Length": "43", "Options": "VERSION 16.0, ENCRYPTION", "ENCRYPTION": "0x03 ENCRYPT_REQ"}}]
     - t: TLS
       tag: tls
       d: The TLS handshake runs inside TDS packets. The login that follows is encrypted.
       p:
-        - [app, sql, "TLS handshake (in TDS)", sec]
+        - [app, sql, "TLS handshake (in TDS)", sec, {"fields": {"Packet type": "0x12 PRELOGIN", "Status": "0x01 end of message", "Length": "517", "Contains": "TLS handshake bytes wrapped in TDS"}}]
     - t: LOGIN7
       tag: auth
       d: The client sends LOGIN7 with the user, the database and the app name. Integrated Windows login can use Kerberos instead of a password.
       p:
-        - [app, sql, "LOGIN7 user=shop db=Sales", sec]
-        - [sql, app, "LOGINACK, ENVCHANGE database=Sales", res]
+        - [app, sql, "LOGIN7 user=shop db=Sales", sec, {"fields": {"Packet type": "0x10 TDS7 LOGIN", "Status": "0x01 end of message", "Length": "188", "UserName": "shop", "Database": "Sales", "Password": "inside TLS"}}]
+        - [sql, app, "LOGINACK, ENVCHANGE database=Sales", res, {"fields": {"Packet type": "0x04 tabular result", "Status": "0x01 end of message", "Length": "392", "Tokens": "0xAD LOGINACK, 0xE3 ENVCHANGE database Sales"}}]
     - t: SQL batch and result
       tag: query
       d: The client sends a SQL batch. The server returns COLMETADATA, ROW tokens and DONE with the row count.
       p:
-        - [app, sql, "SQL Batch SELECT TOP 2 id, name FROM Customers", req]
-        - [sql, app, "COLMETADATA, ROW, ROW, DONE (2 rows)", data]
+        - [app, sql, "SQL Batch SELECT TOP 2 id, name FROM Customers", req, {"fields": {"Packet type": "0x01 SQL batch", "Status": "0x01 end of message", "Length": "92", "SQL": "SELECT TOP 2 id, name FROM Customers"}}]
+        - [sql, app, "COLMETADATA, ROW, ROW, DONE (2 rows)", data, {"fields": {"Packet type": "0x04 tabular result", "Status": "0x01 end of message", "Length": "140", "Tokens": "0x81 COLMETADATA, 0xD1 ROW, 0xD1 ROW, 0xFD DONE"}}]
   quiz:
     - type: fill
       q: "The default SQL Server instance listens on TCP port ____."
@@ -247,20 +247,20 @@
       tag: connect
       d: The listener knows the service. It accepts the connection, or redirects the client to a dispatcher port. An unknown service would get REFUSE with ORA-12514.
       p:
-        - [lsn, app, "ACCEPT", res]
+        - [lsn, app, "ACCEPT", res, {"fields": {"Packet length": "32", "Packet type": "2 ACCEPT", "Contents": "version 315, session data unit 8192"}}]
     - t: Negotiate and authenticate
       tag: auth
       d: DATA packets negotiate options and run the login. The server sends a session key and salt, and the client proves the password without sending it in clear.
       p:
-        - [app, db, "DATA protocol and option negotiation", ctl]
-        - [db, app, "DATA auth session key + salt", sec]
-        - [app, db, "DATA auth response", sec]
+        - [app, db, "DATA protocol and option negotiation", ctl, {"fields": {"Packet length": "150", "Packet type": "6 DATA", "Contents": "protocol and data type negotiation"}}]
+        - [db, app, "DATA auth session key + salt", sec, {"fields": {"Packet length": "410", "Packet type": "6 DATA", "Contents": "AUTH_SESSKEY encrypted, AUTH_VFR_DATA salt"}}]
+        - [app, db, "DATA auth response", sec, {"fields": {"Packet length": "520", "Packet type": "6 DATA", "Contents": "AUTH_SESSKEY from client, AUTH_PASSWORD encrypted"}}]
     - t: Run SQL
       tag: query
       d: SQL and rows now travel in DATA packets.
       p:
-        - [app, db, "DATA SELECT ...", req]
-        - [db, app, "DATA rows", data]
+        - [app, db, "DATA SELECT ...", req, {"fields": {"Packet length": "210", "Packet type": "6 DATA", "Contents": "TTI function call with the SQL text"}}]
+        - [db, app, "DATA rows", data, {"fields": {"Packet length": "340", "Packet type": "6 DATA", "Contents": "rows in Oracle's internal format"}}]
   quiz:
     - type: fill
       q: "The Oracle listener uses TCP port ____ by default."
@@ -294,33 +294,33 @@
       tag: negotiate
       d: The client sends an X.224 Connection Request listing the security it supports, TLS and CredSSP. The server picks CredSSP, which means NLA.
       p:
-        - [pc, srv, "X.224 Connection Request (TLS, CredSSP)", ctl]
-        - [srv, pc, "Connection Confirm (CredSSP)", ctl]
+        - [pc, srv, "X.224 Connection Request (TLS, CredSSP)", ctl, {"fields": {"TPKT version": "3", "Length": "43", "X224 type": "0xe0 Connection Request", "Cookie": "mstshash=asha", "Requested protocols": "0x00000003 TLS and CredSSP"}}]
+        - [srv, pc, "Connection Confirm (CredSSP)", ctl, {"fields": {"TPKT version": "3", "Length": "19", "X224 type": "0xd0 Connection Confirm", "Selected protocol": "0x00000002 CredSSP"}}]
     - t: TLS
       tag: tls
       d: A TLS handshake protects the rest. The client checks the server certificate.
       p:
-        - [pc, srv, "TLS handshake", sec]
+        - [pc, srv, "TLS handshake", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "512", "Handshake type": "0x01 ClientHello"}}]
     - t: NLA login with CredSSP
       tag: auth
       d: Inside TLS, CredSSP runs Kerberos or NTLM through SPNEGO. Only after success does the client send the credentials to the server for the session.
       p:
-        - [pc, srv, "TSRequest (SPNEGO token)", sec]
-        - [srv, pc, "TSRequest (token)", sec]
-        - [pc, srv, "TSRequest (credentials)", sec]
+        - [pc, srv, "TSRequest (SPNEGO token)", sec, {"fields": {"TSRequest version": "6", "negoTokens": "SPNEGO with Kerberos or NTLM", "Inside": "TLS"}}]
+        - [srv, pc, "TSRequest (token)", sec, {"fields": {"TSRequest version": "6", "negoTokens": "server token", "pubKeyAuth": "binds the TLS key to the login"}}]
+        - [pc, srv, "TSRequest (credentials)", sec, {"fields": {"TSRequest version": "6", "authInfo": "user name and password, encrypted for the server only"}}]
     - t: Set up the session
       tag: setup
       d: MCS Connect sends client details, such as screen size and keyboard. Then channels for clipboard and sound join, and the server sends its capabilities.
       p:
-        - [pc, srv, "MCS Connect Initial (screen 1920x1080)", req]
-        - [srv, pc, "MCS Connect Response, Demand Active", res]
-        - [pc, srv, "Confirm Active", req]
+        - [pc, srv, "MCS Connect Initial (screen 1920x1080)", req, {"fields": {"MCS": "Connect Initial", "Desktop width": "1920", "Desktop height": "1080", "Color depth": "32", "Channels": "rdpdr, rdpsnd, cliprdr"}}]
+        - [srv, pc, "MCS Connect Response, Demand Active", res, {"fields": {"MCS": "Connect Response", "Then": "Demand Active PDU with server capabilities"}}]
+        - [pc, srv, "Confirm Active", req, {"fields": {"PDU": "Confirm Active", "Capabilities": "bitmap, order, pointer, input"}}]
     - t: Screen and input
       tag: data
       d: The server sends compressed screen updates. The client sends keyboard and mouse events.
       p:
-        - [srv, pc, "bitmap updates", data]
-        - [pc, srv, "input events", data]
+        - [srv, pc, "bitmap updates", data, {"fields": {"Update": "bitmap, compressed", "Region": "screen tiles that changed", "Transport": "TCP or UDP 3389"}}]
+        - [pc, srv, "input events", data, {"fields": {"Events": "mouse move 640 400, key down 0x1e", "PDU": "fast path input"}}]
   quiz:
     - type: fill
       q: "RDP uses port ____ by default."
@@ -354,32 +354,32 @@
       tag: auth
       d: "`Enter-PSSession web-02` gets a Kerberos ticket for `HTTP/web-02` from the domain controller."
       p:
-        - [admin, dc, "TGS-REQ HTTP/web-02", sec]
-        - [dc, admin, "service ticket", sec]
+        - [admin, dc, "TGS-REQ HTTP/web-02", sec, {"fields": {"pvno": "5", "msg type": "12 TGS-REQ", "realm": "CORP.EXAMPLE", "sname": "HTTP/web-02", "padata": "AP-REQ with the TGT"}}]
+        - [dc, admin, "service ticket", sec, {"fields": {"pvno": "5", "msg type": "13 TGS-REP", "realm": "CORP.EXAMPLE", "sname": "HTTP/web-02", "ticket": "encrypted with the web-02 machine key"}}]
     - t: First request and login
       tag: auth
       d: The client POSTs to `/wsman` with an Authorization Negotiate header that carries the ticket. The server accepts it.
       p:
-        - [admin, srv, "POST /wsman Authorization Negotiate", sec]
-        - [srv, admin, "200 OK", res]
+        - [admin, srv, "POST /wsman Authorization Negotiate", sec, {"raw": "POST /wsman HTTP/1.1\r\nHost: web-02:5985\r\nAuthorization: Negotiate YIIHGgYGKwYBBQUCoIIH...\r\nContent-Length: 0\r\n\r\n"}]
+        - [srv, admin, "200 OK", res, {"raw": "HTTP/1.1 200\r\nWWW-Authenticate: Negotiate oYG3MIG0oAMKAQChCwYJKoZIgvcSAQIC...\r\nServer: Microsoft-HTTPAPI/2.0\r\n\r\n"}]
     - t: Create a shell
       tag: shell
       d: A SOAP Create request opens a remote shell and returns a ShellId.
       p:
-        - [admin, srv, "SOAP Create shell", req]
-        - [srv, admin, "ShellId 7A3F...", res]
+        - [admin, srv, "SOAP Create shell", req, {"fields": {"Action": "http://schemas.xmlsoap.org/ws/2004/09/transfer/Create", "ResourceURI": "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd", "Body": "encrypted with the Kerberos session key"}}]
+        - [srv, admin, "ShellId 7A3F...", res, {"fields": {"ShellId": "7A3F...", "Body": "encrypted with the Kerberos session key"}}]
     - t: Run and read
       tag: command
       d: A Command request runs `hostname`. A Receive request gets the output, base64 encoded in the SOAP body.
       p:
-        - [admin, srv, "SOAP Command hostname", req]
-        - [admin, srv, "SOAP Receive", req]
-        - [srv, admin, "stdout WEB-02", data]
+        - [admin, srv, "SOAP Command hostname", req, {"fields": {"Action": "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Command", "Command": "hostname", "ShellId": "7A3F..."}}]
+        - [admin, srv, "SOAP Receive", req, {"fields": {"Action": "http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Receive", "ShellId": "7A3F..."}}]
+        - [srv, admin, "stdout WEB-02", data, {"fields": {"Stream": "stdout", "Data": "WEB-02, base64 in the XML", "ExitCode": "0"}}]
     - t: Clean up
       tag: close
       d: A Delete request closes the shell.
       p:
-        - [admin, srv, "SOAP Delete shell", req]
+        - [admin, srv, "SOAP Delete shell", req, {"fields": {"Action": "http://schemas.xmlsoap.org/ws/2004/09/transfer/Delete", "ShellId": "7A3F..."}}]
   quiz:
     - type: fill
       q: "WinRM over HTTPS uses port ____."
@@ -415,26 +415,26 @@
       tag: rpc
       d: The client connects to TCP 135 and asks where the DCOM remote activation interface listens.
       p:
-        - [admin, epm, "EPM Map (remote activation)", req]
-        - [epm, admin, "port 49712", res]
+        - [admin, epm, "EPM Map (remote activation)", req, {"fields": {"Version": "5.0", "Packet type": "0 request", "Call ID": "1", "Interface": "ISystemActivator, remote activation", "Target": "WMI on ws-17"}}]
+        - [epm, admin, "port 49712", res, {"fields": {"Version": "5.0", "Packet type": "2 response", "Call ID": "1", "Binding": "ncacn_ip_tcp 10.0.4.17 port 49712"}}]
     - t: Bind with authentication
       tag: auth
       d: The client connects to port 49712 and binds to the interface with Kerberos or NTLM.
       p:
-        - [admin, host, "RPC Bind (Kerberos)", sec]
-        - [host, admin, "Bind Ack", sec]
+        - [admin, host, "RPC Bind (Kerberos)", sec, {"fields": {"Version": "5.0", "Packet type": "11 bind", "Call ID": "2", "Auth": "Kerberos, packet privacy", "Interface": "IWbemLevel1Login"}}]
+        - [host, admin, "Bind Ack", sec, {"fields": {"Version": "5.0", "Packet type": "12 bind_ack", "Call ID": "2", "Result": "acceptance"}}]
     - t: Log in to the namespace
       tag: wmi
       d: The client activates the WMI service and logs in to `root\cimv2`. It gets an IWbemServices interface.
       p:
-        - [admin, host, "IWbemLevel1Login root\\cimv2", req]
-        - [host, admin, "IWbemServices", res]
+        - [admin, host, "IWbemLevel1Login root\\cimv2", req, {"fields": {"Version": "5.0", "Packet type": "0 request", "Call ID": "3", "Opnum": "6 NTLMLogin", "Namespace": "//./root/cimv2"}}]
+        - [host, admin, "IWbemServices", res, {"fields": {"Version": "5.0", "Packet type": "2 response", "Call ID": "3", "Returns": "IWbemServices interface pointer"}}]
     - t: Run a method
       tag: wmi
       d: ExecMethod on Win32_Process.Create with a command line starts a process. The reply has the new process id and a return value of 0.
       p:
-        - [admin, host, "ExecMethod Win32_Process.Create", req]
-        - [host, admin, "ProcessId 6120, ReturnValue 0", res]
+        - [admin, host, "ExecMethod Win32_Process.Create", req, {"fields": {"Version": "5.0", "Packet type": "0 request", "Call ID": "4", "Method": "Win32_Process.Create", "CommandLine": "cmd.exe /c whoami", "Note": "encrypted with packet privacy"}}]
+        - [host, admin, "ProcessId 6120, ReturnValue 0", res, {"fields": {"Version": "5.0", "Packet type": "2 response", "Call ID": "4", "ProcessId": "6120", "ReturnValue": "0"}}]
   quiz:
     - type: fill
       q: "DCOM based WMI starts at the RPC endpoint mapper on TCP port ____."
@@ -470,34 +470,34 @@
       tag: hello
       d: The tool asks which authentication types this channel supports.
       p:
-        - [admin, bmc, "Get Channel Auth Capabilities", req]
-        - [bmc, admin, "supports IPMI 2.0 RMCP+", res]
+        - [admin, bmc, "Get Channel Auth Capabilities", req, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "Auth type": "0x00 none", "NetFn": "0x06 App", "Command": "0x38 Get Channel Auth Capabilities", "Channel": "0x8e"}}]
+        - [bmc, admin, "supports IPMI 2.0 RMCP+", res, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "NetFn": "0x07 App response", "Completion code": "0x00", "Auth support": "0x80 IPMI 2.0 extended"}}]
     - t: Open a session
       tag: session
       d: The tool proposes cipher suites and opens an RMCP+ session.
       p:
-        - [admin, bmc, "Open Session Request", req]
-        - [bmc, admin, "Open Session Response", res]
+        - [admin, bmc, "Open Session Request", req, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "Payload type": "0x10 RMCP+ Open Session Request", "Tag": "0x00", "Auth algorithm": "1 RAKP-HMAC-SHA1"}}]
+        - [bmc, admin, "Open Session Response", res, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "Payload type": "0x11 RMCP+ Open Session Response", "Status": "0x00", "Managed session ID": "0x02000300"}}]
     - t: RAKP 1 and 2
       tag: rakp
       d: The tool sends a random number and the user name, admin. The BMC answers with its own random number and an HMAC keyed with the password. This is the value an attacker could collect.
       p:
-        - [admin, bmc, "RAKP 1 (user admin)", sec]
-        - [bmc, admin, "RAKP 2 (HMAC with password)", bad]
+        - [admin, bmc, "RAKP 1 (user admin)", sec, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "Payload type": "0x12 RAKP 1", "Console random": "16 bytes", "User name": "admin"}}]
+        - [bmc, admin, "RAKP 2 (HMAC with password)", bad, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "Payload type": "0x13 RAKP 2", "BMC random": "16 bytes", "Key exchange auth code": "HMAC-SHA1 keyed with the password, can be cracked offline"}}]
     - t: RAKP 3 and 4
       tag: rakp
       d: The tool proves it knows the password with its own HMAC. The BMC confirms. The session is ready.
       p:
-        - [admin, bmc, "RAKP 3", sec]
-        - [bmc, admin, "RAKP 4", sec]
+        - [admin, bmc, "RAKP 3", sec, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "Payload type": "0x14 RAKP 3", "Key exchange auth code": "HMAC-SHA1 from the console"}}]
+        - [bmc, admin, "RAKP 4", sec, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "Payload type": "0x15 RAKP 4", "Integrity check": "HMAC, session is ready"}}]
     - t: Run a command
       tag: control
       d: The tool asks for the chassis status, then sends a power cycle.
       p:
-        - [admin, bmc, "Get Chassis Status", req]
-        - [bmc, admin, "power on", res]
-        - [admin, bmc, "Chassis Control power cycle", req]
-        - [bmc, host, "power cycle", ctl]
+        - [admin, bmc, "Get Chassis Status", req, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "NetFn": "0x00 Chassis", "Command": "0x01 Get Chassis Status"}}]
+        - [bmc, admin, "power on", res, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "NetFn": "0x01 Chassis response", "Completion code": "0x00", "Power state": "0x01 on"}}]
+        - [admin, bmc, "Chassis Control power cycle", req, {"fields": {"RMCP version": "0x06", "RMCP class": "0x07 IPMI", "NetFn": "0x00 Chassis", "Command": "0x02 Chassis Control", "Data": "0x02 power cycle"}}]
+        - [bmc, host, "power cycle", ctl, {"fields": {"Action": "power cycle", "Effect": "the server turns off and on"}}]
   quiz:
     - type: fill
       q: "IPMI over LAN uses UDP port ____."
@@ -534,22 +534,22 @@
       tag: connect
       d: "`rlogin db-1` connects to port 513 from source port 1022, a privileged port."
       p:
-        - [cli, srv, "TCP SYN from :1022 to :513", ctl]
+        - [cli, srv, "TCP SYN from :1022 to :513", ctl, {"fields": {"Src port": "1022", "Dst port": "513", "Flags": "SYN", "Seq": "4400", "Window": "64240"}}]
     - t: Send the user names
       tag: login
       d: The client sends the local user, the remote user and the terminal type, separated by zero bytes.
       p:
-        - [cli, srv, "\\0asha\\0asha\\0xterm/38400\\0", req]
+        - [cli, srv, "\\0asha\\0asha\\0xterm/38400\\0", req, {"raw": "\u0000asha\u0000asha\u0000xterm/38400\u0000"}]
     - t: Trust check, no password
       tag: trust
       d: The server finds `build-1 asha` in `~/.rhosts` and logs asha in. No password is asked.
       p:
-        - [srv, cli, "shell prompt (plain text)", res]
+        - [srv, cli, "shell prompt (plain text)", res, {"raw": "Last login: Mon Nov 23 09:10 from build-1\r\nasha@db-1:~$ "}]
     - t: Why it fails
       tag: risk
       d: An attacker who controls the trusted host, or can fake its address on the network, gets the same access. Every keystroke is plain text too.
       p:
-        - [eve, srv, "rlogin as asha from fake 10.0.0.12", bad]
+        - [eve, srv, "rlogin as asha from fake 10.0.0.12", bad, {"fields": {"Src IP": "10.0.0.12 forged", "Src port": "1023", "Dst port": "513", "Trust": ".rhosts trusts build-1, so no password"}}]
       bad: [eve]
   quiz:
     - type: fill

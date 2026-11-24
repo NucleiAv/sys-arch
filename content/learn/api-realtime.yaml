@@ -224,3 +224,11 @@ refs:
   - "MDN. [Using server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)."
   - "GitHub Docs. [Validating webhook deliveries](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries)."
   - "Stripe. [Receive Stripe events in your webhook endpoint](https://docs.stripe.com/webhooks)."
+
+security: |
+  Long lived connections bring their own risks.
+
+  - **WebSocket hijacking.** A malicious page can open a WebSocket to your server with the user's cookies. Check the `Origin` header and use tokens, not only cookies.
+  - **Authenticate on connect and re check.** A token can expire or be revoked while the socket stays open. Close sockets when access ends.
+  - **Limit messages.** Cap size and rate per connection.
+  - **Webhooks.** Sign each webhook with HMAC and a timestamp, and verify both, so attackers cannot fake or replay events. Never let a webhook URL point to internal addresses, which is a server side request forgery risk.

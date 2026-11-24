@@ -234,3 +234,12 @@ refs:
   - "MDN. [Cross-Origin Resource Sharing](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)."
   - "Martin Fowler. [Richardson maturity model](https://martinfowler.com/articles/richardsonMaturityModel.html)."
   - "OpenAPI Initiative. [OpenAPI specification](https://spec.openapis.org/oas/latest.html)."
+
+security: |
+  REST APIs fail in the same few ways again and again.
+
+  - **IDOR.** `GET /orders/1002` returns someone else's order. Check ownership on every request.
+  - **Mass assignment.** The client sends `"role": "admin"` in a JSON body and the server saves it. Allow only listed fields.
+  - **Excessive data.** The API returns the whole user object and the app hides fields. Attackers read the raw response. Return only what is needed.
+  - **Unsafe methods.** Protect `PUT`, `PATCH` and `DELETE` more strictly than `GET`, and use CSRF protection when cookies carry the session.
+  - **CORS.** Never reflect any origin with credentials allowed.

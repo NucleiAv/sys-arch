@@ -149,3 +149,6 @@ interview:
 refs:
   - "Alex Xu. [System Design Interview, chapter 3, a framework for system design interviews](https://bytebytego.com/)."
   - "Donne Martin. [How to approach a system design interview question](https://github.com/donnemartin/system-design-primer#how-to-approach-a-system-design-interview-question)."
+
+security: |
+  Add one more step to the method. After the deep dives, ask **what can go wrong** on purpose. Who would attack this, what do they want, and where are the trust boundaries? Name two or three threats and the controls for them. Lesson 6.5 shows how.

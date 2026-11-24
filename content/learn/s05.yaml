@@ -1,0 +1,229 @@
+short: Threat modeling
+title: Threat modeling, step by step
+time: about 60 minutes
+tags: [STRIDE, DFD, attack trees, PASTA, LINDDUN]
+lede: Threat modeling is the habit of asking "what can go wrong?" before attackers do. Learn the four questions, how to draw a data flow diagram, how to use STRIDE, and which other methods and tools exist.
+
+idea: |
+  A **threat model** is a short, shared study of a design. Adam Shostack puts it in four questions.
+
+  1. **What are we working on?** Draw the system.
+  2. **What can go wrong?** List threats.
+  3. **What are we going to do about it?** Pick a response for each threat.
+  4. **Did we do a good job?** Check the model and the fixes.
+
+  You do it early, when the design is still a drawing, and again when the design changes. It is a team activity. Developers, testers, product owners and security people each see different threats.
+
+  !eli5 Before a school trip, the teacher asks "what can go wrong?" A child gets lost, it rains, someone forgets lunch. For each one she plans something. Name tags, raincoats, spare sandwiches. That is a threat model.
+
+scenes:
+  - title: STRIDE on one data flow
+    stats: [Step, STRIDE letter, Response]
+    nodes:
+      ns: {label: Nurse station, x: 0, y: 1, kind: box, tag: external entity}
+      api: {label: Device API, x: 3, y: 1, kind: def, tag: process}
+      store: {label: Settings store, x: 6, y: 1, kind: raised, tag: data store}
+      atk: {label: Attacker, x: 3, y: 3, kind: atk}
+    links: [[ns, api], [api, store], [atk, api]]
+    steps:
+      - title: Draw the flow
+        text: The nurse station sends "set temperature" to the device API, which saves it in the settings store. The line between them crosses a trust boundary.
+        on: [ns, api, store]
+        flow: [[ns, api, ink], [api, store, ink]]
+        stats: [DFD, none, draw first]
+      - title: S, spoofing
+        text: Can the attacker pretend to be the nurse station? Yes, if the API does not check identity. Response. Mutual TLS with a certificate per station.
+        on: [atk, api]
+        flow: [[atk, api, atk]]
+        mark: {api: warn}
+        stats: [Spoofing, S, mitigate with mTLS]
+      - title: T, tampering
+        text: Can the message be changed on the way, or the settings store edited? Response. TLS for the link, and a signed, checked settings file.
+        on: [ns, api, store]
+        flow: [[ns, api, atk]]
+        mark: {store: warn}
+        stats: [Tampering, T, mitigate with TLS and signing]
+      - title: R and I, repudiation and disclosure
+        text: Can a nurse deny a change? Add an audit log with user id. Can someone read patient data from the flow? Encrypt it and send only what is needed.
+        on: [ns, api]
+        stats: [Repudiation, R and I, log and encrypt]
+      - title: D and E, denial and elevation
+        text: Can a flood stop the API? Add rate limits and keep the heater loop separate from the API. Can a nurse become admin? Check roles on every call.
+        on: [api, atk]
+        flow: [[atk, api, atk]]
+        mark: {api: ok}
+        stats: [DoS and privilege, D and E, isolate and authorize]
+
+terms:
+  - [Threat model, "A structured look at a design to find what can go wrong and decide what to do about it."]
+  - [DFD, "Data flow diagram. External entities, processes, data stores, data flows and trust boundaries."]
+  - [STRIDE, "Spoofing, Tampering, Repudiation, Information disclosure, Denial of service, Elevation of privilege. A checklist of threat types."]
+  - [Attack tree, "A tree with the attacker's goal at the top and the ways to reach it as branches."]
+  - [PASTA, "Process for Attack Simulation and Threat Analysis. A seven stage, risk centric method."]
+  - [LINDDUN, "A privacy threat method. Linking, Identifying, Non-repudiation, Detecting, Data disclosure, Unawareness, Non-compliance."]
+  - [MITRE ATT&CK, "A public knowledge base of real attacker tactics and techniques."]
+  - [Mitigation, "A change that reduces the chance or the harm of a threat."]
+
+how: |
+  ### The parts of a data flow diagram
+
+  | Shape | Meaning | Example |
+  | --- | --- | --- |
+  | Rectangle | External entity, outside your control | Nurse, hospital records system |
+  | Circle | Process, your code | Device API, update service |
+  | Two lines | Data store | Settings file, log, database |
+  | Arrow | Data flow | "set temperature" message |
+  | Dashed line | Trust boundary | Device zone to hospital network |
+
+  ### STRIDE, each letter breaks one property
+
+  | Threat | Property it breaks | Typical fix |
+  | --- | --- | --- |
+  | Spoofing | Authenticity | Strong authentication, certificates |
+  | Tampering | Integrity | Signatures, MACs, TLS, access control on files |
+  | Repudiation | Non-repudiation | Signed audit logs with user ids |
+  | Information disclosure | Confidentiality | Encryption, least data, access control |
+  | Denial of service | Availability | Rate limits, quotas, isolation, redundancy |
+  | Elevation of privilege | Authorization | Role checks, sandboxing, least privilege |
+
+  Walk every element and every flow that crosses a boundary, and ask each letter. This is called **STRIDE per element**.
+
+  ### Four responses to a threat
+
+  1. **Mitigate.** Add a control.
+  2. **Eliminate.** Remove the feature or the data.
+  3. **Transfer.** Let someone else carry it, like a cloud provider or insurance.
+  4. **Accept.** Record it, with a named owner who agrees.
+
+  ### Other methods and when to use them
+
+  | Method | Focus | Use when |
+  | --- | --- | --- |
+  | STRIDE | Threat types per element | Most software and device designs |
+  | Attack trees | One attacker goal in depth | A high value target, like "change the dose" |
+  | PASTA | Business risk and attack simulation | You need to link threats to business impact |
+  | LINDDUN | Privacy | Systems with personal or health data |
+  | ATT&CK and CAPEC | Real attacker behaviour and attack patterns | Testing detection, or making threats concrete |
+  | DREAD | Scoring threats | Older method. Many teams now use CVSS or a risk matrix instead. |
+
+  ### Tools
+
+  You can threat model on a whiteboard. Tools help keep it up to date. Examples are the **Microsoft Threat Modeling Tool**, **OWASP Threat Dragon**, **pytm** which builds models from Python code, **Threagile** which uses YAML, and commercial tools like IriusRisk.
+
+  !tip A threat model is never done. Update it when you add a feature, a new interface or a new supplier. Keep it short enough that people read it.
+
+diagrams:
+  - type: flow
+    title: The four question loop
+    nodes: [["What are we working on?", "box", "draw a DFD"], ["What can go wrong?", "atk", "STRIDE, attack trees"], ["What will we do?", "def", "mitigate, eliminate, transfer, accept"], ["Did we do a good job?", "raised", "review and test"]]
+    edges: ["", "", ""]
+    caption: Each answer becomes requirements and tests. Repeat when the design changes.
+
+life:
+  - ["Microsoft and STRIDE", "Microsoft created STRIDE in 1999 and made threat modeling a required step in its Security Development Lifecycle after the worm years of the early 2000s. Threat modeling found design flaws that code scanners never see."]
+  - ["An attack tree on a pump", "A team built an attack tree for \"give the wrong dose\". Branches were the radio, the drug library file, the touch screen and the service port. The drug library file had no signature. It became the top fix, though nobody had thought of it before."]
+  - ["The flow nobody drew", "A company modeled its web app but not the nightly export to a partner over plain FTP. The export held customer data. A breach came through that flow. A full DFD would have shown it at once."]
+
+tradeoffs:
+  - ["STRIDE per element", "Systematic, easy to teach.", "Can produce long lists of small threats."]
+  - ["Attack trees", "Deep look at one goal.", "Only as complete as the people who build them."]
+  - ["PASTA", "Ties threats to business risk.", "Heavy, takes days of work."]
+  - ["Tool based modeling", "Easy to update and share.", "Tools can make people tick boxes instead of thinking."]
+
+mistakes:
+  - Threat modeling after the code is finished.
+  - A model that only the security team understands.
+  - Leaving out flows like backups, exports, logs and support access.
+  - Listing threats without a response and an owner.
+  - Never updating the model after the design changes.
+
+quiz:
+  - type: sort
+    q: Which STRIDE letter is each threat?
+    rows:
+      - ["A fake nurse station sends commands", "Spoofing"]
+      - ["A nurse says she never changed the setting, and there is no log", "Repudiation"]
+      - ["A normal user calls an admin only API", "Elevation of privilege"]
+      - ["Readings are sent in plain text", "Information disclosure"]
+    opts: ["Spoofing", "Repudiation", "Elevation of privilege", "Information disclosure"]
+    why: Each letter matches one security property.
+  - type: fill
+    q: In a data flow diagram, a dashed line shows a trust ____.
+    a: ["boundary"]
+    why: Threats cluster where data crosses trust boundaries.
+  - q: Which is the first of Shostack's four questions?
+    opts: ["What can go wrong?", "What are we working on?", "Who is the attacker?"]
+    a: 1
+    why: You must describe the system before you can find its threats.
+  - q: Which method is built for privacy threats?
+    opts: ["LINDDUN", "DREAD", "ATT&CK"]
+    a: 0
+    why: LINDDUN covers linking, identifying and other privacy harms.
+  - q: Identify the missing part of this threat entry. "Threat T7. Fake update over USB. Severity high."
+    opts: ["A response and an owner", "The colour of the USB stick", "A CVSS vector string is required"]
+    a: 0
+    why: A threat without a decision and an owner does nothing.
+  - q: A threat is "the cloud provider's data center floods". The team uses two regions and a contract with the provider. Which responses are these?
+    opts: ["Mitigate and transfer", "Eliminate and accept", "Only accept"]
+    a: 0
+    why: Two regions reduce the harm. The contract shares the risk with the provider.
+
+interview:
+  - q: Walk me through how you would threat model a new feature.
+    keys:
+      - ["Draw a data flow diagram with trust boundaries", [dfd, data flow, diagram, boundar]]
+      - ["Use a method like STRIDE to find threats", [stride, attack tree, pasta, what can go wrong]]
+      - ["Decide a response for each threat, mitigate, accept and so on", [mitigat, accept, transfer, eliminat, response]]
+      - ["Turn results into requirements, tickets or tests, and review later", [requirement, ticket, test, review, update, owner]]
+    a: |
+      I get the people who know the feature into a room for an hour. We draw a data flow diagram with external entities, processes, stores, flows and trust boundaries. Then we walk each element and each flow across a boundary with STRIDE and write down threats. For a high value goal, like changing a medical setting, I also sketch an attack tree. For each threat we pick a response, mitigate, eliminate, transfer or accept, with an owner. Mitigations become requirements and tickets, and each gets a test. We update the model when the design changes and check it before release.
+    fb: Ending with tickets, tests and updates shows the model drives real work.
+  - q: When would you choose PASTA or attack trees over STRIDE?
+    keys:
+      - ["STRIDE is a broad checklist per element", [stride, checklist, per element, broad]]
+      - ["Attack trees go deep on one goal", [attack tree, goal, deep, one]]
+      - ["PASTA ties threats to business risk", [pasta, business, risk, impact]]
+    a: |
+      STRIDE is my default because it is a quick, broad checklist that any engineer can use on every element. I use attack trees when one attacker goal matters a lot, such as "change a dose", and I want every path to it in depth. I use PASTA when leadership needs threats tied to business impact and likelihood, for example to plan a budget, because it is risk centric and includes attack simulation. For privacy heavy systems I add LINDDUN.
+    fb: Showing that methods can be combined is better than picking one as "the best".
+
+desk:
+  title: Threat model the remote alarm feature
+  lede: The incubator will now send alarms to nurses' pagers through the maker's cloud.
+  situation: |
+    Flow. Incubator to hospital gateway to maker's cloud to paging service to nurse's pager. Today alarms go only to the local nurse station.
+  rounds:
+    - title: Round 1. Find the threats
+      items:
+        - type: sort
+          q: Which STRIDE letter fits each threat?
+          rows:
+            - ["The cloud is down, alarms never arrive", "Denial of service"]
+            - ["An attacker sends fake alarms to pagers", "Spoofing"]
+            - ["Alarm messages show the baby's full name to the paging company", "Information disclosure"]
+          opts: ["Denial of service", "Spoofing", "Information disclosure"]
+          why: New flows across new boundaries bring new threats.
+        - q: Which flow did the draft diagram forget?
+          opts: ["The acknowledgement from the nurse back to the device", "The heater loop", "The screen backlight"]
+          a: 0
+          why: Return flows are easy to forget. Fake acknowledgements could silence real alarms.
+    - title: Round 2. Decide and defend
+      items:
+        - q: What is the best mitigation for the cloud being down?
+          opts: ["Keep the local nurse station alarm as the primary path, the pager is extra", "Buy a bigger cloud server", "Accept the risk"]
+          a: 0
+          why: Never move a safety function onto a path you do not control without a local fallback.
+        - type: open
+          q: Write one threat entry with threat, STRIDE letter, response and owner.
+          a: "T3. An attacker on the hospital network replays an old acknowledgement to silence a new alarm. Letter, Spoofing and Tampering. Response, mitigate. Each alarm has a random id and expires in 60 seconds, acknowledgements are signed by the pager service and must match the id. Owner, the device software lead. Test, ST-31 replays an old acknowledgement and checks the alarm stays on."
+  card: |
+    - Four questions. Working on, go wrong, do about, good job.
+    - Draw the DFD with trust boundaries first.
+    - STRIDE per element. Attack trees for big goals.
+    - Every threat gets a response, an owner and a test.
+
+refs:
+  - "Adam Shostack. [Threat Modeling, Designing for Security](https://shostack.org/books/threat-modeling-book), and the [Four Question Framework](https://github.com/adamshostack/4QuestionFrame)."
+  - "OWASP. [Threat Modeling Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Threat_Modeling_Cheat_Sheet.html) and [Threat Dragon](https://owasp.org/www-project-threat-dragon/)."
+  - "LINDDUN. [Privacy threat modeling](https://linddun.org/)."
+  - "MITRE. [ATT&CK](https://attack.mitre.org/)."

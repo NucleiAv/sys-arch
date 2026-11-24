@@ -236,3 +236,12 @@ refs:
   - "GitHub Docs. [Workflow syntax for GitHub Actions](https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions)."
   - "GitHub Docs. [About security hardening with OpenID Connect](https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/about-security-hardening-with-openid-connect)."
   - "Martin Fowler. [Continuous integration](https://martinfowler.com/articles/continuousIntegration.html)."
+
+security: |
+  CI pipelines hold powerful secrets, so attackers target them.
+
+  - Set `permissions` in workflows to the least needed, for example `contents: read`.
+  - **Pin actions** to a full commit SHA, not a moving tag, so a hacked action cannot change under you.
+  - Do not run untrusted pull request code with secrets. Be careful with `pull_request_target`.
+  - Use **OIDC** to get short lived cloud credentials instead of storing long lived keys.
+  - Never echo secrets in logs.

@@ -220,3 +220,10 @@ refs:
   - "Jonas Boner. [Latency numbers every programmer should know](https://gist.github.com/jboner/2841832)."
   - "Jeff Dean. [Numbers everyone should know, Stanford talk slides](https://static.googleusercontent.com/media/research.google.com/en//people/jeff/stanford-295-talk.pdf)."
   - "Donne Martin. [Powers of two table and latency numbers](https://github.com/donnemartin/system-design-primer#appendix)."
+
+security: |
+  Estimates help security too.
+
+  - Size your **logs**. Audit logs for 1 million users with 50 events a day each is 50 million lines a day. Plan storage and retention.
+  - Size **attack traffic**. A small botnet can send hundreds of thousands of requests a second. Your edge and rate limits must hold far more than normal peak.
+  - Estimate **password guessing**. At 10 guesses a second per IP with 1000 IPs, a 6 digit PIN falls in under two minutes. That is why lockouts and MFA matter.

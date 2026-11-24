@@ -1,5 +1,5 @@
 title: Learn to design systems that serve millions, one box at a time
-lede: System design, architecture, infrastructure and network protocols, from zero to mastery, in plain words. Animated diagrams, real life scenarios, quizzes, fill-ups, code questions, design tasks and interview questions with feedback. You need no background.
+lede: System design, architecture, infrastructure, network protocols and secure architecture with risk and GRC, from zero to mastery, in plain words. Animated diagrams, real life scenarios, quizzes, fill-ups, code questions, design tasks and interview questions with feedback. You need no background.
 loop_sub: About 45 minutes a lesson. Read the idea, watch it move, then practice. Every lesson ends with practice, and every level ends with a practice page.
 loop:
   - ["1 · 10 min", "Understand", "A plain explanation with a picture you can keep in your head. Every new word is explained."]
@@ -15,7 +15,7 @@ cards:
   - href: learn/index.html
     num: '<span class="dot def"></span> Concepts'
     t: The building blocks
-    d: Five levels, from design versus architecture and REST, GraphQL, gRPC and WebSocket, to consensus, multi-region systems and stream processing.
+    d: Six levels, from design versus architecture and REST, GraphQL, gRPC and WebSocket, to consensus, multi-region systems, stream processing, and secure architecture, risk and GRC.
     go: Open the lessons
   - href: infra/index.html
     num: '<span class="dot pen"></span> Infra'
@@ -30,7 +30,7 @@ cards:
   - href: design/index.html
     num: '<span class="dot atk"></span> Design it'
     t: Real design tasks
-    d: Design a link shortener, a chat app, a news feed, video streaming, ride sharing, payments, an AI chat app and more, step by step.
+    d: Design a link shortener, a chat app, a news feed, payments, an AI chat app, a peer to peer network, a discussion forum, a secure medical device platform and more, step by step.
     go: Open the designs
   - href: interview.html
     num: "Interview prep"

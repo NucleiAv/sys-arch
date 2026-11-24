@@ -202,3 +202,12 @@ refs:
   - "Ubuntu. [The Linux command line for beginners](https://ubuntu.com/tutorials/command-line-for-beginners)."
   - "systemd. [systemd.service manual](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)."
   - "OpenSSH. [ssh-keygen manual](https://man.openbsd.org/ssh-keygen)."
+
+security: |
+  Basic Linux hygiene stops many attacks.
+
+  - Log in with **SSH keys**, turn off password and root login.
+  - Keep packages **updated**, with automatic security updates where safe.
+  - Run services as **non root users** with only the files they need.
+  - Close unused ports with a firewall like ufw or nftables.
+  - Check file permissions. A world writable script run by root is a path to full control.

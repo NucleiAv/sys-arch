@@ -200,3 +200,12 @@ refs:
   - "Jay Kreps. [I Heart Logs, O'Reilly](https://www.oreilly.com/library/view/i-heart-logs/9781491909379/), a short book on logs and streams."
   - "Apache Kafka. [Introduction](https://kafka.apache.org/intro)."
   - "AWS. [Amazon SQS dead letter queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)."
+
+security: |
+  Queues move data between services, so they are trust boundaries too.
+
+  - **Authenticate producers and consumers.** Only the order service may publish order events.
+  - **Validate messages** in consumers. A message on the queue is still untrusted input.
+  - **Encrypt** sensitive fields, since messages may stay on disk for days in a stream.
+  - **Poison messages** can be a denial of service. Dead letter queues keep one bad message from blocking all.
+  - Do not put secrets or full card numbers in events.

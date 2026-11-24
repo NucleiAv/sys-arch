@@ -40,6 +40,16 @@ groups:
       - {t: Protocol Explorer, u: "https://protocolexplorer.org/", type: interactive, n: "Another visual way to learn network protocols."}
       - {t: Cloudflare Learning Center, u: "https://www.cloudflare.com/learning/", type: articles, n: "Clear explainers on DNS, TLS, CDNs, BGP and DDoS."}
       - {t: The illustrated TLS 1.3 connection, u: "https://tls13.xargs.org/", type: interactive, n: "Every byte of a real TLS 1.3 handshake, explained."}
+  - t: Security, risk and GRC
+    d: For level 6. Standards and guides that security architects use every week. All free to read.
+    items:
+      - {t: NIST Cybersecurity Framework 2.0, u: "https://www.nist.gov/cyberframework", type: standards, n: "Govern, Identify, Protect, Detect, Respond and Recover. A shared language for security programs."}
+      - {t: NIST SP 800-53 Rev. 5, u: "https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final", type: standards, n: "The big catalog of security and privacy controls. Pairs with lesson 6.6."}
+      - {t: OWASP Cheat Sheet Series, u: "https://cheatsheetseries.owasp.org/", type: guide, n: "Short, practical guides for threat modeling, auth, crypto storage, XSS and more."}
+      - {t: Threat Modeling Manifesto, u: "https://www.threatmodelingmanifesto.org/", type: guide, n: "Values and principles of threat modeling from practitioners. Pairs with lesson 6.5."}
+      - {t: CISA Secure by Design, u: "https://www.cisa.gov/securebydesign", type: guide, n: "Why makers, not customers, should own security outcomes."}
+      - {t: FDA medical device cybersecurity, u: "https://www.fda.gov/medical-devices/digital-health-center-excellence/cybersecurity", type: standards, n: "What the US regulator expects from connected medical devices."}
+      - {t: "Adam Shostack, Threat Modeling", u: "https://shostack.org/books/threat-modeling-book", type: book, n: "The classic book on threat modeling and STRIDE."}
   - t: Engineering blogs with real stories
     d: Read how real companies solved the problems in this course.
     items:

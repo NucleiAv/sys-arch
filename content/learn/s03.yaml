@@ -1,0 +1,211 @@
+short: Security requirements
+title: Security requirements and standards
+time: about 50 minutes
+tags: [requirements, standards, NIST, ISO, IEC]
+lede: You cannot build or test what you never wrote down. Learn how to write security requirements that a team can build and check, and which standards help you find them.
+
+idea: |
+  A **requirement** says what the product must do. A **security requirement** says what the product must do so it stays safe when someone attacks it. For example, "The incubator shall reject a firmware image that does not have a valid signature."
+
+  Without written requirements, security becomes a matter of opinion. One engineer thinks TLS is enough, another wants more, and nobody can test either view. Requirements turn opinions into checks.
+
+  You do not invent requirements from nothing. You take them from four places.
+
+  1. **Laws and regulators.** For example, health data laws, or the rules for medical devices.
+  2. **Standards.** Lists of good practice written by experts, like NIST SP 800-53, ISO/IEC 27001, IEC 62443 or OWASP ASVS.
+  3. **Threat modeling.** What can go wrong with this design. See lesson 6.5.
+  4. **The business and the users.** Contracts, customer questions and what users expect.
+
+  !eli5 Before you build a tree house, your parents say "the floor must hold three kids" and "the ladder must have a rail". Those are requirements. You can check them after it is built, by putting three kids on the floor.
+
+scenes:
+  - title: From a standard to a test
+    stats: ["Step", "Artifact", "Can we check it?"]
+    nodes:
+      law: {label: Law and regulator, x: 0, y: 0, kind: raised}
+      std: {label: Standard, x: 0, y: 2, kind: raised}
+      tm: {label: Threat model, x: 2, y: 3, kind: def}
+      req: {label: Requirement, x: 2, y: 1, kind: def, tag: SR-12}
+      des: {label: Design, x: 4, y: 1, kind: box}
+      test: {label: Test, x: 6, y: 1, kind: box}
+    links: [[law, req], [std, req], [tm, req], [req, des], [des, test]]
+    steps:
+      - title: Find the sources
+        text: The regulator expects devices to resist unauthorized changes. The standard has a control for software integrity. The threat model shows a fake update attack.
+        on: [law, std, tm]
+        stats: [Sources, three inputs, not yet]
+      - title: Write one clear requirement
+        text: SR-12. "The incubator shall verify the signature of every firmware image before install and shall reject images that fail."
+        on: [law, std, tm, req]
+        flow: [[law, req, ink], [std, req, ink], [tm, req, ink]]
+        stats: [Requirement, SR-12, "yes, it is testable"]
+      - title: Design to meet it
+        text: The design adds secure boot, an Ed25519 public key in read only memory and an update service that checks signatures.
+        on: [req, des]
+        flow: [[req, des, def]]
+        stats: [Design, update design v2, partly]
+      - title: Test it
+        text: The test team builds an image with one byte changed and tries to install it. The device must reject it and log the attempt.
+        on: [des, test]
+        flow: [[des, test, def]]
+        mark: {test: ok}
+        stats: [Test, ST-12, "yes, passed"]
+      - title: Trace it
+        text: A **traceability matrix** links SR-12 to its sources, the design and the test. An auditor can follow the chain in a minute.
+        on: [law, std, tm, req, des, test]
+        stats: [Trace, matrix row, "yes, evidence ready"]
+
+terms:
+  - [Security requirement, "A testable statement of what the system must do or must not allow, to stay secure."]
+  - [Functional security requirement, "A feature, like login, encryption or an audit log."]
+  - [Assurance requirement, "How you show it works, like code review, pen testing or evidence for an auditor."]
+  - [Standard, "A published document of good practice that many organizations agree on."]
+  - [Control, "A safeguard that reduces risk, like MFA or a backup."]
+  - [Control catalog, "A list of controls to choose from, like NIST SP 800-53."]
+  - [Traceability, "Links from each requirement to where it came from, how it is built and how it is tested."]
+  - [Abuse case, "A user story written from the attacker's side. As an attacker, I want to send a fake update."]
+
+how: |
+  ### What a good security requirement looks like
+
+  Use the word **shall**, one idea per line, and something you can test.
+
+  | Weak | Strong |
+  | --- | --- |
+  | The device shall be secure. | The device shall reject network commands that are not signed by an enrolled nurse station. |
+  | Use strong encryption. | The device shall use TLS 1.2 or later with the cipher suites in appendix B for all network traffic. |
+  | Log important things. | The device shall log every setting change with time, user id and old and new values, and keep 90 days of logs. |
+  | Passwords must be good. | The service login shall require a unique credential per technician and a second factor. |
+
+  Many teams use **SMART**. Specific, measurable, achievable, relevant and testable.
+
+  ### Important standards to know
+
+  | Standard | What it is | Where you use it |
+  | --- | --- | --- |
+  | NIST SP 800-53 | A large catalog of security and privacy controls | US government and many companies |
+  | NIST Cybersecurity Framework 2.0 | Six functions, Govern, Identify, Protect, Detect, Respond, Recover | A shared language for any organization |
+  | ISO/IEC 27001 | Requirements for an information security management system, with Annex A controls | Company wide security, can be certified |
+  | IEC 62443 | Security for industrial automation and control systems, with security levels | Factories, devices, OT |
+  | IEC 81001-5-1 | Security activities in the life cycle of health software | Medical software and devices |
+  | OWASP ASVS | A checklist of web and API security requirements at three levels | Web apps and APIs |
+  | FDA premarket cybersecurity guidance | What the US regulator expects in a device submission, including an SBOM and a threat model | Medical devices sold in the US |
+
+  !tip Do not copy a whole standard into your requirements. Pick the controls that match your risks, write them as testable requirements, and record why you skipped others.
+
+  ### Requirements go both ways
+
+  A **positive** requirement says what must happen, "the device shall log in with a certificate". A **negative** requirement says what must not be possible, "a user without the technician role shall not change calibration". Negative ones are harder to test, but attackers live there.
+
+diagrams:
+  - type: split
+    title: Where requirements come from
+    source: ["Security requirements", "def"]
+    targets:
+      - ["Laws and regulators", "raised", "HIPAA, GDPR, FDA rules"]
+      - ["Standards", "raised", "NIST, ISO, IEC, OWASP"]
+      - ["Threat model", "box", "what can go wrong here"]
+      - ["Business and users", "box", "contracts and customer needs"]
+    caption: Each source finds things the others miss. Use all four.
+
+life:
+  - ["The device submission that came back", "A maker sent a connected device to the US regulator without a software bill of materials or a threat model. Since 2023 the law lets the regulator refuse such submissions, and the maker had to add both before review. Written requirements early would have saved months."]
+  - ["Vague words in a contract", "A hospital contract said the vendor must keep data \"secure\". After a breach both sides argued about what that meant. The next contract named the controls, the response time and the right to audit."]
+  - ["ASVS speeds up a pen test", "A team mapped its API to OWASP ASVS level 2 before launch. The testers then checked the list item by item. Findings dropped by half compared with the last product, because the gaps were fixed during design."]
+
+tradeoffs:
+  - ["Use a full standard", "Complete, accepted by auditors.", "Too big. Teams drown in items that do not apply."]
+  - ["Tailor the standard", "Focused on real risks.", "You must record why each item was skipped."]
+  - ["Requirements from threat modeling only", "Fits the design closely.", "Misses legal and baseline items."]
+
+mistakes:
+  - Writing requirements that cannot be tested, like "the system shall be secure".
+  - Adding security requirements after the design is done.
+  - Copying every control from a standard without thinking.
+  - Only positive requirements, nothing about what must be impossible.
+  - No traceability, so nobody knows why a control exists.
+
+quiz:
+  - q: Which requirement is testable?
+    opts: ["The device shall be hard to hack", "The device shall lock the service account for 15 minutes after 5 wrong passwords", "The device shall use good passwords"]
+    a: 1
+    why: It names a number, a trigger and a result. A tester can try it.
+  - type: sort
+    q: Match each standard to its main area.
+    rows:
+      - ["IEC 62443", "Industrial control systems"]
+      - ["OWASP ASVS", "Web apps and APIs"]
+      - ["ISO/IEC 27001", "Company security management system"]
+    opts: ["Industrial control systems", "Web apps and APIs", "Company security management system"]
+    why: Pick the standard that matches your product and your buyers.
+  - type: fill
+    q: Links from each requirement to its source, design and test form a ____ matrix.
+    a: ["traceability"]
+    why: Traceability shows auditors and new team members why each control exists.
+  - q: Identify the problem. "SR-4. All data shall be encrypted with strong encryption."
+    opts: ["It does not say which data, where, or which algorithm, so it cannot be tested", "Encryption is not needed for medical devices", "It should say AES-128 only"]
+    a: 0
+    why: Say in transit or at rest, which data, and which approved algorithms. Then a tester can check it.
+  - q: The NIST Cybersecurity Framework 2.0 added a new function. Which one?
+    opts: ["Govern", "Encrypt", "Comply"]
+    a: 0
+    why: CSF 2.0 in 2024 added Govern to Identify, Protect, Detect, Respond and Recover.
+
+interview:
+  - q: How do you derive security requirements for a new product?
+    keys:
+      - ["From laws and regulations", [law, regulat, compliance, hipaa, gdpr, fda]]
+      - ["From standards or control catalogs", [standard, nist, iso, asvs, 62443, catalog]]
+      - ["From threat modeling of the design", [threat model, stride, what can go wrong]]
+      - ["Make them testable and traceable", [testable, test, trace, measurable, shall]]
+    a: |
+      I collect four inputs. Laws and regulations for the markets we sell in. A standard that fits the product, for example IEC 81001-5-1 and the FDA guidance for health software, or ASVS for a web API. A threat model of the planned design. And business inputs like customer contracts. Then I write each requirement with "shall", make it testable, give it an id and link it to its source, the design element and the test. I review the list with engineering so each item is achievable, and I record why we skip any control.
+    fb: Saying "testable and traceable" is the core. Mentioning negative requirements and abuse cases is a bonus.
+  - q: What is the difference between a functional security requirement and an assurance requirement?
+    keys:
+      - ["Functional is a security feature the system has", [feature, function, login, encrypt, log]]
+      - ["Assurance is evidence or activity that shows it works", [evidence, review, test, pen, audit, confidence]]
+    a: |
+      A functional security requirement is something the system does, like requiring MFA or encrypting data at rest. An assurance requirement is about confidence that the features are correct, for example code review of the crypto module, a penetration test before release or a third party audit. You need both. A feature that nobody tested gives you little trust.
+    fb: Linking assurance to "how much confidence we need" shows maturity.
+
+desk:
+  title: Rewrite the incubator's requirements
+  lede: The product manager wrote the first security requirements. Fix them.
+  situation: |
+    The draft says. "R1. The system shall be secure. R2. Use encryption. R3. Only authorized users. R4. Updates must be safe."
+  rounds:
+    - title: Round 1. Spot what is wrong
+      items:
+        - type: sort
+          q: What is the main problem with each one?
+          rows:
+            - ["R1. The system shall be secure", "Not testable"]
+            - ["R2. Use encryption", "Missing scope, which data and where"]
+            - ["R3. Only authorized users", "Missing what action and which users"]
+          opts: ["Not testable", "Missing scope, which data and where", "Missing what action and which users"]
+          why: Each line needs a clear action, a scope and something a tester can try.
+        - q: Which source would have found the fake update attack that R4 hints at?
+          opts: ["Threat modeling", "A sales contract", "The user manual"]
+          a: 0
+          why: Threat modeling asks what can go wrong with this design.
+    - title: Round 2. Write and trace
+      items:
+        - type: open
+          q: Rewrite R4 as one or two testable requirements.
+          a: "SR-12. The incubator shall verify the Ed25519 signature of every firmware image against the maker's public key before install, and shall reject and log images that fail. SR-13. The incubator shall refuse to install an image with a version number lower than the one installed."
+        - q: An auditor asks why the device has a version counter. What lets you answer in one minute?
+          opts: ["The traceability matrix", "The marketing plan", "The git log"]
+          a: 0
+          why: The matrix links SR-13 to the threat and the test.
+  card: |
+    - Shall, one idea, testable.
+    - Four sources. Law, standards, threats, business.
+    - Tailor the standard and record why.
+    - Trace every requirement to a test.
+
+refs:
+  - "NIST. [SP 800-53 Rev. 5, Security and Privacy Controls](https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final)."
+  - "NIST. [Cybersecurity Framework 2.0](https://www.nist.gov/cyberframework)."
+  - "OWASP. [Application Security Verification Standard](https://owasp.org/www-project-application-security-verification-standard/)."
+  - "US FDA. [Cybersecurity in Medical Devices guidance](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/cybersecurity-medical-devices-quality-system-considerations-and-content-premarket-submissions)."

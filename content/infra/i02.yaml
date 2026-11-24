@@ -201,3 +201,10 @@ refs:
   - "Pro Git book. [Git branching](https://git-scm.com/book/en/v2/Git-Branching-Branches-in-a-Nutshell)."
   - "Atlassian. [Merging versus rebasing](https://www.atlassian.com/git/tutorials/merging-vs-rebasing)."
   - "Git. [git switch documentation](https://git-scm.com/docs/git-switch)."
+
+security: |
+  Branch rules are security controls.
+
+  - Protect the main branch. No direct pushes, reviews required.
+  - Force pushes rewrite history and can hide changes. Block them on shared branches.
+  - Rebasing a branch with a leaked secret does not delete it from remotes or forks. Rotate the secret.

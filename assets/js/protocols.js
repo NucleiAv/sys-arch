@@ -285,10 +285,8 @@
     $("#px-tab-step").innerHTML = `
       <div class="px-step-top"><span class="mono">STEP ${step + 1} / ${cur.steps.length}</span>${s.tag ? `<span class="px-tagchip">${esc(s.tag)}</span>` : ""}</div>
       <h2>${esc(s.t)}</h2><div class="prose">${s.d}</div>
-      <div class="px-chips">${cur.steps.map((x, i) => `<button type="button" class="${i === step ? "on" : ""}" data-i="${i}"><span class="mono">${String(i + 1).padStart(2, "0")}</span>${esc(x.t)}</button>`).join("")}</div>
       ${s.f.length ? `<dl class="px-kv">${s.f.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd class="mono">${esc(v)}</dd></div>`).join("")}</dl>` : ""}
       ${s.good ? `<div class="plain"><span class="k">Good to know</span><p>${s.good}</p></div>` : ""}`;
-    $$("#px-tab-step .px-chips button").forEach(b => b.addEventListener("click", () => go(+b.dataset.i)));
   }
   function renderOverview() {
     $("#px-tab-over").innerHTML = `<div class="prose">${cur.overview}</div>${cur.refs.length ? `<h3>Go deeper</h3><ol class="reflist">${cur.refs.map(r => `<li>${r}</li>`).join("")}</ol>` : ""}`;
@@ -299,14 +297,51 @@
     box.innerHTML = `<p class="small muted">Answer after you watch all the steps. Every answer shows the reason.</p><div class="qset" data-id="${id}"></div><script type="application/json" data-for="${id}">${JSON.stringify(cur.quiz).replace(/</g, "\\u003c")}<\/script>`;
     if (window.AIC && window.AIC.renderSet) window.AIC.renderSet($(".qset", box));
   }
-  function hex(str) {
-    const bytes = new TextEncoder().encode(str);
+  function dump(bytes, owner) {
+    /* 16 bytes a row, or 8 in a narrow panel. Offset, hex, then the printable characters. owner gives a field number per byte for colour. */
+    const body = document.getElementById("px-pk-body"), N = body && body.clientWidth && body.clientWidth < 560 ? 8 : 16;
     let out = "";
-    for (let i = 0; i < bytes.length; i += 16) {
-      const row = Array.from(bytes.slice(i, i + 16));
-      out += i.toString(16).padStart(4, "0") + "  " + row.map(b => b.toString(16).padStart(2, "0")).join(" ").padEnd(48) + "  " + row.map(b => (b >= 32 && b < 127 ? String.fromCharCode(b) : ".")).join("") + "\n";
+    for (let i = 0; i < bytes.length; i += N) {
+      const row = Array.from(bytes.slice(i, i + N));
+      const hx = row.map((b, j) => { const h = b.toString(16).padStart(2, "0"); return owner ? `<span class="hb f${owner[i + j] % 6}">${h}</span>` : h; }).join(" ");
+      out += `<span class="ho">${i.toString(16).padStart(4, "0")}</span>  ${hx}${" ".repeat(Math.max(0, N * 3 - row.length * 3))}  ${esc(row.map(b => (b >= 32 && b < 127 ? String.fromCharCode(b) : ".")).join(""))}\n`;
     }
     return out;
+  }
+  /* Turn one field value into bytes. Numbers use network byte order (big endian). */
+  /* Real widths for common header fields, so numbers take the bytes they take on the wire. */
+  const WIDTH = [[/\b(seq|sequence|ack|acknowledg\w*|spi|xid|session id|timestamp|stream identifier|lease time)\b/i, 4], [/\bport\b|\bwindow\b|\bmss\b|\bchecksum\b|\blength\b|\bidentifier\b|\bmessage id\b|\bpacket id\b|\bquery id\b|\btransaction id\b|\bquestions\b|\b(answer|authority|additional) rrs\b|\bkeep alive\b|\bhold time\b|\bmy as\b|\bchannel\b|\bclass id\b|\bmethod id\b|\bidentification\b/i, 2], [/\bttl\b|\bhop limit\b|\btype\b|\bcode\b|\bqos\b|\bopcode\b|\bversion\b/i, 1]];
+  const TCPF = { FIN: 1, SYN: 2, RST: 4, PSH: 8, ACK: 16, URG: 32 };
+  function encodeVal(v, name) {
+    const s = String(v).trim();
+    let m;
+    if (/flags?/i.test(name || "")) {
+      const parts = s.toUpperCase().split(/[\s,+|\/-]+/).filter(Boolean);
+      if (parts.length && parts.every(p => p in TCPF)) { const n = parts.reduce((a, p) => a | TCPF[p], 0); return { b: [n], how: "flag bits 0x" + n.toString(16).padStart(2, "0") }; }
+    }
+    if (/^\d+$/.test(s) && name) {
+      const w = WIDTH.find(([re]) => re.test(name));
+      if (w) { const n = BigInt(s), len = w[1]; if (n < (1n << BigInt(8 * len))) { const b = []; for (let i = len - 1; i >= 0; i--) b.push(Number((n >> BigInt(8 * i)) & 255n)); return { b, how: `${len} byte field` }; } }
+    }
+    if (/^0x[0-9a-f]+$/i.test(s)) { let h = s.slice(2); if (h.length % 2) h = "0" + h; return { b: h.match(/../g).map(x => parseInt(x, 16)), how: "hex value" }; }
+    if (/^[0-9a-f]{2}([ :-][0-9a-f]{2})+$/i.test(s)) return { b: s.split(/[ :-]/).map(x => parseInt(x, 16)), how: "bytes" };
+    if ((m = s.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?::(\d{1,5}))?$/)) && m.slice(1, 5).every(x => +x < 256)) {
+      const b = m.slice(1, 5).map(Number); if (m[5]) b.push(+m[5] >> 8, +m[5] & 255);
+      return { b, how: m[5] ? "IPv4 address and port" : "IPv4 address" };
+    }
+    if (/^[0-9a-f:]+$/i.test(s) && s.split(":").length > 2 && (s.includes("::") || s.split(":").length === 8)) {
+      const parts = s.split("::"), L = parts[0] ? parts[0].split(":") : [], R = parts.length > 1 && parts[1] ? parts[1].split(":") : [];
+      const g = parts.length > 1 ? [...L, ...Array(Math.max(0, 8 - L.length - R.length)).fill("0"), ...R] : L;
+      if (g.length === 8 && g.every(x => x.length <= 4)) return { b: g.flatMap(x => { const n = parseInt(x || "0", 16); return [n >> 8, n & 255]; }), how: "IPv6 address" };
+    }
+    if (/^\d+$/.test(s) && s.length < 20) {
+      const n = BigInt(s), len = n < 256n ? 1 : n < 65536n ? 2 : n < 4294967296n ? 4 : 8;
+      const b = []; for (let i = len - 1; i >= 0; i--) b.push(Number((n >> BigInt(8 * i)) & 255n));
+      return { b, how: `${len} byte number` };
+    }
+    /* "0x16 handshake" or "8 echo request". The number is the wire value, the words explain it. */
+    if ((m = s.match(/^(0x[0-9a-f]+|\d+)\s+([^\d:.].*)$/i))) { const e = encodeVal(m[1], name); return { b: e.b, how: `${e.how}, ${m[2]}` }; }
+    return { b: Array.from(new TextEncoder().encode(s)), how: "text" };
   }
   function renderInspector() {
     const s = cur.steps[step], list = $("#px-pk-list"), body = $("#px-pk-body");
@@ -316,8 +351,24 @@
     $$("button", list).forEach(b => b.addEventListener("click", () => { inspected = +b.dataset.i; renderInspector(); }));
     const x = s.p[inspected];
     if (insView === "hex") {
-      body.innerHTML = x.raw ? `<pre class="code px-hex"><code>${esc(hex(x.raw))}</code></pre><p class="small muted">Bytes of the text message, shown as hexadecimal and as characters.</p>`
-        : '<p class="small muted">The hex view is shown for text based messages. This packet is binary, so read its fields instead.</p>';
+      if (x.hex) {
+        const b = x.hex.replace(/[^0-9a-f]/gi, "").match(/../g).map(h => parseInt(h, 16));
+        body.innerHTML = `<pre class="code px-hex"><code>${dump(b)}</code></pre><p class="small muted">Real bytes on the wire for this message, ${b.length} bytes, as hexadecimal on the left and as characters on the right. Read the fields for what each part means.</p>`;
+      } else if (x.raw) {
+        const b = Array.from(new TextEncoder().encode(x.raw));
+        body.innerHTML = `<pre class="code px-hex"><code>${dump(b)}</code></pre><p class="small muted">This protocol sends text. These are the ${b.length} bytes of the message, as hexadecimal on the left and as characters on the right.</p>`;
+      } else if (x.fields.length) {
+        const all = [], owner = [], legend = [];
+        x.fields.forEach(([k, v], i) => {
+          const e = encodeVal(v, k);
+          legend.push(`<li><i class="hb f${i % 6}"></i><b>${esc(k)}</b><span class="mono">${e.b.length} B, ${esc(e.how)}</span></li>`);
+          e.b.forEach(c => { all.push(c); owner.push(i); });
+        });
+        body.innerHTML = `<pre class="code px-hex"><code>${dump(all, owner)}</code></pre><ul class="px-hexkey">${legend.join("")}</ul>
+          <p class="small muted">This protocol sends binary fields, not text. Here each field value becomes bytes, in the order of the fields list. Each colour is one field. Numbers use network byte order, big endian. Words such as flag names show as their text. A real packet packs more fields, such as lengths and checksums. Read this as a guide to the field values, not as a capture.</p>`;
+      } else {
+        body.innerHTML = '<p class="small muted">This packet has no fields to show as bytes. Read its label and the step text.</p>';
+      }
     } else {
       const rows = [["From", cur.nodes[x.f].label + (cur.nodes[x.f].sub ? ` (${cur.nodes[x.f].sub})` : "")], ["To", cur.nodes[x.t].label + (cur.nodes[x.t].sub ? ` (${cur.nodes[x.t].sub})` : "")], ["Kind", KIND[x.k]], ...x.fields];
       body.innerHTML = `<dl class="px-kv">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd class="mono">${esc(v)}</dd></div>`).join("")}</dl>${x.raw ? `<pre class="code"><code>${esc(x.raw)}</code></pre>` : ""}`;

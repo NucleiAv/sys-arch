@@ -206,3 +206,6 @@ refs:
   - "OWASP. [Password storage cheat sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)."
   - "OAuth. [OAuth 2.0 simplified](https://www.oauth.com/)."
   - "Google. [BeyondCorp, a new approach to enterprise security](https://research.google/pubs/beyondcorp-a-new-approach-to-enterprise-security/)."
+
+security: |
+  This lesson is the start of security. Level 6 goes deeper, with principles, crypto, requirements, threat modeling, controls, risk, secure development, field operations and GRC. Start with lesson 6.1 when you finish level 5.

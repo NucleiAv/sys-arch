@@ -61,6 +61,39 @@ rounds:
       - type: open
         q: An online shop has order, stock and payment services with separate databases. The card is charged, then stock reservation fails. Describe what should happen.
         a: "Use a saga. Each step has an undo. When stock reservation fails after the charge, the saga runs the compensating action, a refund, and cancels the order, then tells the customer. Better still, reserve stock before charging, so refunds are rare. Every step must be idempotent because retries will happen."
+
+  - title: Round 5. Spot it, fix it
+    items:
+      - q: Find the bug in this consumer.
+        info: |
+          ```python
+          for msg in queue.receive():
+              queue.ack(msg)
+              charge_card(msg.order_id, msg.amount)
+          ```
+        opts: ["It acknowledges before the work, so a crash loses the payment", "It should charge twice to be safe", "ack should be called receive"]
+        a: 0
+        why: Ack after the work, and make charge_card idempotent with the order id.
+      - q: A rate limiter counts requests per user in each server's memory. There are 10 servers. What is the problem?
+        opts: ["Each server counts alone, so a user can make 10 times the limit", "Memory is too slow", "Users cannot be counted"]
+        a: 0
+        why: Use a shared counter, for example Redis, or route each user to one server.
+      - type: sort
+        q: Benefit or cost of eventual consistency?
+        rows:
+          - ["Writes stay available during a network split", "Benefit"]
+          - ["A user may not see their own change at once", "Cost"]
+          - ["Lower latency across regions", "Benefit"]
+        opts: ["Benefit", "Cost"]
+        why: Always name both sides.
+      - q: Order ids are auto incrementing integers shown in the URL, like `/orders/10023`. Which risk does that raise?
+        opts: ["People can guess other order ids, so missing access checks leak data", "Integers are slow", "There is no risk"]
+        a: 0
+        why: Check ownership on every request. Random ids also make guessing harder, but are not a replacement for authorization.
+      - type: open
+        q: Your Raft cluster of 3 nodes loses 2 nodes. Writes stop. Why, and what is the workaround?
+        a: "Raft needs a majority, 2 of 3, to commit writes. With one node left there is no majority, so it stops writes to stay consistent. Workaround. Bring a node back, or restore from a snapshot to a new cluster. Plan 5 nodes across zones if you must survive 2 failures."
+
 card: |
   - Pick consistency per feature.
   - Ack after the work, consumers idempotent.

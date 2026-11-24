@@ -79,6 +79,38 @@ rounds:
       - type: open
         q: A school wants a website where 2,000 students check exam results on one morning. Most check in the first 10 minutes. Sketch the simplest safe setup and say why.
         a: "The results are the same for everyone who asks for one student, and they do not change. Pre build the result pages or cache them. Put two small stateless app servers behind a load balancer, with one database and a cache. 2,000 students in 10 minutes is only about 3 to 4 requests a second, maybe 30 at the peak, so no complex parts are needed. Two servers give a spare if one fails."
+
+  - title: Round 5. Spot it, fix it
+    items:
+      - q: Identify the problem with this API response for a user profile.
+        info: |
+          ```json
+          {"id": 81, "name": "Asha", "email": "asha@example.com",
+           "password_hash": "$2b$12$...", "is_admin": false}
+          ```
+        opts: ["It returns fields the app does not need, including the password hash", "JSON should use single quotes", "The id should be a string"]
+        a: 0
+        why: Excessive data exposure. Return only the fields the screen shows.
+      - q: One web server, one database, and the app keeps login sessions in server memory. What breaks when you add a second web server?
+        opts: ["Users get logged out when the load balancer sends them to the other server", "The database doubles in size", "Nothing changes"]
+        a: 0
+        why: Move sessions to a shared store or use signed tokens, so servers are stateless.
+      - type: sort
+        q: Is each one a benefit of a load balancer, or a problem it does not solve?
+        rows:
+          - ["Spreads traffic across servers", "Benefit"]
+          - ["Removes a crashed server from rotation", "Benefit"]
+          - ["Makes a slow database fast", "Does not solve"]
+        opts: ["Benefit", "Does not solve"]
+        why: A load balancer helps the web tier. The database needs its own fixes.
+      - q: A REST API uses `GET /deleteUser?id=7` to delete users. Name the problem.
+        opts: ["GET must be safe. Crawlers, prefetch and caches can trigger deletes", "Ids should be letters", "GET is too slow"]
+        a: 0
+        why: Use DELETE /users/7 with authorization checks. Safe methods must not change data.
+      - type: open
+        q: Your GraphQL API is slow because clients send queries nested 12 levels deep. Give one mitigation and one workaround you can ship today.
+        a: "Mitigation. Add query depth and cost limits, and use DataLoader to batch database calls. Workaround today. Reject queries deeper than 6 levels with a clear error, and add a short cache for the most common query."
+
 card: |
   - Architecture first, design second.
   - Divide a day by 100 thousand seconds.

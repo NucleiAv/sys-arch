@@ -215,3 +215,12 @@ refs:
   - "AWS. [Shared responsibility model](https://aws.amazon.com/compliance/shared-responsibility-model/)."
   - "AWS. [Security best practices in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)."
   - "AWS. [Amazon EC2 Spot instances](https://aws.amazon.com/ec2/spot/)."
+
+security: |
+  In the cloud, identity is the new perimeter.
+
+  - **Lock away the root user.** Use MFA and never use it day to day.
+  - Use **IAM roles** with least privilege, not long lived access keys.
+  - Turn on **CloudTrail** in every region and send logs to a separate account.
+  - Use **IMDSv2** on EC2, which blocks many server side request forgery attacks on instance credentials.
+  - Use AWS Organizations and service control policies to set guardrails for every account.

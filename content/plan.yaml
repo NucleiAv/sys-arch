@@ -1,4 +1,4 @@
-title: The plan, twelve weeks from zero to interview ready
+title: The plan, fourteen weeks from zero to interview ready
 lede: About six hours a week. Each week mixes concept lessons, infra lessons, protocols and design tasks, and ends with a practice page. Tick tasks as you go. Your ticks stay in this browser.
 
 weeks:
@@ -100,11 +100,35 @@ weeks:
       - {k: Infra, time: 50 min, t: "Infra lesson 4.2.", page: infra/i14.html}
       - {k: Practice, time: 30 min, t: "Infra level 4 practice.", page: infra/ip4.html}
   - n: 12
+    t: Secure architecture
+    d: Think like a security architect. One product, a connected infant incubator, runs through every lesson.
+    tasks:
+      - {k: Learn, time: 50 min, t: "Concepts lesson 6.1.", page: learn/s01.html}
+      - {k: Learn, time: 1 hr, t: "Concepts lesson 6.2.", page: learn/s02.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 6.3.", page: learn/s03.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 6.4.", page: learn/s04.html}
+      - {k: Learn, time: 1 hr, t: "Concepts lesson 6.5. Draw a data flow diagram of any app you use and run STRIDE on it.", page: learn/s05.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 6.6.", page: learn/s06.html}
+      - {k: Design, time: 1 hr, t: "Design a peer to peer file sharing network.", page: design/d15.html}
+  - n: 13
+    t: Risk, GRC and the architect's role
+    d: Risk, secure development, life in the field, law and governance, and the release decision.
+    tasks:
+      - {k: Learn, time: 1 hr, t: "Concepts lesson 6.7.", page: learn/s07.html}
+      - {k: Learn, time: 65 min, t: "Concepts lesson 6.8.", page: learn/s08.html}
+      - {k: Learn, time: 1 hr, t: "Concepts lesson 6.9.", page: learn/s09.html}
+      - {k: Learn, time: 65 min, t: "Concepts lesson 6.10.", page: learn/s10.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 6.11. Write a one page release decision report for a product you know.", page: learn/s11.html}
+      - {k: Practice, time: 45 min, t: "Concepts level 6 practice.", page: learn/p6.html}
+      - {k: Design, time: 1 hr, t: "Design a discussion forum.", page: design/d16.html}
+      - {k: Design, time: 85 min, t: "Design a secure platform for connected medical devices.", page: design/d17.html}
+  - n: 14
     t: Interview ready
     d: Practice out loud, with a timer, and with a friend if you can.
     tasks:
       - {k: Design, time: 1 hr, t: "Design video streaming.", page: design/d06.html}
       - {k: Design, time: 1 hr, t: "Design a payment system.", page: design/d10.html}
       - {k: Design, time: 1 hr, t: "Design an AI chat app.", page: design/d14.html}
+      - {k: Mock, time: 45 min, t: "Explain the secure medical device platform to a friend as if they were the hospital security team.", page: design/d17.html}
       - {k: Design, time: 2 hrs, t: "Pick any two other designs and do them in 45 minutes each.", page: design/index.html, label: All designs}
       - {k: Mock, time: 1 hr, t: "Press Give me a random question five times. Answer each out loud in under 5 minutes, then get feedback.", page: interview.html}

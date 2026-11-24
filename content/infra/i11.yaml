@@ -213,3 +213,11 @@ refs:
   - "AWS. [Blocking public access to your S3 storage](https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html)."
   - "AWS. [Amazon RDS Multi-AZ](https://aws.amazon.com/rds/features/multi-az/)."
   - "AWS. [Best practices for designing partition keys in DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-design.html)."
+
+security: |
+  Network and storage settings cause many cloud breaches.
+
+  - Keep databases in **private subnets**. Use security groups that allow only the app tier.
+  - Turn on **S3 Block Public Access** for the account.
+  - Encrypt S3, RDS and DynamoDB with KMS keys, and control who can use the keys.
+  - Use VPC endpoints so traffic to S3 does not cross the internet.

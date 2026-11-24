@@ -197,3 +197,12 @@ refs:
   - "MongoDB. [NoSQL explained](https://www.mongodb.com/resources/basics/databases/nosql-explained)."
   - "Discord Engineering. [How Discord stores trillions of messages](https://discord.com/blog/how-discord-stores-trillions-of-messages)."
   - "PostgreSQL. [JSON types](https://www.postgresql.org/docs/current/datatype-json.html)."
+
+security: |
+  Your database holds the crown jewels.
+
+  - Never expose it to the internet. Only the app tier may connect.
+  - Use **parameterized queries** to stop SQL injection. NoSQL databases have injection too.
+  - Give each service its own **least privilege** database user.
+  - **Encrypt at rest** and in transit, and keep **backups** that ransomware cannot reach.
+  - Classify columns. Store less personal data, and mask it outside production.

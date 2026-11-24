@@ -206,3 +206,12 @@ refs:
   - "Protocol Buffers. [Language guide, proto3](https://protobuf.dev/programming-guides/proto3/)."
   - "gRPC Blog. [gRPC on HTTP/2, engineering a robust, high performance protocol](https://grpc.io/blog/grpc-on-http2/)."
   - "gRPC. [Status codes](https://grpc.io/docs/guides/status-codes/)."
+
+security: |
+  gRPC is often used inside a network, where teams relax. Do not.
+
+  - Use **TLS**, and **mutual TLS** between services, so each side proves its identity.
+  - Check **authorization** in each method, using the caller's verified identity from the certificate or token.
+  - Set **message size limits** and **deadlines**, so one slow or huge call cannot tie up a server.
+  - **Reflection** helps debugging but shows your whole API. Turn it off where it is not needed.
+  - Protobuf does not validate business rules. A field can still hold a negative amount. Validate values in code.

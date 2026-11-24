@@ -204,3 +204,11 @@ refs:
   - "AWS. [Caching best practices](https://aws.amazon.com/caching/best-practices/)."
   - "Facebook. [Scaling Memcache at Facebook](https://www.usenix.org/system/files/conference/nsdi13/nsdi13-final170_update.pdf)."
   - "Redis. [Client side caching and eviction docs](https://redis.io/docs/latest/develop/reference/eviction/)."
+
+security: |
+  Caches remember answers, including the wrong answers for the wrong people.
+
+  - **Cache keys must include the user** when content is private. Otherwise one user's page can be served to another.
+  - **Web cache poisoning.** An attacker makes a shared cache store a harmful response. Do not cache responses that depend on unkeyed headers.
+  - **Cache deception.** A private page at a URL that looks static, like `/account.css`, gets cached by a CDN. Set `Cache-Control: private` on private pages.
+  - Do not put secrets or full personal records in Redis without access control and TLS.

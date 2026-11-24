@@ -61,6 +61,41 @@ rounds:
       - type: open
         q: A team of 6 engineers wants to start a new product with 25 microservices. What do you advise?
         a: "Start with a well structured modular monolith with clear internal boundaries and one deploy pipeline. Split out a service later when there is a real reason, such as a team that needs to deploy on its own, a part with very different scaling, or different security needs. 25 services would bring network failures, tracing, many pipelines and data consistency problems that the team does not need yet."
+
+  - title: Round 5. Spot it, fix it
+    items:
+      - q: Find the problem in this retry code.
+        info: |
+          ```python
+          while True:
+              try:
+                  return call_payment_api()
+              except Timeout:
+                  continue
+          ```
+        opts: ["Infinite retries with no backoff can overload a struggling service and double charge", "Timeouts cannot happen", "continue should be break"]
+        a: 0
+        why: Limit retries, add exponential backoff with jitter, and use an idempotency key.
+      - q: An alert fires when CPU is over 80 percent, 40 times a day, and nobody acts. What is the issue?
+        opts: ["The alert is on a cause, not on user pain, and creates noise", "80 percent is too low", "Alerts should be emails only"]
+        a: 0
+        why: Alert on symptoms like error rate or SLO burn. Show CPU on dashboards.
+      - type: sort
+        q: Which kind of problem is each one?
+        rows:
+          - ["The auth service is down and the gateway lets everyone in", "Security bug, fail open"]
+          - ["Logs include full credit card numbers", "Compliance issue, PCI DSS"]
+          - ["Ten services share one database user with full rights", "Least privilege violation"]
+        opts: ["Security bug, fail open", "Compliance issue, PCI DSS", "Least privilege violation"]
+        why: Name the class of problem before you fix it.
+      - q: What is the main benefit of an API gateway in a microservice system?
+        opts: ["One place for auth, rate limits, routing and logging", "It makes every service faster", "It removes the need for service authorization"]
+        a: 0
+        why: Services still check permissions. The gateway handles the shared edge work.
+      - type: open
+        q: A critical vulnerability is found in a library used by 30 services. The fix takes a week to roll out everywhere. What do you do today?
+        a: "Find all services using it from SBOMs or dependency scans, rank them by exposure, and patch internet facing ones first. Today, add a WAF rule or config change that blocks the exploit path if one exists, raise monitoring for exploit attempts, and record the residual risk with an owner until all 30 are patched."
+
 card: |
   - Timeouts, retries with backoff, breakers, bulkheads.
   - Page on symptoms with SLO burn.

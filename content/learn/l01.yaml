@@ -216,3 +216,13 @@ refs:
   - "MDN Web Docs. [An overview of HTTP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Overview)"
   - "MDN Web Docs. [HTTP response status codes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)"
   - "Ilya Grigorik. [High Performance Browser Networking](https://hpbn.co/), free online book."
+
+security: |
+  Every hop a request makes is a place where it can be read, changed or faked.
+
+  - **DNS** can be spoofed or hijacked. DNSSEC signs answers, and DNS over HTTPS hides them from the local network.
+  - **Plain HTTP** can be read and changed by anyone on the path. Use HTTPS everywhere, with HSTS so browsers never fall back.
+  - **TLS** proves the server's name with a certificate. Never turn off certificate checks in code.
+  - **BGP** mistakes or attacks can send traffic to the wrong network. RPKI helps networks reject false routes.
+
+  See the protocol explorer for DNS, TLS and BGP step by step.

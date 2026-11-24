@@ -185,3 +185,11 @@ refs:
   - "Discord Engineering. [How Discord stores trillions of messages](https://discord.com/blog/how-discord-stores-trillions-of-messages)."
   - "WhatsApp. [1 million is so 2011](https://blog.whatsapp.com/1-million-is-so-2011), on connections per server."
   - "Slack Engineering. [Real-time messaging](https://slack.engineering/real-time-messaging/)."
+
+security: |
+  Chat apps carry private conversations.
+
+  - Use TLS for every connection. For private chats consider **end to end encryption**, like the Signal protocol, so the server cannot read messages.
+  - Check that the sender is a member of the chat on every message.
+  - Rate limit and detect spam and abuse. Give users block and report tools.
+  - Scan uploaded files and strip location data from photos.

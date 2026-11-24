@@ -186,3 +186,10 @@ refs:
   - "Eric Brewer. [CAP twelve years later, how the rules have changed](https://www.infoq.com/articles/cap-twelve-years-later-how-the-rules-have-changed/)."
   - "Daniel Abadi. [Consistency tradeoffs in modern distributed database design, PACELC](https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf)."
   - "Jepsen. [Consistency models map](https://jepsen.io/consistency)."
+
+security: |
+  Consistency choices affect security decisions.
+
+  - A permission change that is **eventually consistent** may let a removed user act for a few seconds. For access removal, read from the leader or use short token lifetimes.
+  - Revocation lists and deny lists must be read fresh, not from an old cache.
+  - Audit logs need strong ordering and integrity. Append only storage helps.

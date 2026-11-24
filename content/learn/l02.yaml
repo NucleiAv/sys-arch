@@ -196,3 +196,12 @@ refs:
   - "Stripe. [Idempotent requests](https://docs.stripe.com/api/idempotent_requests)."
   - "MDN. [The WebSocket API](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) and [Server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)."
   - "gRPC. [Introduction to gRPC](https://grpc.io/docs/what-is-grpc/introduction/)."
+
+security: |
+  An API is a front door. Treat every input as hostile until it is checked.
+
+  - **Authenticate** every caller and **authorize** every object, not only the endpoint. Broken object level authorization is the top risk in the OWASP API Security Top 10.
+  - **Validate** input against a schema, with size limits.
+  - **Rate limit** to slow scraping and password guessing.
+  - **Do not leak** internal errors, stack traces or extra fields.
+  - Keep an **inventory** of every API, including old versions. Forgotten APIs are a common way in.

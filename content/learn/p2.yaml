@@ -71,6 +71,43 @@ rounds:
       - type: open
         q: Your product images use the name logo.png and the CDN caches it for 7 days. Marketing changes the logo today. What is the best long term fix?
         a: "Put a version or content hash in each file name, such as logo.3f9a.png, and change the page to point to the new name. The CDN then never serves the old file for the new name, and you do not need to purge."
+
+  - title: Round 5. Spot it, fix it
+    items:
+      - q: Find the bug that leaks data between users.
+        info: |
+          ```python
+          def account_page(user):
+              key = "page:/account"
+              html = cache.get(key)
+              if not html:
+                  html = render_account(user)
+                  cache.set(key, html, ttl=300)
+              return html
+          ```
+        opts: ["The cache key does not include the user, so one user's page is served to others", "ttl is too short", "cache.get should come after render"]
+        a: 0
+        why: Private data needs the user id in the key, or should not be cached in a shared cache at all.
+      - q: A query `SELECT * FROM orders WHERE customer_id = 42` takes 4 seconds on 50 million rows. What is the most likely fix?
+        opts: ["Add an index on customer_id", "Add more columns", "Use SELECT DISTINCT"]
+        a: 0
+        why: Without an index the database scans every row.
+      - type: sort
+        q: Match each problem to its fix.
+        rows:
+          - ["Reads overload the primary database", "Add read replicas"]
+          - ["One table is too big for one machine", "Shard by a good key"]
+          - ["The same hot product page is read a million times", "Cache it"]
+        opts: ["Add read replicas", "Shard by a good key", "Cache it"]
+        why: Different bottlenecks, different tools.
+      - q: Users upload photos to a bucket set to public read so the app can show them. What is a safer design with the same benefit?
+        opts: ["Keep the bucket private and serve photos through signed, expiring URLs or a CDN with access control", "Make the bucket public write too", "Email the photos instead"]
+        a: 0
+        why: Public buckets are a top cause of leaks. Signed URLs give access only to the right people.
+      - type: open
+        q: You shard users by country. One country has 60 percent of users and its shard is overloaded. What went wrong, and what is a workaround until you re shard?
+        a: "The shard key is skewed, so load is not even. Workaround. Add read replicas and caching for that shard, move its heaviest tenants to a new shard, and plan to re shard by a hash of the user id."
+
 card: |
   - SQL by default, other stores for clear reasons.
   - Filter column first in composite indexes.

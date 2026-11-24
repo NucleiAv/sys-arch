@@ -50,6 +50,33 @@ rounds:
       - type: open
         q: You need to store 5 million product images and serve them worldwide. What do you use and how do you keep the bucket private?
         a: "Store the images in S3 with Block Public Access on. Put CloudFront in front, with origin access control so only CloudFront can read the bucket. Users get images from CloudFront edges near them."
+
+  - title: Round 4. Spot it, fix it
+    items:
+      - q: Find the problem in this IAM policy for a photo upload function.
+        info: |
+          ```json
+          {"Effect": "Allow", "Action": "s3:*", "Resource": "*"}
+          ```
+        opts: ["Far too broad. It can do anything to every bucket", "Effect should be Deny", "Resource must be a list"]
+        a: 0
+        why: Allow only s3:PutObject on the one upload bucket path.
+      - q: An EC2 app fetches URLs given by users, and the instance uses IMDSv1. What attack does this enable?
+        opts: ["SSRF to the metadata service to steal the instance role's credentials", "SQL injection", "Clickjacking"]
+        a: 0
+        why: Require IMDSv2, block metadata addresses in the fetcher and give the role least privilege.
+      - type: sort
+        q: Which GRC or security control does each setting support?
+        rows:
+          - ["CloudTrail in all regions to a separate log account", "Audit evidence"]
+          - ["S3 Block Public Access on the account", "Preventing data leaks"]
+          - ["KMS keys with key policies per team", "Encryption and least privilege"]
+        opts: ["Audit evidence", "Preventing data leaks", "Encryption and least privilege"]
+        why: Cloud settings are also compliance evidence.
+      - type: open
+        q: The security group for the database allows port 5432 from 0.0.0.0/0. Fix it, and say how you would stop this from happening again.
+        a: "Change the rule to allow 5432 only from the app tier's security group, and keep the database in a private subnet. To prevent repeats, add a policy as code check in CI, like Checkov or an AWS Config rule, that fails any security group open to the world on database ports."
+
 card: |
   - Least privilege, explicit deny wins.
   - Public subnets for load balancers and NAT only.

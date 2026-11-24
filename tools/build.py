@@ -21,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261125b"
+V = "20261126e"
 E = lambda s: html.escape(str(s), quote=True)
 
 
@@ -398,7 +398,7 @@ def side_group(num, title, href, cur, items, done=None):
 # ---------------------------------------------------------------- tracks
 LESSON_PARTS = [("idea", "The idea in one minute", "idea"), ("watch", "Watch it, step by step", "scenes"), ("words", "Words you need", "terms"),
                 ("how", "How it works", "how"), ("life", "Real life scenarios", "life"), ("trade", "Trade-offs", "tradeoffs"),
-                ("mistakes", "Common mistakes", "mistakes"), ("quiz", "Practice. Check yourself", "quiz"), ("interview", "Practice. Interview questions", "interview"),
+                ("mistakes", "Common mistakes", "mistakes"), ("security", "Security lens", "security"), ("quiz", "Practice. Check yourself", "quiz"), ("interview", "Practice. Interview questions", "interview"),
                 ("practice", "Practice desk", "desk"), ("refs", "Go deeper", "refs")]
 PARTS = {
     "learn": LESSON_PARTS,
@@ -406,7 +406,7 @@ PARTS = {
     "design": [("ask", "The ask", "ask"), ("reqs", "Pin down the requirements", "reqs"), ("estimate", "Do the math", "estimate"),
                ("api", "The API", "api"), ("data", "The data model", "data"), ("watch", "Watch it work", "scenes"),
                ("hld", "The big picture", "hld"), ("deep", "Deep dives", "deep"), ("trade", "Trade-offs you must name", "tradeoffs"),
-               ("task", "Practice. Your turn", "task"), ("interview", "Practice. Follow-up questions", "interview"), ("practice", "Practice desk", "desk"),
+               ("security", "Security and abuse", "security"), ("task", "Practice. Your turn", "task"), ("interview", "Practice. Follow-up questions", "interview"), ("practice", "Practice desk", "desk"),
                ("refs", "Go deeper", "refs")],
 }
 
@@ -428,6 +428,8 @@ def render_part(kind, L, sid):
     if kind == "tradeoffs":
         head = L.get("trade_head", ["Choice", "Good at", "Costs you"])
         return (md(L.get("trade_intro")) + table(head, v)) if isinstance(v, list) else md(v)
+    if kind == "security":
+        return '<div class="seclens">' + md(v) + "</div>"
     if kind == "mistakes":
         return '<ul class="mistakes">' + "".join(f"<li>{inline(m)}</li>" for m in v) + "</ul>"
     if kind == "quiz":
@@ -471,7 +473,7 @@ def desk_body(dk, sid, crumbs, eyebrow, kind):
 TRACKS = {
     "learn": dict(label="Concepts", crumb="Concepts", kind="def", eyebrow="Lesson",
                   ov_title="System design concepts, from zero to mastery",
-                  ov_lede="Twenty seven lessons in five levels. Each lesson explains one idea in plain words, shows it step by step and ends with practice. Each level ends with a practice page that mixes all its lessons."),
+                  ov_lede="Thirty eight lessons in six levels. Each lesson explains one idea in plain words, shows it step by step and ends with practice. Each level ends with a practice page that mixes all its lessons."),
     "infra": dict(label="Infra", crumb="Infra", kind="pen", eyebrow="Lesson",
                   ov_title="Infrastructure, from your first commit to the cloud",
                   ov_lede="Git, GitHub, GitHub Actions, Linux, Docker, Kubernetes, AWS, Terraform and safe deploys. Each lesson ends with practice that includes real commands and config files. Each level ends with a practice page."),
@@ -752,7 +754,8 @@ def build_protocols():
                 extra = q[4] if len(q) > 4 else {}
                 pk.append({"f": a, "t": b, "m": lab, "k": kind,
                            "fields": [[str(x), str(y)] for x, y in (extra.get("fields") or {}).items()] if isinstance(extra, dict) else [],
-                           "raw": extra.get("raw") if isinstance(extra, dict) else None})
+                           "raw": extra.get("raw") if isinstance(extra, dict) else None,
+                           "hex": extra.get("hex") if isinstance(extra, dict) else None})
             for n in st.get("on", []):
                 if n not in nodes:
                     sys.exit(f"{pid} step {si + 1}: unknown node {n}")
@@ -776,6 +779,7 @@ def build_protocols():
   <main id="main" class="px-main">
     <div class="px-bar"><button class="btn btn-quiet btn-sm px-open" type="button" id="px-open">All protocols</button><nav class="crumbs" id="px-crumbs"></nav></div>
     <header class="px-head"><div class="eyebrow mono" id="px-eyebrow"></div><h1 id="px-title"></h1><p class="lede" id="px-lede"></p><div class="px-facts" id="px-facts"></div></header>
+    <div class="px-work"><div class="px-col-a">
     <section class="px-stage-card">
       <div class="px-stage-top"><div class="seg px-views" role="group" aria-label="View"><button type="button" data-view="net" aria-pressed="true">Network</button><button type="button" data-view="seq" aria-pressed="false">Sequence</button></div><span class="mono px-stepno" id="px-stepno"></span></div>
       <div class="px-stats" id="px-stats"></div>
@@ -791,11 +795,13 @@ def build_protocols():
       </div>
     </section>
     <section class="px-rail-card"><div class="px-rail-top"><span class="mono">In this protocol</span><span class="mono" id="px-railno"></span></div><div class="px-rail" id="px-rail"></div></section>
+    </div><div class="px-col-b">
     <section class="px-detail">
       <div class="seg px-tabs2" role="group" aria-label="Details"><button type="button" data-tab="step" aria-pressed="true">Current step</button><button type="button" data-tab="over" aria-pressed="false">Overview</button><button type="button" data-tab="prac" aria-pressed="false">Practice</button></div>
       <div id="px-tab-step"></div><div id="px-tab-over" hidden></div><div id="px-tab-prac" hidden></div>
     </section>
     <section class="px-inspect"><div class="px-inspect-top"><h3>Packet inspector</h3><div class="seg" role="group" aria-label="Inspector view"><button type="button" data-ins="fields" aria-pressed="true">Fields</button><button type="button" data-ins="hex" aria-pressed="false">Hex</button></div></div><div id="px-pk-list" class="px-pk-list"></div><div id="px-pk-body" class="px-pk-body"></div></section>
+    </div></div>
     <div class="px-intro prose">{md(intro.get("intro", ""))}</div>
   </main>
 </div>"""
@@ -817,8 +823,8 @@ def build_home(tracks, design, nb, niv, protos):
     nq += sum(len(p["quiz"]) for p in protos)
     nl = sum(1 for L in learn if L.get("kind") != "practice")
     ni = sum(1 for L in tracks["infra"][0] if L.get("kind") != "practice")
-    stats = [(nl, "concept lessons in five levels, each with an animated diagram"), (ni, "infra lessons, from Git to Kubernetes, AWS and Terraform"),
-             (len(protos), "network protocols, animated packet by packet"), (len(design), "full design tasks, from a link shortener to an AI chat app"),
+    stats = [(nl, "concept lessons in six levels, each with an animated diagram"), (ni, "infra lessons, from Git to Kubernetes, AWS and Terraform"),
+             (len(protos), "network protocols, animated packet by packet"), (len(design), "full design tasks, from a link shortener to a secure medical device platform"),
              (nq, "quiz, fill-up, code and scenario questions with reasons"), (niv, "interview questions with model answers and feedback")]
     cards = "".join(f'<a class="card" href="{c["href"]}"><span class="num">{inline(c["num"])}</span><h3>{E(c["t"])}</h3><p>{inline(c["d"])}</p><span class="go">{E(c["go"])}</span></a>' for c in H["cards"])
     loop = "".join(f'<div><span class="mono">{E(x[0])}</span><h3>{E(x[1])}</h3><p>{inline(x[2])}</p></div>' for x in H["loop"])
@@ -831,7 +837,7 @@ def build_home(tracks, design, nb, niv, protos):
     <p class="small muted rise d3" id="home-progress" style="margin-top:20px"></p>
   </div>
   <div class="hero-visual rise d2"><div class="sheet"><div class="sheet-cap"><span>Your route, basic to mastery</span><span>stations fill in as you finish lessons</span></div>
-    <svg id="route" class="dg" viewBox="0 0 640 430" role="img" aria-label="Route map of the five levels of concept lessons, from foundations to mastery, then the design tasks."></svg></div></div>
+    <svg id="route" class="dg" viewBox="0 0 640 446" role="img" aria-label="Route map of the six levels of concept lessons, from foundations to mastery, then the design tasks."></svg></div></div>
   </div></section>
   <section class="section"><div class="wrap"><div class="stats stats-6">{"".join(f'<div class="stat"><b>{n}</b><span>{E(t)}</span></div>' for n, t in stats)}</div></div></section>
   <section class="section"><div class="wrap"><h2 class="section-title">How every lesson works</h2><p class="section-sub">{inline(H["loop_sub"])}</p><div class="loop">{loop}</div></div></section>

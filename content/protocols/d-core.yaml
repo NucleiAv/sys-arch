@@ -22,34 +22,34 @@
       d: The client sends a QUIC Initial packet over UDP. Inside a CRYPTO frame is a TLS 1.3 ClientHello with ALPN `h3`. There is no separate TCP handshake.
       f: {Packet: Initial, ALPN: h3, Size: "at least 1200 bytes"}
       p:
-        - [phone, srv, "Initial: ClientHello", sec]
+        - [phone, srv, "Initial: ClientHello", sec, {"fields": {"Header form": "1 long", "Packet type": "0 Initial", "Version": "0x00000001", "Destination connection ID": "0x8394c8f03e515708", "Contains": "CRYPTO frame with TLS ClientHello, ALPN h3, padded to at least 1200 bytes"}}]
       good: The first packet is padded to at least 1200 bytes. This stops attackers from using small spoofed packets to make the server send large replies.
     - t: Server Initial and Handshake
       tag: handshake
       d: The server answers with ServerHello in an Initial packet and the rest of the TLS handshake in Handshake packets. Keys are ready after this one round trip.
       p:
-        - [srv, phone, "Initial: ServerHello", sec]
-        - [srv, phone, "Handshake: Certificate, Finished", sec]
+        - [srv, phone, "Initial: ServerHello", sec, {"fields": {"Header form": "1 long", "Packet type": "0 Initial", "Version": "0x00000001", "Destination connection ID": "0x8394c8f03e515708", "Contains": "CRYPTO frame with TLS ServerHello"}}]
+        - [srv, phone, "Handshake: Certificate, Finished", sec, {"fields": {"Header form": "1 long", "Packet type": "2 Handshake", "Version": "0x00000001", "Destination connection ID": "0x8394c8f03e515708", "Contains": "CRYPTO frames with Certificate, CertificateVerify, Finished, encrypted"}}]
     - t: Finished and the first request
       tag: data
       d: The client sends Finished and, in the same flight, the HTTP/3 request on stream 0, protected with the new keys.
       p:
-        - [phone, srv, "Handshake: Finished", sec]
-        - [phone, srv, "1-RTT: stream 0 GET /", req]
+        - [phone, srv, "Handshake: Finished", sec, {"fields": {"Header form": "1 long", "Packet type": "2 Handshake", "Version": "0x00000001", "Destination connection ID": "0x8394c8f03e515708", "Contains": "CRYPTO frame with client Finished"}}]
+        - [phone, srv, "1-RTT: stream 0 GET /", req, {"fields": {"Header form": "0 short", "Destination connection ID": "0x8394c8f03e515708", "Packet number": "2", "Frames": "STREAM id 0, HTTP/3 HEADERS GET /"}}]
     - t: Independent streams
       tag: streams
       d: Responses for streams 0, 4 and 8 arrive. One UDP packet for stream 4 is lost. Only stream 4 waits for the resend. Streams 0 and 8 carry on.
       p:
-        - [srv, phone, "stream 0 data", res]
-        - [srv, phone, "stream 4 data (lost)", bad]
-        - [srv, phone, "stream 8 data", res]
+        - [srv, phone, "stream 0 data", res, {"fields": {"Header form": "0 short", "Destination connection ID": "0x5c1f0a22", "Packet number": "7", "Frames": "STREAM id 0, offset 0"}}]
+        - [srv, phone, "stream 4 data (lost)", bad, {"fields": {"Header form": "0 short", "Destination connection ID": "0x5c1f0a22", "Packet number": "8", "Frames": "STREAM id 4, lost"}}]
+        - [srv, phone, "stream 8 data", res, {"fields": {"Header form": "0 short", "Destination connection ID": "0x5c1f0a22", "Packet number": "9", "Frames": "STREAM id 8, delivered without waiting for stream 4"}}]
     - t: Change of network
       tag: migration
       d: The phone leaves Wi-Fi and gets a new IP on mobile data. It keeps sending with the same connection ID. The server checks the new path and the download continues.
       f: {Old IP: 192.168.1.20, New IP: 100.64.12.7, Connection ID: same}
       p:
-        - [phone, srv, "same connection ID, new address", ctl]
-        - [srv, phone, "path challenge and response", ctl]
+        - [phone, srv, "same connection ID, new address", ctl, {"fields": {"Header form": "0 short", "Destination connection ID": "0x8394c8f03e515708", "Packet number": "31", "Src IP": "100.64.12.7", "Note": "new address, same connection"}}]
+        - [srv, phone, "path challenge and response", ctl, {"fields": {"Header form": "0 short", "Frames": "PATH_CHALLENGE 0x2f7a1c9e and PATH_RESPONSE", "Packet number": "40"}}]
   quiz:
     - q: On which protocol does QUIC run?
       opts: ["TCP", "UDP", "ICMP"]
@@ -91,34 +91,34 @@
       d: The server picks its own number, 5000, and acknowledges the client SYN with ack 1001.
       f: {Flags: "SYN, ACK", Seq: "5000", Ack: "1001"}
       p:
-        - [srv, client, "SYN-ACK seq=5000 ack=1001", ctl]
+        - [srv, client, "SYN-ACK seq=5000 ack=1001", ctl, {"fields": {"Src port": "443", "Dst port": "51000", "Flags": "SYN ACK", "Seq": "5000", "Ack": "1001", "Window": "65160"}}]
     - t: ACK, connection open
       tag: handshake
       d: The client acknowledges with ack 5001. Both sides now know the starting numbers of the other.
       p:
-        - [client, srv, "ACK ack=5001", ctl]
+        - [client, srv, "ACK ack=5001", ctl, {"fields": {"Src port": "51000", "Dst port": "443", "Flags": "ACK", "Seq": "1001", "Ack": "5001", "Window": "502"}}]
     - t: Data and acknowledgements
       tag: data
       d: The client sends 100 bytes starting at 1001. The server acknowledges with ack 1101, the next byte it expects.
       f: {Seq: "1001", Length: "100", Ack from server: "1101"}
       p:
-        - [client, srv, "seq=1001 len=100", data]
-        - [srv, client, "ACK ack=1101", ctl]
+        - [client, srv, "seq=1001 len=100", data, {"fields": {"Src port": "51000", "Dst port": "443", "Flags": "PSH ACK", "Seq": "1001", "Ack": "5001", "Window": "502", "Length": "100"}}]
+        - [srv, client, "ACK ack=1101", ctl, {"fields": {"Src port": "443", "Dst port": "51000", "Flags": "ACK", "Seq": "5001", "Ack": "1101", "Window": "509"}}]
     - t: A segment is lost
       tag: retransmit
       d: The next segment is lost on the way. The server keeps sending ack 1101. After duplicate acks or a timeout, the client sends the segment again.
       p:
-        - [client, srv, "seq=1101 len=100 (lost)", bad]
-        - [srv, client, "ACK ack=1101 (duplicate)", ctl]
-        - [client, srv, "seq=1101 len=100 (resent)", data]
+        - [client, srv, "seq=1101 len=100 (lost)", bad, {"fields": {"Src port": "51000", "Dst port": "443", "Flags": "PSH ACK", "Seq": "1101", "Ack": "5001", "Window": "502", "Length": "100"}}]
+        - [srv, client, "ACK ack=1101 (duplicate)", ctl, {"fields": {"Src port": "443", "Dst port": "51000", "Flags": "ACK", "Seq": "5001", "Ack": "1101", "Window": "509"}}]
+        - [client, srv, "seq=1101 len=100 (resent)", data, {"fields": {"Src port": "51000", "Dst port": "443", "Flags": "PSH ACK", "Seq": "1101", "Ack": "5001", "Window": "502", "Length": "100"}}]
     - t: Close
       tag: close
       d: Each side closes its own direction with FIN, and the other side acknowledges it.
       p:
-        - [client, srv, "FIN", ctl]
-        - [srv, client, "ACK", ctl]
-        - [srv, client, "FIN", ctl]
-        - [client, srv, "ACK", ctl]
+        - [client, srv, "FIN", ctl, {"fields": {"Src port": "51000", "Dst port": "443", "Flags": "FIN ACK", "Seq": "1201", "Ack": "5001"}}]
+        - [srv, client, "ACK", ctl, {"fields": {"Src port": "443", "Dst port": "51000", "Flags": "ACK", "Seq": "5001", "Ack": "1202"}}]
+        - [srv, client, "FIN", ctl, {"fields": {"Src port": "443", "Dst port": "51000", "Flags": "FIN ACK", "Seq": "5001", "Ack": "1202"}}]
+        - [client, srv, "ACK", ctl, {"fields": {"Src port": "51000", "Dst port": "443", "Flags": "ACK", "Seq": "1202", "Ack": "5002"}}]
   quiz:
     - q: The client sent SYN with seq 7000. What ack does the server send in its SYN-ACK?
       opts: ["7000", "7001", "0"]
@@ -159,19 +159,19 @@
       tag: data
       d: The client sends a new position every tick, about 30 to 60 times a second.
       p:
-        - [game, srv, "position (tick 2)", data]
-        - [game, srv, "position (tick 3)", data]
+        - [game, srv, "position (tick 2)", data, {"fields": {"Src port": "50001", "Dst port": "27015", "Length": "40", "Checksum": "0x7c3a", "Payload": "tick 2, x 10.4, y 3.1"}}]
+        - [game, srv, "position (tick 3)", data, {"fields": {"Src port": "50001", "Dst port": "27015", "Length": "40", "Checksum": "0x7c3a", "Payload": "tick 3, x 10.6, y 3.1"}}]
     - t: One is lost, nobody waits
       tag: loss
       d: Tick 4 is lost. UDP does not resend it. Tick 5 arrives, and it is newer anyway. For live data, waiting for old data would be worse.
       p:
-        - [game, srv, "position (tick 4, lost)", bad]
-        - [game, srv, "position (tick 5)", data]
+        - [game, srv, "position (tick 4, lost)", bad, {"fields": {"Src port": "50001", "Dst port": "27015", "Length": "40", "Checksum": "0x7c3a", "Payload": "tick 4, lost on the way"}}]
+        - [game, srv, "position (tick 5)", data, {"fields": {"Src port": "50001", "Dst port": "27015", "Length": "40", "Checksum": "0x7c3a", "Payload": "tick 5, x 11.0, y 3.2"}}]
     - t: Server updates
       tag: data
       d: The server sends world updates back the same way.
       p:
-        - [srv, game, "world state", data]
+        - [srv, game, "world state", data, {"fields": {"Src port": "27015", "Dst port": "50001", "Length": "520", "Checksum": "0x7c3a", "Payload": "world state for tick 5"}}]
   quiz:
     - q: Which is true about UDP?
       opts: ["It guarantees order", "It has no handshake and does not resend lost datagrams", "It is slower than TCP"]
@@ -212,25 +212,25 @@
       d: The laptop puts the TCP segment in an IP packet. Source 192.168.1.10, destination 203.0.113.10, TTL 64. The destination is not local, so it sends the packet to its default gateway, the home router.
       f: {Src: 192.168.1.10, Dst: 203.0.113.10, TTL: "64", Protocol: "6 TCP"}
       p:
-        - [pc, home, "IP 192.168.1.10 to 203.0.113.10 TTL 64", data]
+        - [pc, home, "IP 192.168.1.10 to 203.0.113.10 TTL 64", data, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "64", "Protocol": "6 TCP", "Src": "192.168.1.10", "Dst": "203.0.113.10"}}]
     - t: NAT at home
       tag: nat
       d: The home router replaces the private source with its public address 198.51.100.7 and remembers the mapping, so replies can come back. It lowers the TTL to 63.
       f: {Src after NAT: 198.51.100.7, TTL: "63"}
       p:
-        - [home, isp, "IP 198.51.100.7 to 203.0.113.10 TTL 63", data]
+        - [home, isp, "IP 198.51.100.7 to 203.0.113.10 TTL 63", data, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "63", "Protocol": "6 TCP", "Src": "198.51.100.7", "Dst": "203.0.113.10"}}]
     - t: Hop by hop
       tag: route
       d: Each router looks up the destination in its routing table and forwards the packet to the next hop. TTL drops at each hop.
       p:
-        - [isp, core, "TTL 62", data]
-        - [core, srv, "TTL 61", data]
+        - [isp, core, "TTL 62", data, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "62", "Protocol": "6 TCP", "Src": "198.51.100.7", "Dst": "203.0.113.10"}}]
+        - [core, srv, "TTL 61", data, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "61", "Protocol": "6 TCP", "Src": "198.51.100.7", "Dst": "203.0.113.10"}}]
     - t: The reply comes back
       tag: route
       d: The server replies to 198.51.100.7. The home router finds the mapping and sends the reply to 192.168.1.10.
       p:
-        - [srv, home, "IP 203.0.113.10 to 198.51.100.7", res]
-        - [home, pc, "IP to 192.168.1.10 (NAT reversed)", res]
+        - [srv, home, "IP 203.0.113.10 to 198.51.100.7", res, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "64", "Protocol": "6 TCP", "Src": "203.0.113.10", "Dst": "198.51.100.7"}}]
+        - [home, pc, "IP to 192.168.1.10 (NAT reversed)", res, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "63", "Protocol": "6 TCP", "Src": "203.0.113.10", "Dst": "192.168.1.10"}}]
   quiz:
     - q: What happens when the TTL reaches 0 at a router?
       opts: ["The packet is delivered", "The router drops it and usually sends an ICMP time exceeded message", "The TTL resets to 64"]
@@ -271,25 +271,25 @@
       tag: ndp
       d: The laptop sends a Router Solicitation to the all routers multicast address `ff02::2`.
       p:
-        - [pc, rtr, "ICMPv6 Router Solicitation to ff02::2", ctl]
+        - [pc, rtr, "ICMPv6 Router Solicitation to ff02::2", ctl, {"fields": {"Version": "6", "Next header": "58 ICMPv6", "Hop limit": "255", "Src": "fe80::a1b2", "Dst": "ff02::2", "ICMPv6 type": "133 Router Solicitation"}}]
     - t: Router Advertisement
       tag: ndp
       d: The router answers with a Router Advertisement. It gives the prefix `2001:db8:1:1::/64` and says it is the default gateway. DNS server addresses can also come in the advertisement.
       f: {Prefix: "2001:db8:1:1::/64", Gateway: "router link local address"}
       p:
-        - [rtr, pc, "ICMPv6 Router Advertisement prefix /64", res]
+        - [rtr, pc, "ICMPv6 Router Advertisement prefix /64", res, {"fields": {"Version": "6", "Next header": "58 ICMPv6", "Hop limit": "255", "Src": "fe80::1", "Dst": "ff02::1", "ICMPv6 type": "134 Router Advertisement", "Prefix": "2001:db8:1:1::", "Prefix length": "64"}}]
     - t: Build and check the address
       tag: slaac
       d: The laptop adds its own 64 bit interface id to the prefix, often random for privacy. Before it uses the address, it checks nobody else has it with Duplicate Address Detection.
       f: {New address: "2001:db8:1:1:5d2e:91a4:7b3c:10f2"}
       p:
-        - [pc, sw, "Neighbor Solicitation (duplicate check)", ctl]
+        - [pc, sw, "Neighbor Solicitation (duplicate check)", ctl, {"fields": {"Version": "6", "Next header": "58 ICMPv6", "Hop limit": "255", "Src": "::", "Dst": "ff02::1:ff3c:10f2", "ICMPv6 type": "135 Neighbor Solicitation", "Target": "2001:db8:1:1:5d2e:91a4:7b3c:10f2"}}]
     - t: Find a neighbour
       tag: ndp
       d: To print, the laptop needs the printer link layer address. It sends a Neighbor Solicitation. The printer answers with a Neighbor Advertisement. This replaces ARP.
       p:
-        - [pc, peer, "Neighbor Solicitation who has ::9", ctl]
-        - [peer, pc, "Neighbor Advertisement MAC 00:1b:...", res]
+        - [pc, peer, "Neighbor Solicitation who has ::9", ctl, {"fields": {"Version": "6", "Next header": "58 ICMPv6", "Hop limit": "255", "Src": "2001:db8:1:1:5d2e:91a4:7b3c:10f2", "Dst": "ff02::1:ff00:9", "ICMPv6 type": "135 Neighbor Solicitation", "Target": "2001:db8:1:1::9"}}]
+        - [peer, pc, "Neighbor Advertisement MAC 00:1b:...", res, {"fields": {"Version": "6", "Next header": "58 ICMPv6", "Hop limit": "255", "Src": "2001:db8:1:1::9", "Dst": "2001:db8:1:1:5d2e:91a4:7b3c:10f2", "ICMPv6 type": "136 Neighbor Advertisement", "Target MAC": "00:1b:44:11:3a:b7"}}]
   quiz:
     - type: num
       q: How many bits long is an IPv6 address?
@@ -330,26 +330,26 @@
       d: Routers in AS 64510 and AS 64520 open TCP 179 and send OPEN messages with their AS numbers and a hold time.
       f: {Transport: TCP 179, Hold time: "90 s"}
       p:
-        - [b, c, "OPEN AS 64510", ctl]
-        - [c, b, "OPEN AS 64520", ctl]
-        - [b, c, "KEEPALIVE", ctl]
+        - [b, c, "OPEN AS 64510", ctl, {"fields": {"Marker": "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff", "Length": "29", "Type": "1 OPEN", "Version": "4", "My AS": "64510", "Hold time": "90", "BGP identifier": "198.51.100.1"}}]
+        - [c, b, "OPEN AS 64520", ctl, {"fields": {"Marker": "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff", "Length": "29", "Type": "1 OPEN", "Version": "4", "My AS": "64520", "Hold time": "90", "BGP identifier": "203.0.113.1"}}]
+        - [b, c, "KEEPALIVE", ctl, {"fields": {"Marker": "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff", "Length": "19", "Type": "4 KEEPALIVE"}}]
     - t: Announce a prefix
       tag: update
       d: AS 64520 hosts 203.0.113.0/24. It sends an UPDATE with that prefix and AS path 64520.
       f: {Prefix: 203.0.113.0/24, AS path: "64520"}
       p:
-        - [c, b, "UPDATE 203.0.113.0/24 path 64520", data]
+        - [c, b, "UPDATE 203.0.113.0/24 path 64520", data, {"fields": {"Marker": "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff", "Length": "52", "Type": "2 UPDATE", "AS PATH": "64520", "NEXT HOP": "203.0.113.1", "NLRI": "203.0.113.0/24"}}]
     - t: Pass it on
       tag: update
       d: AS 64510 adds its own number and tells AS 64500. Now ISP A knows how to reach the prefix, through B.
       f: {AS path at A: "64510 64520"}
       p:
-        - [b, a, "UPDATE 203.0.113.0/24 path 64510 64520", data]
+        - [b, a, "UPDATE 203.0.113.0/24 path 64510 64520", data, {"fields": {"Marker": "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff", "Length": "56", "Type": "2 UPDATE", "AS PATH": "64510 64520", "NEXT HOP": "198.51.100.1", "NLRI": "203.0.113.0/24"}}]
     - t: A bad announcement
       tag: hijack
       d: A misconfigured AS 64666 announces a more specific prefix, 203.0.113.0/25. Routers prefer more specific prefixes, so half the traffic now goes the wrong way.
       p:
-        - [bad, a, "UPDATE 203.0.113.0/25 path 64666", bad]
+        - [bad, a, "UPDATE 203.0.113.0/25 path 64666", bad, {"fields": {"Marker": "ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff ff", "Length": "52", "Type": "2 UPDATE", "AS PATH": "64666", "NLRI": "203.0.113.0/25", "Note": "more specific prefix wins, so traffic goes the wrong way"}}]
       bad: [bad]
       good: RPKI route origin validation would mark this announcement invalid, because AS 64666 is not allowed to originate the prefix.
   quiz:
@@ -391,31 +391,31 @@
       d: The laptop asks its resolver for the A record of www.example.com, with recursion desired.
       f: {Query: "www.example.com A", Flags: RD, Transport: UDP 53}
       p:
-        - [pc, res, "query www.example.com A", req]
+        - [pc, res, "query www.example.com A", req, {"fields": {"Transaction ID": "0x1a2b", "Flags": "0x0100 standard query, recursion desired", "Questions": "1", "Name": "www.example.com", "QTYPE": "1 A", "QCLASS": "1 IN"}, "hex": "1a 2b 01 00 00 01 00 00 00 00 00 00 03 77 77 77 07 65 78 61 6d 70 6c 65 03 63 6f 6d 00 00 01 00 01"}]
     - t: Ask a root server
       tag: iterate
       d: The resolver has no cached answer. It asks a root server. The root does not know the answer, but refers it to the .com servers.
       p:
-        - [res, root, "query www.example.com A", req]
-        - [root, res, "referral to .com NS", res]
+        - [res, root, "query www.example.com A", req, {"fields": {"Transaction ID": "0x5e21", "Flags": "0x0000 standard query", "Questions": "1", "Answer RRs": "0", "Authority RRs": "0", "Additional RRs": "1", "Contains": "www.example.com A"}}]
+        - [root, res, "referral to .com NS", res, {"fields": {"Transaction ID": "0x5e21", "Flags": "0x8000 response", "Questions": "1", "Answer RRs": "0", "Authority RRs": "13", "Additional RRs": "11", "Contains": "NS a.gtld-servers.net and 12 more for com"}}]
     - t: Ask the .com server
       tag: iterate
       d: The .com server refers it to the authoritative servers for example.com.
       p:
-        - [res, tld, "query www.example.com A", req]
-        - [tld, res, "referral to ns1.example.com", res]
+        - [res, tld, "query www.example.com A", req, {"fields": {"Transaction ID": "0x77b0", "Flags": "0x0000 standard query", "Questions": "1", "Answer RRs": "0", "Authority RRs": "0", "Additional RRs": "1", "Contains": "www.example.com A"}}]
+        - [tld, res, "referral to ns1.example.com", res, {"fields": {"Transaction ID": "0x77b0", "Flags": "0x8000 response", "Questions": "1", "Answer RRs": "0", "Authority RRs": "2", "Additional RRs": "2", "Contains": "NS ns1.example.com, NS ns2.example.com, glue A records"}}]
     - t: Ask the authoritative server
       tag: answer
       d: The authoritative server gives the real answer, 203.0.113.10, with a TTL of 300 seconds.
       f: {Answer: 203.0.113.10, TTL: "300", Flag: AA authoritative}
       p:
-        - [res, auth, "query www.example.com A", req]
-        - [auth, res, "A 203.0.113.10 TTL 300", res]
+        - [res, auth, "query www.example.com A", req, {"fields": {"Transaction ID": "0x0c19", "Flags": "0x0000 standard query", "Questions": "1", "Answer RRs": "0", "Authority RRs": "0", "Additional RRs": "1", "Contains": "www.example.com A"}}]
+        - [auth, res, "A 203.0.113.10 TTL 300", res, {"fields": {"Transaction ID": "0x0c19", "Flags": "0x8400 response, authoritative", "Questions": "1", "Answer RRs": "1", "Authority RRs": "0", "Additional RRs": "0", "Contains": "www.example.com A 203.0.113.10 TTL 300"}}]
     - t: Answer and cache
       tag: cache
       d: The resolver sends the answer to the laptop and caches it, and the referrals too. The next user who asks within 300 seconds gets an instant answer.
       p:
-        - [res, pc, "A 203.0.113.10", res]
+        - [res, pc, "A 203.0.113.10", res, {"fields": {"Transaction ID": "0x1a2b", "Flags": "0x8180 response, recursion available", "Questions": "1", "Answer RRs": "1", "Authority RRs": "0", "Additional RRs": "0", "Contains": "www.example.com A 203.0.113.10"}}]
       good: Lower TTLs before you move a site. Old answers live in caches until their TTL ends.
   quiz:
     - q: Which server gives the final answer for www.example.com?
@@ -454,24 +454,24 @@
       d: The laptop has no address. It broadcasts a Discover from 0.0.0.0 port 68 to 255.255.255.255 port 67, with its MAC address.
       f: {Src: "0.0.0.0:68", Dst: "255.255.255.255:67", Client MAC: "a4:5e:60:12:34:56"}
       p:
-        - [pc, srv, "DHCPDISCOVER (broadcast)", req]
+        - [pc, srv, "DHCPDISCOVER (broadcast)", req, {"fields": {"op": "1 BOOTREQUEST", "htype": "1", "hlen": "6", "xid": "0x3903f326", "yiaddr": "0.0.0.0", "chaddr": "a4:5e:60:12:34:56", "Magic cookie": "0x63825363", "Message type": "1 DHCPDISCOVER", "Src": "0.0.0.0:68", "Dst": "255.255.255.255:67", "Flags": "0x8000 broadcast"}}]
     - t: Offer
       tag: dora
       d: The server offers 192.168.1.42 for 24 hours, plus the subnet mask, the gateway and DNS servers.
       f: {Offered IP: 192.168.1.42, Lease: "86400 s", Router: 192.168.1.1, DNS: 192.168.1.1}
       p:
-        - [srv, pc, "DHCPOFFER 192.168.1.42", res]
+        - [srv, pc, "DHCPOFFER 192.168.1.42", res, {"fields": {"op": "2 BOOTREPLY", "htype": "1", "hlen": "6", "xid": "0x3903f326", "yiaddr": "192.168.1.42", "chaddr": "a4:5e:60:12:34:56", "Magic cookie": "0x63825363", "Message type": "2 DHCPOFFER", "Lease time": "86400", "Router": "192.168.1.1", "DNS": "192.168.1.1", "Server ID": "192.168.1.1"}}]
     - t: Request
       tag: dora
       d: The laptop broadcasts a Request for 192.168.1.42. Broadcasting tells any other servers that offered addresses that it chose this one.
       p:
-        - [pc, srv, "DHCPREQUEST 192.168.1.42", req]
+        - [pc, srv, "DHCPREQUEST 192.168.1.42", req, {"fields": {"op": "1 BOOTREQUEST", "htype": "1", "hlen": "6", "xid": "0x3903f326", "yiaddr": "0.0.0.0", "chaddr": "a4:5e:60:12:34:56", "Magic cookie": "0x63825363", "Message type": "3 DHCPREQUEST", "Requested IP": "192.168.1.42", "Server ID": "192.168.1.1"}}]
     - t: Acknowledge
       tag: dora
       d: The server confirms with an ACK. The laptop sets its address, mask, gateway and DNS. It will renew at half the lease time.
       f: {Renew at: "12 hours"}
       p:
-        - [srv, pc, "DHCPACK 192.168.1.42", res]
+        - [srv, pc, "DHCPACK 192.168.1.42", res, {"fields": {"op": "2 BOOTREPLY", "htype": "1", "hlen": "6", "xid": "0x3903f326", "yiaddr": "192.168.1.42", "chaddr": "a4:5e:60:12:34:56", "Magic cookie": "0x63825363", "Message type": "5 DHCPACK", "Lease time": "86400", "Router": "192.168.1.1"}}]
   quiz:
     - type: fill
       q: "The four DHCP steps are Discover, Offer, Request and ____."
@@ -507,27 +507,27 @@
       d: "`ping 203.0.113.10` sends an ICMP echo request, type 8, with an id and a sequence number."
       f: {Type: "8 echo request", Seq: "1"}
       p:
-        - [pc, srv, "ICMP echo request seq=1", req]
+        - [pc, srv, "ICMP echo request seq=1", req, {"fields": {"Type": "8 echo request", "Code": "0", "Identifier": "0x1234", "Sequence": "1", "Data": "32 bytes, abcdefghijklmnopqrstuvwabcdefghi"}, "hex": "08 00 3b 27 12 34 00 01 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 61 62 63 64 65 66 67 68 69"}]
     - t: Echo reply
       tag: ping
       d: The server answers with type 0, echo reply. Ping shows the round trip time, such as 24 ms.
       f: {Type: "0 echo reply", RTT: "24 ms"}
       p:
-        - [srv, pc, "ICMP echo reply seq=1", res]
+        - [srv, pc, "ICMP echo reply seq=1", res, {"fields": {"Type": "0 echo reply", "Code": "0", "Identifier": "0x1234", "Sequence": "1", "Data": "the same 32 bytes sent back"}, "hex": "00 00 43 27 12 34 00 01 61 62 63 64 65 66 67 68 69 6a 6b 6c 6d 6e 6f 70 71 72 73 74 75 76 77 61 62 63 64 65 66 67 68 69"}]
     - t: Traceroute, TTL 1
       tag: traceroute
       d: Traceroute sends a probe with TTL 1. Router 1 lowers it to 0, drops the packet and sends back time exceeded, type 11. Now we know hop 1.
       p:
-        - [pc, r1, "probe TTL 1", req]
-        - [r1, pc, "ICMP time exceeded (hop 1)", ctl]
+        - [pc, r1, "probe TTL 1", req, {"fields": {"Protocol": "17 UDP", "TTL": "1", "Dst": "203.0.113.10", "Dst port": "33434"}}]
+        - [r1, pc, "ICMP time exceeded (hop 1)", ctl, {"fields": {"Type": "11 time exceeded", "Code": "0", "Checksum": "0x4d5a", "Src": "192.168.1.1", "Inside": "first bytes of the probe that died"}}]
     - t: TTL 2, then 3
       tag: traceroute
       d: With TTL 2, router 2 answers. With TTL 3 the probe reaches the server, which answers. The list of answers is the path.
       p:
-        - [pc, r2, "probe TTL 2", req]
-        - [r2, pc, "ICMP time exceeded (hop 2)", ctl]
-        - [pc, srv, "probe TTL 3", req]
-        - [srv, pc, "reply from destination", res]
+        - [pc, r2, "probe TTL 2", req, {"fields": {"Protocol": "17 UDP", "TTL": "2", "Dst": "203.0.113.10", "Dst port": "33435"}}]
+        - [r2, pc, "ICMP time exceeded (hop 2)", ctl, {"fields": {"Type": "11 time exceeded", "Code": "0", "Checksum": "0x4d5a", "Src": "198.51.100.1", "Inside": "first bytes of the probe that died"}}]
+        - [pc, srv, "probe TTL 3", req, {"fields": {"Protocol": "17 UDP", "TTL": "3", "Dst": "203.0.113.10", "Dst port": "33436"}}]
+        - [srv, pc, "reply from destination", res, {"fields": {"Type": "3 destination unreachable", "Code": "3", "Checksum": "0x4d5a", "Src": "203.0.113.10", "Meaning": "port unreachable, so we reached the end"}}]
   quiz:
     - type: fill
       q: "The ICMP type number of an echo request is ____."
@@ -564,24 +564,24 @@
       d: You select channel 1. The set top box sends a Membership Report for group 239.1.1.1.
       f: {Group: 239.1.1.1, Message: Membership Report}
       p:
-        - [tv, rtr, "IGMP join 239.1.1.1", req]
+        - [tv, rtr, "IGMP join 239.1.1.1", req, {"fields": {"Type": "0x16 v2 Membership Report", "Max resp time": "0", "Checksum": "0x0e2c", "Group address": "239.1.1.1", "Dst": "239.1.1.1", "TTL": "1"}}]
     - t: The stream flows
       tag: stream
       d: The router starts forwarding the group. The switch snoops the join and sends the stream only to the port of the set top box.
       p:
-        - [src, rtr, "multicast video 239.1.1.1", data]
-        - [rtr, tv, "multicast video", data]
+        - [src, rtr, "multicast video 239.1.1.1", data, {"fields": {"Protocol": "17 UDP", "Src": "10.0.0.5", "Dst": "239.1.1.1", "Dst port": "5004", "TTL": "16"}}]
+        - [rtr, tv, "multicast video", data, {"fields": {"Dst MAC": "01:00:5e:01:01:01", "Dst": "239.1.1.1", "Payload": "MPEG-TS video"}}]
     - t: Query
       tag: query
       d: Every so often, the router sends a General Query to 224.0.0.1, all hosts. Members answer to say they still listen.
       p:
-        - [rtr, tv, "General Query", ctl]
-        - [tv, rtr, "Report 239.1.1.1", ctl]
+        - [rtr, tv, "General Query", ctl, {"fields": {"Type": "0x11 Membership Query", "Max resp time": "100", "Group address": "0.0.0.0", "Dst": "224.0.0.1"}}]
+        - [tv, rtr, "Report 239.1.1.1", ctl, {"fields": {"Type": "0x16 v2 Membership Report", "Max resp time": "0", "Checksum": "0x0e2c", "Group address": "239.1.1.1"}}]
     - t: Leave
       tag: leave
       d: You change channel. The box sends a Leave Group to 224.0.0.2. The router checks if anyone else still listens, then stops the stream.
       p:
-        - [tv, rtr, "IGMP leave 239.1.1.1", ctl]
+        - [tv, rtr, "IGMP leave 239.1.1.1", ctl, {"fields": {"Type": "0x17 Leave Group", "Max resp time": "0", "Checksum": "0x0e2c", "Group address": "239.1.1.1", "Dst": "224.0.0.2"}}]
   quiz:
     - q: What does IGMP snooping on a switch do?
       opts: ["Encrypts video", "Sends multicast only to ports whose devices joined the group", "Blocks all multicast"]
@@ -618,13 +618,13 @@
       d: The client notes its own send time, T1, and sends a request.
       f: {T1: "10:00:00.000 client clock"}
       p:
-        - [pc, ntp, "NTP request (T1)", req]
+        - [pc, ntp, "NTP request (T1)", req, {"fields": {"LI VN Mode": "0x23 version 4, mode 3 client", "Transmit timestamp T1": "0xece3a1e000000000 in NTP seconds since 1900"}, "hex": "23 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ec e3 a1 e0 00 00 00 00"}]
     - t: Server timestamps, T2 and T3
       tag: measure
       d: The server notes when the request arrived, T2, and when it sends the reply, T3. Both are in the server clock.
       f: {T2: "09:59:59.920 server clock", T3: "09:59:59.921 server clock"}
       p:
-        - [ntp, pc, "NTP reply (T2, T3)", res]
+        - [ntp, pc, "NTP reply (T2, T3)", res, {"fields": {"LI VN Mode": "0x24 version 4, mode 4 server", "Stratum": "2", "Origin T1": "copied from the request", "Receive T2": "09:59:59.920 server clock", "Transmit T3": "09:59:59.921 server clock"}}]
     - t: Arrival, T4, and the math
       tag: compute
       d: The client notes arrival, T4 = 10:00:00.041. Delay is 41 minus 1 = 40 ms. Offset is ((-80) + (-120)) divided by 2 = -100 ms. The client clock is 100 ms fast.
@@ -671,27 +671,27 @@
       d: A sends a frame to C. The switch learns that A is on port 1. It does not know C yet.
       f: {Dst MAC: "cc:cc:cc:00:00:03", Src MAC: "aa:aa:aa:00:00:01", EtherType: "0x0800 IPv4"}
       p:
-        - [a, sw, "frame to cc:..:03", data]
+        - [a, sw, "frame to cc:..:03", data, {"fields": {"Dst MAC": "cc:cc:cc:00:00:03", "Src MAC": "aa:aa:aa:00:00:01", "EtherType": "0x0800 IPv4", "Then": "the IP packet and a 4 byte FCS"}, "hex": "cc cc cc 00 00 03 aa aa aa 00 00 01 08 00"}]
     - t: Flood
       tag: flood
       d: Unknown destination, so the switch floods the frame to every other port. B and D ignore it, because the MAC is not theirs.
       p:
-        - [sw, b, "frame (flooded)", data]
-        - [sw, c, "frame (flooded)", data]
-        - [sw, d, "frame (flooded)", data]
+        - [sw, b, "frame (flooded)", data, {"fields": {"Dst MAC": "cc:cc:cc:00:00:03", "Src MAC": "aa:aa:aa:00:00:01", "EtherType": "0x0800 IPv4", "Note": "unknown destination, so the switch floods it"}}]
+        - [sw, c, "frame (flooded)", data, {"fields": {"Dst MAC": "cc:cc:cc:00:00:03", "Src MAC": "aa:aa:aa:00:00:01", "EtherType": "0x0800 IPv4", "Note": "unknown destination, so the switch floods it"}}]
+        - [sw, d, "frame (flooded)", data, {"fields": {"Dst MAC": "cc:cc:cc:00:00:03", "Src MAC": "aa:aa:aa:00:00:01", "EtherType": "0x0800 IPv4", "Note": "unknown destination, so the switch floods it"}}]
     - t: C replies
       tag: learn
       d: C answers A. The switch learns that C is on port 3. It already knows A, so it sends the reply only to port 1.
       p:
-        - [c, sw, "frame to aa:..:01", data]
-        - [sw, a, "frame to A only", data]
+        - [c, sw, "frame to aa:..:01", data, {"fields": {"Dst MAC": "aa:aa:aa:00:00:01", "Src MAC": "cc:cc:cc:00:00:03", "EtherType": "0x0800 IPv4"}}]
+        - [sw, a, "frame to A only", data, {"fields": {"Dst MAC": "aa:aa:aa:00:00:01", "Src MAC": "cc:cc:cc:00:00:03", "EtherType": "0x0800 IPv4", "Note": "switch learned A is on port 1"}}]
     - t: From now on, direct
       tag: forward
       d: Every frame between A and C now goes only to the right port. Entries age out after a few minutes if unused.
       f: {MAC table: "A port 1, C port 3"}
       p:
-        - [a, sw, "frame to C", data]
-        - [sw, c, "frame to C only", data]
+        - [a, sw, "frame to C", data, {"fields": {"Dst MAC": "cc:cc:cc:00:00:03", "Src MAC": "aa:aa:aa:00:00:01", "EtherType": "0x0800 IPv4"}}]
+        - [sw, c, "frame to C only", data, {"fields": {"Dst MAC": "cc:cc:cc:00:00:03", "Src MAC": "aa:aa:aa:00:00:01", "EtherType": "0x0800 IPv4", "Note": "sent only out of port 3"}}]
   quiz:
     - q: What does a switch do with a frame for an unknown MAC address?
       opts: ["Drops it", "Floods it to all other ports", "Sends it to the router"]
@@ -729,25 +729,25 @@
       d: The laptop wants to send to the internet, through the gateway. It broadcasts an ARP request to ff:ff:ff:ff:ff:ff.
       f: {Dst MAC: "ff:ff:ff:ff:ff:ff", Question: "who has 192.168.1.1"}
       p:
-        - [pc, sw, "ARP who has 192.168.1.1?", req]
-        - [sw, gw, "ARP request (broadcast)", req]
-        - [sw, x, "ARP request (broadcast)", req]
+        - [pc, sw, "ARP who has 192.168.1.1?", req, {"fields": {"Dst MAC": "ff:ff:ff:ff:ff:ff", "Src MAC": "a4:5e:60:12:34:56", "EtherType": "0x0806 ARP", "Opcode": "1 request", "Sender IP": "192.168.1.10", "Target IP": "192.168.1.1"}, "hex": "ff ff ff ff ff ff a4 5e 60 12 34 56 08 06 00 01 08 00 06 04 00 01 a4 5e 60 12 34 56 c0 a8 01 0a 00 00 00 00 00 00 c0 a8 01 01"}]
+        - [sw, gw, "ARP request (broadcast)", req, {"fields": {"Dst MAC": "ff:ff:ff:ff:ff:ff", "Src MAC": "a4:5e:60:12:34:56", "EtherType": "0x0806 ARP", "Opcode": "1 request", "Sender IP": "192.168.1.10", "Target IP": "192.168.1.1"}, "hex": "ff ff ff ff ff ff a4 5e 60 12 34 56 08 06 00 01 08 00 06 04 00 01 a4 5e 60 12 34 56 c0 a8 01 0a 00 00 00 00 00 00 c0 a8 01 01"}]
+        - [sw, x, "ARP request (broadcast)", req, {"fields": {"Dst MAC": "ff:ff:ff:ff:ff:ff", "Src MAC": "a4:5e:60:12:34:56", "EtherType": "0x0806 ARP", "Opcode": "1 request", "Sender IP": "192.168.1.10", "Target IP": "192.168.1.1"}, "hex": "ff ff ff ff ff ff a4 5e 60 12 34 56 08 06 00 01 08 00 06 04 00 01 a4 5e 60 12 34 56 c0 a8 01 0a 00 00 00 00 00 00 c0 a8 01 01"}]
     - t: The owner replies
       tag: reply
       d: Only the gateway owns that IP. It replies straight to the laptop with its MAC address.
       p:
-        - [gw, pc, "ARP 192.168.1.1 is at 3c:22:fb:00:00:01", res]
+        - [gw, pc, "ARP 192.168.1.1 is at 3c:22:fb:00:00:01", res, {"fields": {"Hardware type": "1 Ethernet", "Protocol type": "0x0800 IPv4", "Opcode": "2 reply", "Sender MAC": "3c:22:fb:00:00:01", "Sender IP": "192.168.1.1", "Target MAC": "a4:5e:60:12:34:56", "Target IP": "192.168.1.10"}, "hex": "00 01 08 00 06 04 00 02 3c 22 fb 00 00 01 c0 a8 01 01 a4 5e 60 12 34 56 c0 a8 01 0a"}]
     - t: Cache and send
       tag: cache
       d: The laptop saves the answer in its ARP cache and sends the IP packet in a frame to that MAC.
       f: {ARP cache: "192.168.1.1 at 3c:22:fb:00:00:01"}
       p:
-        - [pc, gw, "IP packet in frame to 3c:22:fb:..", data]
+        - [pc, gw, "IP packet in frame to 3c:22:fb:..", data, {"fields": {"Dst MAC": "3c:22:fb:00:00:01", "Src MAC": "a4:5e:60:12:34:56", "EtherType": "0x0800 IPv4", "Inside": "IP packet for 203.0.113.10"}}]
     - t: A spoofing attempt
       tag: attack
       d: Another device sends unasked ARP replies that say "192.168.1.1 is at my MAC". If the laptop accepts them, its traffic goes through the attacker. Dynamic ARP Inspection on the switch blocks these replies.
       p:
-        - [x, pc, "fake ARP 192.168.1.1 is at 66:66:..", bad]
+        - [x, pc, "fake ARP 192.168.1.1 is at 66:66:..", bad, {"fields": {"Hardware type": "1 Ethernet", "Protocol type": "0x0800 IPv4", "Opcode": "2 reply, not asked for", "Sender MAC": "66:66:66:00:00:66", "Sender IP": "192.168.1.1 a lie", "Target MAC": "a4:5e:60:12:34:56", "Target IP": "192.168.1.10"}, "hex": "00 01 08 00 06 04 00 02 66 66 66 00 00 66 c0 a8 01 01 a4 5e 60 12 34 56 c0 a8 01 0a"}]
       bad: [x]
   quiz:
     - q: Where does an ARP request go?
@@ -783,33 +783,33 @@
       tag: discovery
       d: The router broadcasts a PPPoE Active Discovery Initiation.
       p:
-        - [rtr, bras, "PADI (broadcast)", req]
+        - [rtr, bras, "PADI (broadcast)", req, {"fields": {"Ver type": "0x11", "Code": "0x09 PADI", "Session ID": "0x0000", "Dst MAC": "ff:ff:ff:ff:ff:ff", "Tag": "Service-Name any"}}]
     - t: PADO, an offer
       tag: discovery
       d: The access concentrator answers with an Offer and its name.
       p:
-        - [bras, rtr, "PADO", res]
+        - [bras, rtr, "PADO", res, {"fields": {"Ver type": "0x11", "Code": "0x07 PADO", "Session ID": "0x0000", "Tag": "AC-Name bras-7"}}]
     - t: PADR and PADS, a session
       tag: discovery
       d: The router requests a session. The concentrator confirms it with a session id.
       f: {Session ID: "0x2a1f"}
       p:
-        - [rtr, bras, "PADR", req]
-        - [bras, rtr, "PADS session 0x2a1f", res]
+        - [rtr, bras, "PADR", req, {"fields": {"Ver type": "0x11", "Code": "0x19 PADR", "Session ID": "0x0000", "Tag": "Service-Name internet"}}]
+        - [bras, rtr, "PADS session 0x2a1f", res, {"fields": {"Ver type": "0x11", "Code": "0x65 PADS", "Session ID": "0x2a1f"}}]
     - t: Log in with CHAP
       tag: auth
       d: LCP sets link options. Then CHAP authentication. The concentrator sends a challenge, the router answers with a hash of the challenge and password. The concentrator checks it with RADIUS.
       p:
-        - [bras, rtr, "CHAP challenge", sec]
-        - [rtr, bras, "CHAP response (hash)", sec]
-        - [bras, radius, "Access-Request", sec]
-        - [radius, bras, "Access-Accept", sec]
+        - [bras, rtr, "CHAP challenge", sec, {"fields": {"PPP protocol": "0xc223 CHAP", "Code": "1 Challenge", "Identifier": "1", "Value": "16 random bytes"}}]
+        - [rtr, bras, "CHAP response (hash)", sec, {"fields": {"PPP protocol": "0xc223 CHAP", "Code": "2 Response", "Identifier": "1", "Value": "MD5 hash of id, password and challenge", "Name": "user@isp"}}]
+        - [bras, radius, "Access-Request", sec, {"fields": {"Code": "1 Access-Request", "Identifier": "44", "User Name": "user@isp", "CHAP Password": "the hash from the router"}}]
+        - [radius, bras, "Access-Accept", sec, {"fields": {"Code": "2 Access-Accept", "Identifier": "44", "Framed IP Address": "198.51.100.7"}}]
     - t: Get an IP with IPCP
       tag: ipcp
       d: IPCP gives the router its public IP and DNS servers. The router is online.
       f: {Public IP: 198.51.100.7, MTU: "1492"}
       p:
-        - [bras, rtr, "IPCP 198.51.100.7", res]
+        - [bras, rtr, "IPCP 198.51.100.7", res, {"fields": {"PPP protocol": "0x8021 IPCP", "Code": "3 Configure-Nak", "IP Address": "198.51.100.7"}}]
   quiz:
     - type: num
       q: What is the usual MTU on a PPPoE link, in bytes?

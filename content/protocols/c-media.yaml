@@ -22,35 +22,35 @@
       tag: signaling
       d: Asha starts a call. Her browser makes an SDP offer that lists codecs and a DTLS fingerprint, and sends it to Ben through the app signaling server.
       p:
-        - [a, sig, "SDP offer", req]
-        - [sig, b, "SDP offer", req]
+        - [a, sig, "SDP offer", req, {"fields": {"type": "offer", "sdp": "v=0, m=video 9 UDP/TLS/RTP/SAVPF 96, a=fingerprint sha-256 ...", "ice ufrag": "F7gI"}}]
+        - [sig, b, "SDP offer", req, {"fields": {"type": "offer", "note": "the signaling server forwards it unchanged"}}]
     - t: Answer
       tag: signaling
       d: Ben accepts. His browser sends an SDP answer back the same way.
       p:
-        - [b, sig, "SDP answer", res]
-        - [sig, a, "SDP answer", res]
+        - [b, sig, "SDP answer", res, {"fields": {"type": "answer", "sdp": "v=0, m=video 9 UDP/TLS/RTP/SAVPF 96, a=setup active", "ice ufrag": "Kq2b"}}]
+        - [sig, a, "SDP answer", res, {"fields": {"type": "answer", "note": "forwarded to A"}}]
     - t: Find public addresses with STUN
       tag: ice
       d: Each browser asks the STUN server "what address do you see me from?". The answer is its public IP and port after NAT. These become candidates, sent to the other side through signaling.
       p:
-        - [a, stun, "STUN Binding request", ctl]
-        - [stun, a, "you are 198.51.100.7:54321", ctl]
-        - [b, stun, "STUN Binding request", ctl]
-        - [stun, b, "you are 203.0.113.99:40112", ctl]
+        - [a, stun, "STUN Binding request", ctl, {"fields": {"Message type": "0x0001 Binding Request", "Message length": "0", "Magic cookie": "0x2112A442", "Transaction ID": "0xa1b2c3d4e5f60718293a4b5c", "Attribute": "none"}}]
+        - [stun, a, "you are 198.51.100.7:54321", ctl, {"fields": {"Message type": "0x0101 Binding Success", "Message length": "12", "Magic cookie": "0x2112A442", "Transaction ID": "0xa1b2c3d4e5f60718293a4b5c", "Attribute": "XOR-MAPPED-ADDRESS 198.51.100.7:54321"}}]
+        - [b, stun, "STUN Binding request", ctl, {"fields": {"Message type": "0x0001 Binding Request", "Message length": "0", "Magic cookie": "0x2112A442", "Transaction ID": "0xa1b2c3d4e5f60718293a4b5c", "Attribute": "none"}}]
+        - [stun, b, "you are 203.0.113.99:40112", ctl, {"fields": {"Message type": "0x0101 Binding Success", "Message length": "12", "Magic cookie": "0x2112A442", "Transaction ID": "0xa1b2c3d4e5f60718293a4b5c", "Attribute": "XOR-MAPPED-ADDRESS 203.0.113.99:40112"}}]
     - t: Connectivity checks
       tag: ice
       d: ICE tries candidate pairs with STUN checks directly between the browsers. A direct pair works, so the call goes peer to peer. If none worked, both would use the TURN relay.
       p:
-        - [a, b, "STUN check", ctl]
-        - [b, a, "STUN check response", ctl]
+        - [a, b, "STUN check", ctl, {"fields": {"Message type": "0x0001 Binding Request", "Message length": "64", "Magic cookie": "0x2112A442", "Transaction ID": "0xa1b2c3d4e5f60718293a4b5c", "Attribute": "USERNAME Kq2b:F7gI, PRIORITY, MESSAGE-INTEGRITY"}}]
+        - [b, a, "STUN check response", ctl, {"fields": {"Message type": "0x0101 Binding Success", "Message length": "44", "Magic cookie": "0x2112A442", "Transaction ID": "0xa1b2c3d4e5f60718293a4b5c", "Attribute": "XOR-MAPPED-ADDRESS, MESSAGE-INTEGRITY"}}]
     - t: Encrypted media
       tag: media
       d: A DTLS handshake checks the fingerprints from the SDP and makes keys. Then audio and video flow as SRTP packets over UDP, directly between the two browsers.
       p:
-        - [a, b, "DTLS handshake", sec]
-        - [a, b, "SRTP video", data]
-        - [b, a, "SRTP video", data]
+        - [a, b, "DTLS handshake", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0xfefd DTLS 1.2", "Epoch": "0", "Length": "190", "Note": "fingerprint must match the SDP"}}]
+        - [a, b, "SRTP video", data, {"fields": {"Version": "2", "Payload type": "96 VP8", "Sequence number": "4012", "Timestamp": "1795200", "SSRC": "0x5a3c11e2", "Payload": "encrypted with SRTP"}}]
+        - [b, a, "SRTP video", data, {"fields": {"Version": "2", "Payload type": "96 VP8", "Sequence number": "877", "Timestamp": "902400", "SSRC": "0x77a10b3f", "Payload": "encrypted with SRTP"}}]
   quiz:
     - q: What does a TURN server do?
       opts: ["Encrypts the call", "Relays media when a direct path between peers is not possible", "Stores contacts"]
@@ -85,38 +85,38 @@
       tag: register
       d: Bob phone registers its current address with the proxy. The proxy asks for a digest login first.
       p:
-        - [bob, proxy, "REGISTER sip:305@pbx.example", req]
-        - [proxy, bob, "401 Unauthorized (challenge)", ctl]
-        - [bob, proxy, "REGISTER with digest", req]
-        - [proxy, bob, "200 OK", res]
+        - [bob, proxy, "REGISTER sip:305@pbx.example", req, {"raw": "REGISTER sip:pbx.example SIP/2.0\r\nVia: SIP/2.0/UDP 192.168.1.50:5060\r\nFrom: <sip:305@pbx.example>\r\nTo: <sip:305@pbx.example>\r\nCSeq: 1 REGISTER\r\nContact: <sip:305@192.168.1.50>\r\nExpires: 3600\r\n\r\n"}]
+        - [proxy, bob, "401 Unauthorized (challenge)", ctl, {"raw": "SIP/2.0 401 Unauthorized\r\nWWW-Authenticate: Digest realm=\"pbx.example\", nonce=\"7c1f2a\"\r\nCSeq: 1 REGISTER\r\n\r\n"}]
+        - [bob, proxy, "REGISTER with digest", req, {"raw": "REGISTER sip:pbx.example SIP/2.0\r\nCSeq: 2 REGISTER\r\nAuthorization: Digest username=\"305\", nonce=\"7c1f2a\", response=\"9b2e...\"\r\n\r\n"}]
+        - [proxy, bob, "200 OK", res, {"raw": "SIP/2.0 200 OK\r\nCSeq: 2 REGISTER\r\nExpires: 3600\r\n\r\n"}]
     - t: INVITE
       tag: call
       d: Alice dials 305. Her phone sends INVITE with an SDP offer to the proxy, which forwards it to Bob.
       p:
         - [alice, proxy, "INVITE sip:305 + SDP", req, {raw: "INVITE sip:305@pbx.example SIP/2.0\r\nVia: SIP/2.0/UDP 192.168.1.40:5060\r\nFrom: <sip:201@pbx.example>\r\nTo: <sip:305@pbx.example>\r\nCall-ID: a84b4c76e66710\r\nCSeq: 1 INVITE\r\nContent-Type: application/sdp\r\n\r\n"}]
-        - [proxy, alice, "100 Trying", ctl]
-        - [proxy, bob, "INVITE + SDP", req]
+        - [proxy, alice, "100 Trying", ctl, {"raw": "SIP/2.0 100 Trying\r\nCSeq: 1 INVITE\r\n\r\n"}]
+        - [proxy, bob, "INVITE + SDP", req, {"raw": "INVITE sip:305@192.168.1.50 SIP/2.0\r\nVia: SIP/2.0/UDP pbx.example:5060\r\nContent-Type: application/sdp\r\n\r\nm=audio 49170 RTP/AVP 0\r\n"}]
     - t: Ringing and answer
       tag: call
       d: Bob phone rings and sends 180 Ringing. Bob picks up. His phone sends 200 OK with its SDP answer.
       p:
-        - [bob, proxy, "180 Ringing", res]
-        - [proxy, alice, "180 Ringing", res]
-        - [bob, proxy, "200 OK + SDP", res]
-        - [proxy, alice, "200 OK + SDP", res]
+        - [bob, proxy, "180 Ringing", res, {"raw": "SIP/2.0 180 Ringing\r\nCSeq: 1 INVITE\r\n\r\n"}]
+        - [proxy, alice, "180 Ringing", res, {"raw": "SIP/2.0 180 Ringing\r\nCSeq: 1 INVITE\r\n\r\n"}]
+        - [bob, proxy, "200 OK + SDP", res, {"raw": "SIP/2.0 200 OK\r\nCSeq: 1 INVITE\r\nContent-Type: application/sdp\r\n\r\nm=audio 3456 RTP/AVP 0\r\n"}]
+        - [proxy, alice, "200 OK + SDP", res, {"raw": "SIP/2.0 200 OK\r\nCSeq: 1 INVITE\r\nContent-Type: application/sdp\r\n\r\nm=audio 3456 RTP/AVP 0\r\n"}]
     - t: ACK and voice
       tag: media
       d: Alice sends ACK. Voice now flows as RTP packets directly between the two phones, using the addresses from the SDP.
       p:
-        - [alice, bob, "ACK", ctl]
-        - [alice, bob, "RTP voice", data]
-        - [bob, alice, "RTP voice", data]
+        - [alice, bob, "ACK", ctl, {"raw": "ACK sip:305@192.168.1.50 SIP/2.0\r\nCSeq: 1 ACK\r\n\r\n"}]
+        - [alice, bob, "RTP voice", data, {"fields": {"Version": "2", "Payload type": "0 PCMU", "Sequence number": "1", "Timestamp": "160", "SSRC": "0x1a2b3c4d", "Payload": "20 ms of voice, 160 bytes"}}]
+        - [bob, alice, "RTP voice", data, {"fields": {"Version": "2", "Payload type": "0 PCMU", "Sequence number": "1", "Timestamp": "160", "SSRC": "0x9e8d7c6b", "Payload": "20 ms of voice, 160 bytes"}}]
     - t: Hang up
       tag: end
       d: Bob hangs up and sends BYE. Alice answers 200 OK.
       p:
-        - [bob, alice, "BYE", ctl]
-        - [alice, bob, "200 OK", res]
+        - [bob, alice, "BYE", ctl, {"raw": "BYE sip:201@192.168.1.40 SIP/2.0\r\nCSeq: 2 BYE\r\n\r\n"}]
+        - [alice, bob, "200 OK", res, {"raw": "SIP/2.0 200 OK\r\nCSeq: 2 BYE\r\n\r\n"}]
   quiz:
     - type: fill
       q: "The SIP request that starts a call is ____."
@@ -151,33 +151,33 @@
       tag: control
       d: The recorder asks what the stream contains. The camera answers with SDP, one H.264 video track and one audio track. It may first ask for a login with 401.
       p:
-        - [nvr, cam, "DESCRIBE rtsp://192.168.10.80/stream1", req]
-        - [cam, nvr, "200 OK + SDP", res]
+        - [nvr, cam, "DESCRIBE rtsp://192.168.10.80/stream1", req, {"raw": "DESCRIBE rtsp://192.168.10.80/stream1 RTSP/1.0\r\nCSeq: 2\r\nAccept: application/sdp\r\n\r\n"}]
+        - [cam, nvr, "200 OK + SDP", res, {"raw": "RTSP/1.0 200 OK\r\nCSeq: 2\r\nContent-Type: application/sdp\r\n\r\nm=video 0 RTP/AVP 96\r\na=rtpmap:96 H264/90000\r\n"}]
     - t: SETUP
       tag: control
       d: The recorder asks for RTP over UDP on client ports 5000 and 5001. The camera answers with a Session id.
       f: {Transport: "RTP/AVP;unicast;client_port=5000-5001", Session: "12345678"}
       p:
-        - [nvr, cam, "SETUP track1 client_port=5000-5001", req]
-        - [cam, nvr, "200 OK Session 12345678", res]
+        - [nvr, cam, "SETUP track1 client_port=5000-5001", req, {"raw": "SETUP rtsp://192.168.10.80/stream1/track1 RTSP/1.0\r\nCSeq: 3\r\nTransport: RTP/AVP;unicast;client_port=5000-5001\r\n\r\n"}]
+        - [cam, nvr, "200 OK Session 12345678", res, {"raw": "RTSP/1.0 200 OK\r\nCSeq: 3\r\nSession: 12345678\r\nTransport: RTP/AVP;unicast;client_port=5000-5001;server_port=6970-6971\r\n\r\n"}]
     - t: PLAY
       tag: control
       d: The recorder sends PLAY. The camera starts sending video.
       p:
-        - [nvr, cam, "PLAY Session 12345678", req]
-        - [cam, nvr, "200 OK", res]
+        - [nvr, cam, "PLAY Session 12345678", req, {"raw": "PLAY rtsp://192.168.10.80/stream1 RTSP/1.0\r\nCSeq: 4\r\nSession: 12345678\r\n\r\n"}]
+        - [cam, nvr, "200 OK", res, {"raw": "RTSP/1.0 200 OK\r\nCSeq: 4\r\nSession: 12345678\r\n\r\n"}]
     - t: RTP media and RTCP reports
       tag: media
       d: Video arrives in RTP packets with sequence numbers and timestamps. RTCP reports give quality feedback, such as lost packets.
       p:
-        - [cam, nvr, "RTP H.264 video", data]
-        - [nvr, cam, "RTCP receiver report", ctl]
+        - [cam, nvr, "RTP H.264 video", data, {"fields": {"Version": "2", "Payload type": "96 H264", "Sequence number": "301", "Timestamp": "3003000", "SSRC": "0x2f1e0d0c", "Payload": "part of one video frame"}}]
+        - [nvr, cam, "RTCP receiver report", ctl, {"fields": {"Version": "2", "Packet type": "201 receiver report", "SSRC": "0x00c0ffee", "Fraction lost": "0", "Jitter": "12"}}]
     - t: TEARDOWN
       tag: control
       d: The recorder stops the session.
       p:
-        - [nvr, cam, "TEARDOWN", req]
-        - [cam, nvr, "200 OK", res]
+        - [nvr, cam, "TEARDOWN", req, {"raw": "TEARDOWN rtsp://192.168.10.80/stream1 RTSP/1.0\r\nCSeq: 5\r\nSession: 12345678\r\n\r\n"}]
+        - [cam, nvr, "200 OK", res, {"raw": "RTSP/1.0 200 OK\r\nCSeq: 5\r\n\r\n"}]
   quiz:
     - type: fill
       q: "RTSP uses TCP port ____ by default."
@@ -212,30 +212,30 @@
       tag: handshake
       d: The encoder and the server exchange C0 and C1, S0, S1 and S2, then C2. These check the version and swap random data.
       p:
-        - [obs, ingest, "C0 + C1", ctl]
-        - [ingest, obs, "S0 + S1 + S2", ctl]
-        - [obs, ingest, "C2", ctl]
+        - [obs, ingest, "C0 + C1", ctl, {"fields": {"C0 version": "3", "C1 time": "0", "C1 zero": "0", "C1 random": "1528 random bytes"}}]
+        - [ingest, obs, "S0 + S1 + S2", ctl, {"fields": {"S0 version": "3", "S1": "1536 bytes with server time and random data", "S2": "echo of C1"}}]
+        - [obs, ingest, "C2", ctl, {"fields": {"C2": "echo of S1, 1536 bytes"}}]
     - t: Connect
       tag: command
       d: The encoder sends a connect command, encoded in AMF, for the application `live`.
       p:
-        - [obs, ingest, "connect app=live", req]
-        - [ingest, obs, "_result NetConnection.Connect.Success", res]
+        - [obs, ingest, "connect app=live", req, {"fields": {"Message type": "20 AMF0 command", "Command": "connect", "Transaction ID": "1", "app": "live", "tcUrl": "rtmp://live.example/live"}}]
+        - [ingest, obs, "_result NetConnection.Connect.Success", res, {"fields": {"Message type": "20 AMF0 command", "Command": "_result", "Transaction ID": "1", "code": "NetConnection.Connect.Success"}}]
     - t: Publish with the stream key
       tag: command
       d: The encoder creates a stream and publishes it with the secret stream key. The server checks the key.
       f: {Command: publish, Stream key: "live_8f2...secret", Type: live}
       p:
-        - [obs, ingest, "createStream", req]
-        - [obs, ingest, "publish live_8f2...", sec]
-        - [ingest, obs, "onStatus NetStream.Publish.Start", res]
+        - [obs, ingest, "createStream", req, {"fields": {"Message type": "20 AMF0 command", "Command": "createStream", "Transaction ID": "2"}}]
+        - [obs, ingest, "publish live_8f2...", sec, {"fields": {"Message type": "20 AMF0 command", "Command": "publish", "Stream key": "live_8f2...secret", "Type": "live"}}]
+        - [ingest, obs, "onStatus NetStream.Publish.Start", res, {"fields": {"Message type": "20 AMF0 command", "Command": "onStatus", "code": "NetStream.Publish.Start"}}]
     - t: Audio and video
       tag: media
       d: Audio and video messages flow, split into chunks. The server sends the stream to transcoders, which make several qualities, then to the CDN as HLS segments.
       p:
-        - [obs, ingest, "video and audio chunks", data]
-        - [ingest, tc, "stream", data]
-        - [tc, cdn, "HLS segments", data]
+        - [obs, ingest, "video and audio chunks", data, {"fields": {"Message type": "9 video", "Chunk stream ID": "6", "Timestamp": "40", "Payload": "H.264 frame data"}}]
+        - [ingest, tc, "stream", data, {"fields": {"Renditions": "1080p, 720p, 480p", "Codec": "H.264 and AAC"}}]
+        - [tc, cdn, "HLS segments", data, {"fields": {"Format": "HLS", "Segment": "seg_00042.ts", "Duration": "4 seconds"}}]
   quiz:
     - type: fill
       q: "RTMP uses TCP port ____ by default."
@@ -270,36 +270,36 @@
       tag: connect
       d: Each client connects with a client id, a keep alive time and a login. The sensor also sets a last will, "offline", on its status topic.
       p:
-        - [sensor, broker, "CONNECT id=sensor-7, will", req]
-        - [broker, sensor, "CONNACK", res]
-        - [app, broker, "CONNECT id=phone", req]
-        - [broker, app, "CONNACK", res]
+        - [sensor, broker, "CONNECT id=sensor-7, will", req, {"fields": {"Packet type": "0x10 CONNECT", "Remaining length": "58", "Protocol name": "MQTT", "Protocol level": "4", "Connect flags": "0x2e clean, will, will QoS 1", "Keep alive": "60", "Client ID": "sensor-7", "Will topic": "home/kitchen/status"}}]
+        - [broker, sensor, "CONNACK", res, {"fields": {"Packet type": "0x20 CONNACK", "Remaining length": "2", "Session present": "0", "Return code": "0 accepted"}}]
+        - [app, broker, "CONNECT id=phone", req, {"fields": {"Packet type": "0x10 CONNECT", "Remaining length": "17", "Protocol name": "MQTT", "Protocol level": "4", "Keep alive": "60", "Client ID": "phone"}}]
+        - [broker, app, "CONNACK", res, {"fields": {"Packet type": "0x20 CONNACK", "Remaining length": "2", "Session present": "0", "Return code": "0 accepted"}}]
     - t: Subscribe with a wildcard
       tag: subscribe
       d: The app subscribes to `home/+/temperature` with QoS 1. It will get temperatures from every room.
       p:
-        - [app, broker, "SUBSCRIBE home/+/temperature QoS 1", req]
-        - [broker, app, "SUBACK", res]
-        - [dash, broker, "SUBSCRIBE home/#", req]
+        - [app, broker, "SUBSCRIBE home/+/temperature QoS 1", req, {"fields": {"Packet type": "0x82 SUBSCRIBE", "Remaining length": "29", "Packet ID": "1", "Topic filter": "home/+/temperature", "QoS": "1"}}]
+        - [broker, app, "SUBACK", res, {"fields": {"Packet type": "0x90 SUBACK", "Remaining length": "3", "Packet ID": "1", "Granted QoS": "1"}}]
+        - [dash, broker, "SUBSCRIBE home/#", req, {"fields": {"Packet type": "0x82 SUBSCRIBE", "Remaining length": "12", "Packet ID": "1", "Topic filter": "home/#", "QoS": "0"}}]
     - t: Publish
       tag: publish
       d: The sensor publishes 22.5 to `home/kitchen/temperature` with QoS 1 and the retain flag. The broker acknowledges with PUBACK.
       p:
-        - [sensor, broker, "PUBLISH home/kitchen/temperature 22.5", data]
-        - [broker, sensor, "PUBACK", ctl]
+        - [sensor, broker, "PUBLISH home/kitchen/temperature 22.5", data, {"fields": {"Packet type": "0x32 PUBLISH QoS 1", "Remaining length": "33", "Topic": "home/kitchen/temperature", "Packet ID": "7", "Payload": "22.5"}}]
+        - [broker, sensor, "PUBACK", ctl, {"fields": {"Packet type": "0x40 PUBACK", "Remaining length": "2", "Packet ID": "7"}}]
     - t: Fan out
       tag: deliver
       d: The broker sends the message to every subscriber whose filter matches.
       p:
-        - [broker, app, "PUBLISH 22.5", data]
-        - [broker, dash, "PUBLISH 22.5", data]
+        - [broker, app, "PUBLISH 22.5", data, {"fields": {"Packet type": "0x32 PUBLISH QoS 1", "Remaining length": "33", "Topic": "home/kitchen/temperature", "Packet ID": "3", "Payload": "22.5"}}]
+        - [broker, dash, "PUBLISH 22.5", data, {"fields": {"Packet type": "0x30 PUBLISH QoS 0", "Remaining length": "30", "Topic": "home/kitchen/temperature", "Payload": "22.5"}}]
     - t: Keep alive and last will
       tag: health
       d: The sensor sends PINGREQ when it is idle. If it loses power and misses its keep alive, the broker publishes its last will, "offline".
       p:
-        - [sensor, broker, "PINGREQ", ctl]
-        - [broker, sensor, "PINGRESP", ctl]
-        - [broker, dash, "PUBLISH status offline (last will)", bad]
+        - [sensor, broker, "PINGREQ", ctl, {"fields": {"Packet type": "0xc0 PINGREQ", "Remaining length": "0"}}]
+        - [broker, sensor, "PINGRESP", ctl, {"fields": {"Packet type": "0xd0 PINGRESP", "Remaining length": "0"}}]
+        - [broker, dash, "PUBLISH status offline (last will)", bad, {"fields": {"Packet type": "0x30 PUBLISH QoS 0", "Remaining length": "26", "Topic": "home/kitchen/status", "Payload": "offline"}}]
   quiz:
     - q: "Which topic filter matches home/kitchen/temperature and home/hall/temperature?"
       opts: ["home/#/temperature", "home/+/temperature", "home/kitchen"]
@@ -337,25 +337,25 @@
       d: The client sends the protocol header, then Connection.Start, Start-Ok with credentials, Tune and Open. Then it opens a channel. Many channels share one TCP connection.
       p:
         - [prod, ex, "AMQP 0-9-1 header", ctl, {raw: "AMQP\u0000\u0000\u0009\u0001"}]
-        - [ex, prod, "Connection.Start", ctl]
-        - [prod, ex, "Start-Ok, Tune-Ok, Open, Channel.Open", ctl]
+        - [ex, prod, "Connection.Start", ctl, {"fields": {"Frame type": "1 method", "Channel": "0", "Class ID": "10 connection", "Method ID": "10 start", "Mechanisms": "PLAIN AMQPLAIN", "Frame end": "0xce"}}]
+        - [prod, ex, "Start-Ok, Tune-Ok, Open, Channel.Open", ctl, {"fields": {"Frame type": "1 method", "Channel": "0", "Class ID": "10 connection", "Method ID": "11 start-ok", "Then": "tune-ok, open, channel open", "Frame end": "0xce"}}]
     - t: Publish
       tag: publish
       d: The order service publishes a message to exchange `orders` with routing key `order.created`, marked persistent.
       f: {Exchange: orders, Routing key: order.created, Delivery mode: "2 persistent"}
       p:
-        - [prod, ex, "Basic.Publish order.created", data]
+        - [prod, ex, "Basic.Publish order.created", data, {"fields": {"Frame type": "1 method", "Channel": "1", "Class ID": "60 basic", "Method ID": "40 publish", "Exchange": "orders", "Routing key": "order.created", "Delivery mode": "2 persistent"}}]
     - t: Route by binding
       tag: route
       d: The emails queue is bound with `order.*`, so it matches. The billing queue is bound with `order.paid`, so it does not.
       p:
-        - [ex, q1, "route order.created", data]
+        - [ex, q1, "route order.created", data, {"fields": {"Binding": "order.* matches order.created", "Queue": "q1"}}]
     - t: Deliver and acknowledge
       tag: consume
       d: The email worker consumes from the queue. It gets Basic.Deliver, sends the email, then Basic.Ack. Without the ack, RabbitMQ would redeliver the message.
       p:
-        - [q1, cons, "Basic.Deliver", data]
-        - [cons, q1, "Basic.Ack", ctl]
+        - [q1, cons, "Basic.Deliver", data, {"fields": {"Frame type": "1 method", "Channel": "1", "Class ID": "60 basic", "Method ID": "60 deliver", "Delivery tag": "1", "Routing key": "order.created"}}]
+        - [cons, q1, "Basic.Ack", ctl, {"fields": {"Frame type": "1 method", "Channel": "1", "Class ID": "60 basic", "Method ID": "80 ack", "Delivery tag": "1"}}]
   quiz:
     - q: Where does a producer publish in AMQP 0-9-1?
       opts: ["Directly to a queue", "To an exchange, which routes to queues by bindings", "To the consumer"]

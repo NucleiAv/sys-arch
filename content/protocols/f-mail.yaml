@@ -21,38 +21,38 @@
       tag: submit
       d: The app connects to its provider on 587, upgrades with STARTTLS and logs in with AUTH. Then it sends the message.
       p:
-        - [app, out, "EHLO, STARTTLS, AUTH", sec]
-        - [app, out, "MAIL FROM, RCPT TO, DATA", req]
-        - [out, app, "250 queued", res]
+        - [app, out, "EHLO, STARTTLS, AUTH", sec, {"raw": "EHLO laptop.corp.example\r\nSTARTTLS\r\nAUTH PLAIN AGFzaGEAKioqKg==\r\n"}]
+        - [app, out, "MAIL FROM, RCPT TO, DATA", req, {"raw": "MAIL FROM:<asha@corp.example>\r\nRCPT TO:<ben@shop.example>\r\nDATA\r\n"}]
+        - [out, app, "250 queued", res, {"raw": "250 2.0.0 Ok: queued as 4C1D2\r\n"}]
     - t: Find the mail server
       tag: dns
       d: The outgoing server looks up the MX record of shop.example to find where its mail goes.
       p:
-        - [out, dns, "MX shop.example?", req]
-        - [dns, out, "MX 10 mx.shop.example", res]
+        - [out, dns, "MX shop.example?", req, {"fields": {"Transaction ID": "0x61c2", "Flags": "0x0100 standard query", "Questions": "1", "Answer RRs": "0", "Authority RRs": "0", "Additional RRs": "0", "Contains": "shop.example MX"}}]
+        - [dns, out, "MX 10 mx.shop.example", res, {"fields": {"Transaction ID": "0x61c2", "Flags": "0x8180 response", "Questions": "1", "Answer RRs": "1", "Authority RRs": "0", "Additional RRs": "1", "Contains": "MX 10 mx.shop.example, plus its A record"}}]
     - t: Greeting and EHLO
       tag: relay
       d: The outgoing server connects to mx.shop.example on port 25. The receiver greets with 220. The sender says EHLO and learns the supported extensions, then upgrades with STARTTLS.
       p:
         - [inb, out, "220 mx.shop.example ESMTP", ctl, {raw: "220 mx.shop.example ESMTP ready\r\n"}]
-        - [out, inb, "EHLO smtp.corp.example", req]
-        - [inb, out, "250-STARTTLS ...", res]
+        - [out, inb, "EHLO smtp.corp.example", req, {"raw": "EHLO smtp.corp.example\r\n"}]
+        - [inb, out, "250-STARTTLS ...", res, {"raw": "250-mx.shop.example\r\n250-SIZE 52428800\r\n250-STARTTLS\r\n250 SMTPUTF8\r\n"}]
     - t: Envelope and data
       tag: relay
       d: The sender gives the envelope, then the message. A line with a single dot ends the data.
       p:
         - [out, inb, "MAIL FROM:<asha@corp.example>", req, {raw: "MAIL FROM:<asha@corp.example>\r\n"}]
-        - [inb, out, "250 OK", res]
-        - [out, inb, "RCPT TO:<ben@shop.example>", req]
-        - [inb, out, "250 OK", res]
+        - [inb, out, "250 OK", res, {"raw": "250 2.1.0 Ok\r\n"}]
+        - [out, inb, "RCPT TO:<ben@shop.example>", req, {"raw": "RCPT TO:<ben@shop.example>\r\n"}]
+        - [inb, out, "250 OK", res, {"raw": "250 2.1.5 Ok\r\n"}]
         - [out, inb, "DATA ... .", data, {raw: "DATA\r\nSubject: Invoice\r\nFrom: asha@corp.example\r\n\r\nHello Ben.\r\n.\r\n"}]
-        - [inb, out, "250 queued as 8F2A1", res]
+        - [inb, out, "250 queued as 8F2A1", res, {"raw": "250 2.0.0 Ok: queued as 8F2A1\r\n"}]
     - t: Checks and delivery
       tag: deliver
       d: The receiver checks SPF, DKIM and DMARC, scans for spam, and puts the message in the mailbox. The sender says QUIT.
       p:
-        - [inb, box, "deliver to ben", data]
-        - [out, inb, "QUIT", ctl]
+        - [inb, box, "deliver to ben", data, {"fields": {"Mailbox": "ben@shop.example", "Store": "Maildir or database", "Checks": "SPF, DKIM and DMARC results added as headers"}}]
+        - [out, inb, "QUIT", ctl, {"raw": "QUIT\r\n"}]
   quiz:
     - type: fill
       q: "Email clients submit mail on port ____ with STARTTLS and a login."
@@ -87,28 +87,28 @@
       d: After TLS on port 995, the server greets with +OK. The app sends USER and PASS.
       p:
         - [srv, app, "+OK POP3 ready", ctl, {raw: "+OK POP3 server ready\r\n"}]
-        - [app, srv, "USER asha", sec]
-        - [app, srv, "PASS ********", sec]
-        - [srv, app, "+OK logged in", res]
+        - [app, srv, "USER asha", sec, {"raw": "USER asha\r\n"}]
+        - [app, srv, "PASS ********", sec, {"raw": "PASS ********\r\n"}]
+        - [srv, app, "+OK logged in", res, {"raw": "+OK logged in\r\n"}]
     - t: How many messages?
       tag: list
       d: STAT returns the number of messages and their total size. LIST gives each size.
       p:
-        - [app, srv, "STAT", req]
-        - [srv, app, "+OK 2 3200", res]
+        - [app, srv, "STAT", req, {"raw": "STAT\r\n"}]
+        - [srv, app, "+OK 2 3200", res, {"raw": "+OK 2 3200\r\n"}]
     - t: Download
       tag: retr
       d: RETR 1 downloads the whole first message.
       p:
-        - [app, srv, "RETR 1", req]
-        - [srv, app, "+OK message follows ... .", data]
+        - [app, srv, "RETR 1", req, {"raw": "RETR 1\r\n"}]
+        - [srv, app, "+OK message follows ... .", data, {"raw": "+OK 1700 octets\r\nSubject: Hello\r\n\r\nSee you at 10.\r\n.\r\n"}]
     - t: Delete and quit
       tag: update
       d: DELE marks message 1. QUIT ends the session, and only now does the server delete it.
       p:
-        - [app, srv, "DELE 1", req]
-        - [app, srv, "QUIT", req]
-        - [srv, app, "+OK bye, 1 message deleted", res]
+        - [app, srv, "DELE 1", req, {"raw": "DELE 1\r\n"}]
+        - [app, srv, "QUIT", req, {"raw": "QUIT\r\n"}]
+        - [srv, app, "+OK bye, 1 message deleted", res, {"raw": "+OK bye, 1 message deleted\r\n"}]
   quiz:
     - q: When does POP3 actually delete messages marked with DELE?
       opts: ["Immediately", "After QUIT, in the update state", "Never"]
@@ -141,9 +141,9 @@
       tag: auth
       d: After TLS on port 993, the app logs in.
       p:
-        - [srv, phone, "* OK IMAP4rev1 ready", ctl]
-        - [phone, srv, "a1 LOGIN asha ********", sec]
-        - [srv, phone, "a1 OK LOGIN completed", res]
+        - [srv, phone, "* OK IMAP4rev1 ready", ctl, {"raw": "* OK [CAPABILITY IMAP4rev1 STARTTLS IDLE] ready\r\n"}]
+        - [phone, srv, "a1 LOGIN asha ********", sec, {"raw": "a1 LOGIN asha ********\r\n"}]
+        - [srv, phone, "a1 OK LOGIN completed", res, {"raw": "a1 OK LOGIN completed\r\n"}]
     - t: Open the inbox
       tag: select
       d: SELECT opens a folder. The server says how many messages exist.
@@ -154,20 +154,20 @@
       tag: fetch
       d: The app fetches only the subject and sender for the list view. It downloads bodies only when you open a message.
       p:
-        - [phone, srv, "a3 FETCH 1:12 (FLAGS ENVELOPE)", req]
-        - [srv, phone, "* 12 FETCH (...)", data]
+        - [phone, srv, "a3 FETCH 1:12 (FLAGS ENVELOPE)", req, {"raw": "a3 FETCH 1:12 (FLAGS ENVELOPE)\r\n"}]
+        - [srv, phone, "* 12 FETCH (...)", data, {"raw": "* 12 FETCH (FLAGS () ENVELOPE (\"Mon, 24 Nov 2026 09:12:00 +0000\" \"Lunch?\" ...))\r\na3 OK FETCH completed\r\n"}]
     - t: Mark as read
       tag: flags
       d: You open message 12. The app sets the Seen flag on the server. Your laptop will see it as read too.
       p:
-        - [phone, srv, "a4 STORE 12 +FLAGS (\\Seen)", req]
-        - [srv, phone, "a4 OK", res]
+        - [phone, srv, "a4 STORE 12 +FLAGS (\\Seen)", req, {"raw": "a4 STORE 12 +FLAGS (\\Seen)\r\n"}]
+        - [srv, phone, "a4 OK", res, {"raw": "* 12 FETCH (FLAGS (\\Seen))\r\na4 OK STORE completed\r\n"}]
     - t: Wait for new mail
       tag: idle
       d: The app sends IDLE. When new mail arrives, the server pushes an untagged EXISTS line at once.
       p:
-        - [phone, srv, "a5 IDLE", req]
-        - [srv, phone, "* 13 EXISTS", data]
+        - [phone, srv, "a5 IDLE", req, {"raw": "a5 IDLE\r\n"}]
+        - [srv, phone, "* 13 EXISTS", data, {"raw": "+ idling\r\n* 13 EXISTS\r\n"}]
   quiz:
     - q: What is the main difference between IMAP and POP3?
       opts: ["IMAP is older", "IMAP keeps mail and flags on the server and syncs devices", "POP3 supports folders"]

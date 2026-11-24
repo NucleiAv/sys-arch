@@ -177,3 +177,10 @@ refs:
   - "Alex Xu. System Design Interview volume 1, chapter 10, design a notification system."
   - "Uber Engineering. [Uber's real-time push platform](https://www.uber.com/blog/real-time-push-platform/)."
   - "Apple. [Sending notification requests to APNs](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns)."
+
+security: |
+  Notifications can leak data and can be abused.
+
+  - Do not put sensitive details in push or SMS text, since lock screens show them.
+  - Protect against **SMS pumping fraud**, where attackers trigger texts to premium numbers. Rate limit and check numbers.
+  - Sign webhooks and verify unsubscribe links, so nobody can unsubscribe someone else.

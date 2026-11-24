@@ -204,3 +204,11 @@ refs:
   - "Pete Hodgson. [Feature toggles](https://martinfowler.com/articles/feature-toggles.html)."
   - "Argo CD. [Automated sync policy](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/)."
   - "OpenGitOps. [GitOps principles](https://opengitops.dev/)."
+
+security: |
+  Deployment is a security moment.
+
+  - Deploy only **signed, scanned** artifacts that came from your pipeline.
+  - **Canary** and staged rollouts limit the damage of a bad or malicious change.
+  - **GitOps** gives an audit trail, every change is a reviewed commit.
+  - Keep a fast **rollback** path for security fixes that break things, and a fast path to ship urgent patches.

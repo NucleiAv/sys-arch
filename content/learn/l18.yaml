@@ -199,3 +199,11 @@ refs:
   - "Google. [Site Reliability Engineering, chapters 4 and 6, SLOs and monitoring](https://sre.google/sre-book/service-level-objectives/)."
   - "OpenTelemetry. [What is OpenTelemetry?](https://opentelemetry.io/docs/what-is-opentelemetry/)"
   - "Google. [The SRE workbook, alerting on SLOs](https://sre.google/workbook/alerting-on-slos/)."
+
+security: |
+  Observability is how you detect attacks.
+
+  - Log **security events**. Logins, failed logins, permission changes, admin actions and data exports.
+  - Send logs to a store that attackers cannot easily delete, and keep them as long as rules require.
+  - **Never log secrets**, passwords, tokens or full card numbers. Mask personal data.
+  - Alert on signals like many failed logins, new admin accounts or traffic to strange countries. Security teams use a SIEM to correlate them.

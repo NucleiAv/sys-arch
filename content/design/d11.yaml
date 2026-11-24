@@ -167,3 +167,10 @@ refs:
   - "Allan Heydon and Marc Najork. [Mercator, a scalable, extensible web crawler](https://www.cs.cornell.edu/courses/cs685/2002fa/mercator.pdf)."
   - "Google Search Central. [Introduction to robots.txt](https://developers.google.com/search/docs/crawling-indexing/robots/intro)."
   - "Alex Xu. System Design Interview volume 1, chapter 9, design a web crawler."
+
+security: |
+  A crawler visits the open internet, which includes hostile sites.
+
+  - Respect robots.txt and rate limits, or you become the attacker.
+  - Parse pages in **sandboxed** workers. Pages can be huge, malformed or built to crash parsers.
+  - Block internal and cloud metadata addresses so a link cannot make the crawler fetch your own private systems.

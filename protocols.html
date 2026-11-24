@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="assets/css/site.css?v=20261125b">
+<link rel="stylesheet" href="assets/css/site.css?v=20261126e">
 </head>
 <body data-root="" data-track="protocols">
 <a class="skip" href="#main">Skip to content</a>
@@ -25,6 +25,7 @@
   <main id="main" class="px-main">
     <div class="px-bar"><button class="btn btn-quiet btn-sm px-open" type="button" id="px-open">All protocols</button><nav class="crumbs" id="px-crumbs"></nav></div>
     <header class="px-head"><div class="eyebrow mono" id="px-eyebrow"></div><h1 id="px-title"></h1><p class="lede" id="px-lede"></p><div class="px-facts" id="px-facts"></div></header>
+    <div class="px-work"><div class="px-col-a">
     <section class="px-stage-card">
       <div class="px-stage-top"><div class="seg px-views" role="group" aria-label="View"><button type="button" data-view="net" aria-pressed="true">Network</button><button type="button" data-view="seq" aria-pressed="false">Sequence</button></div><span class="mono px-stepno" id="px-stepno"></span></div>
       <div class="px-stats" id="px-stats"></div>
@@ -40,11 +41,13 @@
       </div>
     </section>
     <section class="px-rail-card"><div class="px-rail-top"><span class="mono">In this protocol</span><span class="mono" id="px-railno"></span></div><div class="px-rail" id="px-rail"></div></section>
+    </div><div class="px-col-b">
     <section class="px-detail">
       <div class="seg px-tabs2" role="group" aria-label="Details"><button type="button" data-tab="step" aria-pressed="true">Current step</button><button type="button" data-tab="over" aria-pressed="false">Overview</button><button type="button" data-tab="prac" aria-pressed="false">Practice</button></div>
       <div id="px-tab-step"></div><div id="px-tab-over" hidden></div><div id="px-tab-prac" hidden></div>
     </section>
     <section class="px-inspect"><div class="px-inspect-top"><h3>Packet inspector</h3><div class="seg" role="group" aria-label="Inspector view"><button type="button" data-ins="fields" aria-pressed="true">Fields</button><button type="button" data-ins="hex" aria-pressed="false">Hex</button></div></div><div id="px-pk-list" class="px-pk-list"></div><div id="px-pk-body" class="px-pk-body"></div></section>
+    </div></div>
     <div class="px-intro prose"><h3>How to use this page</h3>
 <ol><li>Choose a protocol from the list. On a phone, press <b>All protocols</b>.</li><li>Press <b>Play</b>, or use <b>Next</b> and <b>Back</b>. The arrow keys also move between steps.</li><li>Switch between <b>Network</b>, which shows packets moving between machines, and <b>Sequence</b>, which shows every message in time order.</li><li>Read the <b>Current step</b> panel. Click a packet in the <b>Packet inspector</b> to see its fields.</li><li>Open <b>Practice</b> and answer the questions.</li></ol>
 <h3>What the layer numbers mean</h3>
@@ -52,10 +55,10 @@
 <div class="plain"><span class="k">In plain words</span><p>Addresses in the animations use documentation ranges, such as 192.0.2.0/24, 198.51.100.0/24 and 203.0.113.0/24, and private ranges such as 192.168.1.0/24. They are examples, not real servers.</p></div></div>
   </main>
 </div><footer id="foot"></footer>
-<script src="assets/js/site.js?v=20261125b"></script>
-<script src="assets/js/learn.js?v=20261125b"></script>
-<script src="assets/js/scene.js?v=20261125b"></script>
-<script src="assets/js/protocol-data.js?v=20261125b"></script>
-<script src="assets/js/protocols.js?v=20261125b"></script>
+<script src="assets/js/site.js?v=20261126e"></script>
+<script src="assets/js/learn.js?v=20261126e"></script>
+<script src="assets/js/scene.js?v=20261126e"></script>
+<script src="assets/js/protocol-data.js?v=20261126e"></script>
+<script src="assets/js/protocols.js?v=20261126e"></script>
 </body>
 </html>

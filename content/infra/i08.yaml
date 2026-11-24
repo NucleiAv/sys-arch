@@ -226,3 +226,11 @@ refs:
   - "Kubernetes Docs. [Kubernetes components](https://kubernetes.io/docs/concepts/overview/components/)."
   - "Kubernetes Docs. [Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)."
   - "Kubernetes Docs. [Service](https://kubernetes.io/docs/concepts/services-networking/service/)."
+
+security: |
+  Kubernetes is powerful, so its defaults need care.
+
+  - Use **RBAC** with least privilege. Avoid `cluster-admin` for apps and people.
+  - Apply **Pod Security Standards**, such as restricted, to block privileged pods.
+  - Add **NetworkPolicies**, since by default every pod can talk to every pod.
+  - Protect the API server and etcd, and turn on audit logging.

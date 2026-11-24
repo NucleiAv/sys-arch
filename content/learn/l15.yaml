@@ -182,3 +182,11 @@ refs:
   - "Twitter. [Announcing Snowflake](https://blog.x.com/engineering/en_us/a/2010/announcing-snowflake)."
   - "IETF. [RFC 9562, UUIDs including version 7](https://www.rfc-editor.org/rfc/rfc9562)."
   - "Leslie Lamport. [Time, clocks, and the ordering of events in a distributed system](https://lamport.azurewebsites.net/pubs/time-clocks.pdf)."
+
+security: |
+  Ids and clocks have security uses.
+
+  - **Do not use guessable ids** for private objects, or check access on every request. Sequential ids invite enumeration.
+  - Random ids like UUID version 4 are hard to guess, but they are not a replacement for authorization.
+  - Signatures and tokens rely on **time**. Keep clocks synced with NTP, and allow a small skew when checking expiry.
+  - Logs from many machines need synced clocks, or an incident timeline becomes guesswork.

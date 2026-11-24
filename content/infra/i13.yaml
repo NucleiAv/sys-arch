@@ -245,3 +245,11 @@ refs:
   - "HashiCorp. [Backend type s3](https://developer.hashicorp.com/terraform/language/backend/s3)."
   - "OpenTofu. [Introduction](https://opentofu.org/docs/intro/)."
   - "Kief Morris. Infrastructure as Code, O'Reilly."
+
+security: |
+  Infrastructure as code lets you review and test security before anything exists.
+
+  - **Scan** Terraform with tools like Checkov, tfsec or Trivy in CI.
+  - The **state file** can hold secrets. Store it in an encrypted, access controlled backend with locking.
+  - Use **policy as code**, like OPA or Sentinel, to block public buckets and open security groups.
+  - Review `terraform plan` output in pull requests. It shows exactly what will change.

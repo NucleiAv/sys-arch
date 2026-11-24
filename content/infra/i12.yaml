@@ -199,3 +199,11 @@ refs:
   - "AWS. [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html)."
   - "AWS. [Amazon SQS visibility timeout](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html)."
   - "AWS. [Fanout to Amazon SQS queues with SNS](https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html)."
+
+security: |
+  Serverless removes servers, not security work.
+
+  - Give each function its **own role** with the least permissions.
+  - Validate every event. An S3 file name or a queue message is untrusted input.
+  - Store secrets in Secrets Manager or Parameter Store, not in plain environment variables visible to many people.
+  - Set concurrency limits so an attack cannot run up a huge bill.

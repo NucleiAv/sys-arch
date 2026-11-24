@@ -184,3 +184,11 @@ refs:
   - "The Twelve-Factor App. [Processes, execute the app as stateless processes](https://12factor.net/processes)."
   - "Wikipedia. [Scalability, horizontal and vertical scaling](https://en.wikipedia.org/wiki/Scalability)."
   - "Stack Exchange. [Stack Overflow, the architecture](https://nickcraver.com/blog/2016/02/17/stack-overflow-the-architecture-2016-edition/)."
+
+security: |
+  Stateless servers make security easier, if you store state safely.
+
+  - Keep sessions in a protected store or use short lived signed tokens.
+  - Do not keep secrets on server disks. Load them from a secrets manager at start.
+  - **Immutable servers**, replaced instead of patched by hand, remove drift and leftover backdoors.
+  - More servers means more places to patch. Build images from one source and rebuild often.

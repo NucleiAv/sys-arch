@@ -35,7 +35,7 @@ scenes:
         text: Choose the main parts and their jobs. An order service, a payment service, a database and an event queue. This is the **architecture**.
         on: [api, pay, db, q]
         flow: [[ctx, api, ink], [ctx, pay, ink], [api, db, ink], [api, q, def], [pay, q, def]]
-        stats: [Architecture, Which parts, which links]
+        stats: [Architecture, "Which parts, which links"]
       - title: Big decisions
         text: Write down the hard to change choices. Services talk with events through the queue. Each service owns its own data.
         on: [q]
@@ -208,3 +208,12 @@ refs:
   - "Simon Brown. [The C4 model for visualising software architecture](https://c4model.com/)."
   - "Michael Nygard. [Documenting architecture decisions](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)."
   - "Martin Fowler. [Software architecture guide](https://martinfowler.com/architecture/)."
+
+security: |
+  Security is an architecture concern, not only a design detail. The architecture fixes the **trust boundaries**, which parts talk to which, and where data lives. Those choices decide most of your attack surface before anyone writes code.
+
+  - Record security decisions in ADRs, like "all service calls use mutual TLS".
+  - Draw trust boundaries on the architecture diagram.
+  - Run a threat model on the architecture, see lesson 6.5.
+
+  !key Fixing a bad trust boundary later means changing the architecture. Fixing a missing input check later means changing one function. Get the boundaries right first.

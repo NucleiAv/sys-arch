@@ -223,3 +223,12 @@ refs:
   - "Docker Docs. [Get started with Docker](https://docs.docker.com/get-started/)."
   - "Docker Docs. [Building best practices](https://docs.docker.com/build/building/best-practices/)."
   - "Docker Docs. [Multi-stage builds](https://docs.docker.com/build/building/multi-stage/)."
+
+security: |
+  Containers are not a security boundary by default. Harden them.
+
+  - Use **small base images**, like distroless or alpine, so fewer packages can have bugs.
+  - Run as a **non root user** with the `USER` line.
+  - **Scan images** for known vulnerabilities, with tools like Trivy or Grype.
+  - Never put secrets in the image or in `ENV` lines. They stay in the layers.
+  - Pin base images by digest, and sign images, for example with cosign.

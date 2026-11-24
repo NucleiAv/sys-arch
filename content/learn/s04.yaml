@@ -1,0 +1,213 @@
+short: Secure by design
+title: Secure by design and security in system architecture
+time: about 55 minutes
+tags: [secure by design, V model, trust boundaries, zero trust]
+lede: Security is cheapest when it is part of the first drawing. Learn how systems engineering models place security in every phase, and how to read an architecture for trust boundaries, attack surface and weak spots.
+
+idea: |
+  **Secure by design** means you plan security from the first day, the same way you plan for weight or power. You do not wait for testers to find holes at the end.
+
+  The reason is money and time. A missing check found on a whiteboard costs one meeting. The same missing check found after 10,000 incubators are in hospitals costs a recall, a regulator report and maybe harm to a patient.
+
+  As an architect you look at the drawing of the system and ask four things.
+
+  1. **What are the parts and the data flows?**
+  2. **Where are the trust boundaries?** Places where data moves between parts that trust each other differently.
+  3. **What is the attack surface?** Every way in.
+  4. **What happens when one part is broken into?** How far can an attacker move?
+
+  !eli5 Building a house with a safe room is easy if you draw it in the plan. Adding a safe room after the house is built means breaking walls.
+
+scenes:
+  - title: Reading the incubator architecture for trust boundaries
+    stats: [Step, Boundary, Question to ask]
+    nodes:
+      inc: {label: Incubator, x: 0, y: 1, kind: def}
+      gw: {label: Device gateway, x: 2, y: 1, kind: raised, tag: boundary 1}
+      app: {label: Nurse app server, x: 4, y: 0, kind: box}
+      cloud: {label: Maker's cloud, x: 4, y: 2, kind: raised, tag: boundary 2}
+      tech: {label: Technician laptop, x: 0, y: 3, kind: box, tag: boundary 3}
+    links: [[inc, gw], [gw, app], [gw, cloud], [tech, inc]]
+    steps:
+      - title: Draw the parts and flows
+        text: Readings go from the incubator to a gateway, then to the nurse app and to the maker's cloud. Technicians plug a laptop into the service port.
+        on: [inc, gw, app, cloud, tech]
+        flow: [[inc, gw, ink], [gw, app, ink], [gw, cloud, ink]]
+        stats: ["Map", "none yet", "what talks to what?"]
+      - title: Boundary 1, device to hospital network
+        text: The device is safety critical. The hospital network has thousands of laptops. Data crossing here must be authenticated and checked.
+        on: [inc, gw]
+        flow: [[gw, inc, atk]]
+        mark: {gw: warn}
+        stats: ["Boundary 1", "device and network", "who may send commands?"]
+      - title: Boundary 2, hospital to internet
+        text: Data leaves the hospital to the maker's cloud. Which patient data really needs to go? Less data leaving means less to leak.
+        on: [gw, cloud]
+        flow: [[gw, cloud, pen]]
+        mark: {cloud: warn}
+        stats: ["Boundary 2", "hospital and cloud", "what data leaves?"]
+      - title: Boundary 3, physical service port
+        text: Anyone who can touch the device can reach the service port. It needs its own login and must never allow a bypass of the safety limits.
+        on: [tech, inc]
+        flow: [[tech, inc, atk]]
+        mark: {tech: warn}
+        stats: ["Boundary 3", "person and device", "what can a stranger do?"]
+      - title: Contain the damage
+        text: Segment the device network, give the gateway least privilege, send only the data the cloud needs and require signed commands. A break in one part does not reach the baby.
+        on: [inc, gw, app, cloud, tech]
+        flow: [[inc, gw, def], [gw, app, def]]
+        mark: {inc: ok, gw: ok}
+        stats: [Contain, all three, blast radius is small]
+
+terms:
+  - [Secure by design, "Security is planned and built in from the start, and products are safe by default."]
+  - [Systems engineering, "A way to build complex systems by moving from needs to requirements, design, build and test in clear phases."]
+  - [V model, "A systems engineering model. The left side goes down from needs to design. The right side goes up through tests that check each level."]
+  - [Shift left, "Doing security work earlier in the life cycle, where fixes are cheaper."]
+  - [Trust boundary, "A line where data or commands pass between parts with different trust."]
+  - [Attack surface, "All the ways an attacker can try to interact with the system."]
+  - [Blast radius, "How much harm one broken part can cause."]
+  - [Zero trust, "No part is trusted because of its network location. Every request is checked."]
+  - [Segmentation, "Splitting a network into zones with rules between them."]
+
+how: |
+  ### The V model with security
+
+  | Left side, define and design | Right side, verify and validate |
+  | --- | --- |
+  | Needs and concept. Find assets and threats. | Acceptance. Pen test against the real use case. |
+  | System requirements. Write security requirements. | System test. Test every security requirement. |
+  | Architecture. Threat model the design. | Integration test. Test trust boundaries and interfaces. |
+  | Detailed design. Choose controls per part. | Unit test. Test input checks and crypto calls. |
+  | Code. Secure coding rules, code review. | Static analysis and review results. |
+
+  Each level on the left has a matching test level on the right. Agile teams do the same work in small loops instead of one big pass.
+
+  ### Drivers and principles of secure design
+
+  - **Drivers.** Patient safety, laws, customer contracts, brand trust and cost of incidents.
+  - **Minimize attack surface.** Turn off unused ports, services and features. Every open thing is a way in.
+  - **Secure defaults.** Ship with security on. No default passwords. The US agency CISA calls this out in its Secure by Design pledge.
+  - **Zero trust.** Do not trust a request because it comes from inside the network. NIST SP 800-207 describes this model.
+  - **Segmentation.** Put devices in their own zone. IEC 62443 calls these **zones and conduits**.
+  - **Fail safe.** When something breaks, go to a safe state. An incubator that loses its network keeps heating to the last safe setting and sounds an alarm.
+
+  ### Why security is hard in real projects
+
+  - Deadlines push security to "later", and later never comes.
+  - Devices live 10 to 15 years, but the software inside them ages in 2.
+  - Many parts come from suppliers you do not control.
+  - Security work is invisible when it succeeds, so it is hard to show its value.
+  - Usability and safety can pull against security. A locked screen must not stop a nurse in an emergency.
+
+  !key A good security architect does not say "no". They say "yes, if", and offer a design that meets the business goal with acceptable risk.
+
+diagrams:
+  - type: flow
+    title: Cost to fix a security flaw grows with time
+    nodes: [["Design", "def", "one meeting"], ["Build", "box", "a code change"], ["Test", "box", "rework and retest"], ["In the field", "atk", "patch, recall, report"]]
+    edges: ["", "", ""]
+    caption: The exact numbers vary, but every study agrees on the shape. Fix it early.
+
+life:
+  - ["Target breach, 2013", "Attackers stole login details from a heating and air conditioning vendor. That vendor's access let them reach the network that also held the payment terminals. About 40 million card numbers were stolen. Segmentation between vendor access and payment systems would have limited the blast radius."]
+  - ["Jeep Cherokee, 2015", "Researchers reached a car's media system over the mobile network and from there sent commands to the brakes and steering. The car had no strong boundary between entertainment and driving systems. The maker recalled 1.4 million vehicles."]
+  - ["Secure by Design pledge, 2024", "Many software makers signed a pledge with the US agency CISA. They promised goals like more MFA, fewer default passwords and whole classes of bugs removed. It moved security from the customer's job to the maker's job."]
+
+tradeoffs:
+  - ["Strong segmentation", "Small blast radius.", "More network rules to manage, harder troubleshooting."]
+  - ["Zero trust", "No free pass for insiders.", "Needs identity for every user, device and service."]
+  - ["Small attack surface", "Fewer ways in.", "Fewer features or remote tools that support teams like."]
+  - ["Fail safe states", "Protect people when things break.", "A safe state may stop normal work for a while."]
+
+mistakes:
+  - Drawing the architecture without trust boundaries.
+  - Trusting everything inside the hospital or company network.
+  - Leaving debug and service ports open in the shipped product.
+  - Sending more data to the cloud than the feature needs.
+  - Saying "no" to the business instead of offering a safer "yes, if".
+
+quiz:
+  - q: Where is a trust boundary in the incubator system?
+    opts: ["Between two functions in the same small program", "Between the hospital network and the maker's cloud", "Between two lines of a log file"]
+    a: 1
+    why: Data crosses between parts with different owners and trust.
+  - type: fill
+    q: Doing security work earlier in the life cycle is called shift ____.
+    a: ["left"]
+    why: On a timeline drawn left to right, earlier is to the left.
+  - q: The incubator loses its network link. What is the fail safe behaviour?
+    opts: ["Turn off the heater", "Keep the last safe setting, run local alarms and show the problem", "Reboot every minute until the network returns"]
+    a: 1
+    why: Safe means the baby stays warm and staff are told.
+  - type: sort
+    q: Is each one a benefit of segmentation or a cost?
+    rows:
+      - ["A hacked laptop cannot reach the incubators", "Benefit"]
+      - ["More firewall rules to maintain", "Cost"]
+      - ["Ransomware spreads less", "Benefit"]
+    opts: ["Benefit", "Cost"]
+    why: Name both sides when you propose a control.
+  - q: Spot the architecture issue. "The cloud dashboard can send any command to any incubator in any hospital."
+    opts: ["Blast radius is huge. One cloud breach reaches every device", "The dashboard is too slow", "There is no issue if the cloud has a firewall"]
+    a: 0
+    why: Limit what the cloud may do, require local approval for changes and scope commands per hospital.
+
+interview:
+  - q: How do you review an architecture diagram for security?
+    keys:
+      - ["Identify assets, components and data flows", [asset, data flow, component, parts]]
+      - ["Mark trust boundaries", [trust boundar, boundary]]
+      - ["Look at attack surface and entry points", [attack surface, entry, port, interface]]
+      - ["Think about blast radius, segmentation or least privilege", [blast, segment, least privilege, lateral, contain]]
+    a: |
+      I first make sure the diagram shows every component, data store and data flow, and what data is sensitive. Then I mark the trust boundaries, where data crosses between zones with different trust, such as device to network or company to cloud. At each boundary I ask how both sides authenticate, how data is validated and what is encrypted. I list the attack surface, every port, API, file input and human interface. Then I ask what happens if each part is compromised, how far an attacker can move, and I look for segmentation and least privilege to keep the blast radius small. This feeds directly into a threat model.
+    fb: Following the data across boundaries is the core skill. Ending with a threat model shows you know the next step.
+  - q: The product team wants a remote support tool that can control every device. How do you respond?
+    keys:
+      - ["Understand the business need", [need, why, business, goal, support]]
+      - ["Offer a safer yes with limits", [yes if, limit, scope, approval, just in time, time limited]]
+      - ["Controls like MFA, logging, customer approval", [mfa, log, audit, approv, consent]]
+    a: |
+      I would first ask what problem support needs to solve, for example reading logs or pushing a config fix. Then I would offer a safer design. Read only access by default. Write actions need approval from the hospital, are limited to one device and expire after a few hours. Support staff use MFA from managed laptops, and every session is recorded and shown to the hospital. That gives support what they need while keeping the blast radius small.
+    fb: Interviewers listen for "yes, if". Security architects who only block things are not invited to the next meeting.
+
+desk:
+  title: Draw the boundaries
+  lede: A new feature adds a phone app for parents. Review the design.
+  situation: |
+    Parents will see a live temperature graph of their baby's incubator on their phone. The draft design connects the phone app straight to the incubator over the hospital Wi-Fi.
+  rounds:
+    - title: Round 1. Find the issue
+      items:
+        - q: What is the biggest architecture problem?
+          opts: ["Phones from outside the hospital reach a safety critical device directly", "Graphs use too much battery", "Parents may not like the colours"]
+          a: 0
+          why: A new trust boundary now touches the device itself.
+        - type: sort
+          q: Which change reduces the risk most for each concern?
+          rows:
+            - ["Phones talk to the device", "Send readings to a read only cloud service, phones talk to that"]
+            - ["Any parent sees any baby", "Link each parent account to one baby with an expiring invite from staff"]
+            - ["Full patient record goes to the phone", "Send only the temperature and status"]
+          opts: ["Send readings to a read only cloud service, phones talk to that", "Link each parent account to one baby with an expiring invite from staff", "Send only the temperature and status"]
+          why: Move the boundary away from the device, scope access and minimize data.
+    - title: Round 2. Benefit and trade-off
+      items:
+        - q: What is the main benefit of the read only cloud copy?
+          opts: ["No path from phones can change the device", "Lower cloud cost", "Faster Wi-Fi"]
+          a: 0
+          why: Data flows one way, out of the device zone.
+        - type: open
+          q: Name one trade-off of the read only cloud design and how you would handle it.
+          a: "Readings in the app are a few seconds behind and depend on the cloud being up. Show the time of the last reading in the app and a clear message when data is old. Parents are not a safety alarm channel, nurses are, so a delay is acceptable."
+  card: |
+    - Plan security on the first drawing.
+    - Find trust boundaries and the attack surface.
+    - Segment and limit the blast radius.
+    - Fail safe. Say "yes, if".
+
+refs:
+  - "CISA. [Secure by Design](https://www.cisa.gov/securebydesign)."
+  - "NIST. [SP 800-207, Zero Trust Architecture](https://csrc.nist.gov/pubs/sp/800/207/final)."
+  - "NIST. [SP 800-160 Vol. 1, Engineering Trustworthy Secure Systems](https://csrc.nist.gov/pubs/sp/800/160/v1/r1/final)."

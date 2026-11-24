@@ -168,3 +168,11 @@ refs:
   - "Uber Engineering. [H3, Uber's hexagonal hierarchical spatial index](https://www.uber.com/blog/h3/)."
   - "Uber Engineering. [How Uber serves over 40 million reads per second](https://www.uber.com/blog/how-uber-serves-over-40-million-reads-per-second-using-an-integrated-cache/)."
   - "Redis. [Geospatial indexes](https://redis.io/docs/latest/develop/data-types/geospatial/)."
+
+security: |
+  Ride sharing handles location, payment and personal safety.
+
+  - Location history is sensitive. Keep it short, and limit who can see it.
+  - Hide phone numbers with masked calling.
+  - Detect fake GPS and account sharing.
+  - Give riders and drivers safety features, like trip sharing and an emergency button.

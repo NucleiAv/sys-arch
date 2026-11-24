@@ -1,0 +1,216 @@
+short: Security controls
+title: Security controls and defenses
+time: about 50 minutes
+tags: [controls, CIS, compensating, defense in depth]
+lede: A control is anything that lowers risk. Learn the kinds of controls, how to choose the right ones under real limits of money, time and safety, and what to do when the ideal control is not possible.
+
+idea: |
+  A **control** is a safeguard. A lock, a log, a backup, a training course and a firewall rule are all controls. Each one lowers the chance that something bad happens, or lowers the harm when it does.
+
+  You sort controls in two ways.
+
+  - By **what they do**. Stop it, find it, fix it, scare it off, or replace a control you cannot have.
+  - By **what they are**. A rule for people, a piece of technology, or something physical.
+
+  You never pick controls from a shopping list alone. You start from a **risk**, look at your **limits**, and choose the set that brings the risk down to a level the owner accepts.
+
+  !eli5 To keep your bike safe you use a lock, that stops theft. You park it where a camera sees it, that finds the thief. You have insurance, that fixes the loss. A sticker saying "alarm fitted" scares thieves away. Together they protect the bike better than one huge lock.
+
+scenes:
+  - title: Controls around one risk, ransomware in the hospital
+    stats: [Step, Control type, What it does]
+    nodes:
+      mail: {label: Phishing email, x: 0, y: 1, kind: atk}
+      pc: {label: Staff laptop, x: 2, y: 1, kind: box}
+      fw: {label: Segment firewall, x: 4, y: 1, kind: def}
+      inc: {label: Incubators, x: 6, y: 0, kind: def}
+      bk: {label: Offline backups, x: 6, y: 2, kind: raised}
+    links: [[mail, pc], [pc, fw], [fw, inc], [fw, bk]]
+    steps:
+      - title: Deter and prevent at the inbox
+        text: Mail filtering blocks most bad attachments. Staff training is an administrative control that helps people spot the rest.
+        on: [mail, pc]
+        flow: [[mail, pc, atk]]
+        stats: [Prevent, technical and administrative, stop it early]
+      - title: Detect on the laptop
+        text: Endpoint detection sees a program encrypting many files fast. It alerts the security team and isolates the laptop.
+        on: [pc]
+        mark: {pc: warn}
+        stats: [Detect, technical, find it fast]
+      - title: Prevent the spread
+        text: The device segment only accepts the gateway's traffic. The laptop cannot reach the incubators at all.
+        on: [pc, fw, inc]
+        flow: [[pc, fw, atk]]
+        mark: {fw: ok, inc: ok}
+        stats: [Prevent, technical, limit blast radius]
+      - title: Correct and recover
+        text: The team rebuilds the laptop and restores files from offline backups that the ransomware could not reach.
+        on: [bk, pc]
+        flow: [[bk, pc, def]]
+        mark: {pc: ok}
+        stats: [Correct and recover, technical, back to normal]
+      - title: Compensate for an old system
+        text: One old monitor cannot be patched. The team puts it behind an extra firewall with an allow list and watches its traffic. That is a compensating control.
+        on: [fw, inc]
+        mark: {inc: warn}
+        stats: [Compensate, technical, cover a gap]
+
+terms:
+  - [Preventive control, "Stops an event before it happens. MFA, firewalls, input validation."]
+  - [Detective control, "Finds an event while or after it happens. Logs, alerts, intrusion detection."]
+  - [Corrective control, "Fixes the damage. Patching, restoring from backup, isolating a host."]
+  - [Deterrent control, "Discourages an attacker. Warning banners, visible cameras."]
+  - [Compensating control, "An alternative when the normal control is not possible."]
+  - [Administrative control, "Policies, training, procedures and background checks."]
+  - [Technical control, "Built into technology. Encryption, access control, logging."]
+  - [Physical control, "Locks, badges, guards, tamper seals on devices."]
+  - [Residual risk, "The risk that remains after controls are in place."]
+
+how: |
+  ### Two ways to sort controls
+
+  | | Administrative | Technical | Physical |
+  | --- | --- | --- | --- |
+  | Preventive | Change approval policy | MFA, signed updates | Locked server room |
+  | Detective | Log review procedure | Intrusion detection, alerts | Tamper evident seals |
+  | Corrective | Incident response plan | Restore from backup | Replace a damaged lock |
+
+  ### How to choose controls
+
+  1. **Start from the risk.** Which threat, which asset, how bad.
+  2. **Look at control catalogs.** NIST SP 800-53, CIS Critical Security Controls, ISO/IEC 27001 Annex A or IEC 62443 give options.
+  3. **Check the limits.** Cost, time, skills, performance, usability, safety and certification.
+  4. **Prefer controls that remove whole classes of problems.** A memory safe language removes many bugs at once. Signed updates remove all fake update attacks.
+  5. **Layer them.** Prevent, detect and recover, so one failure is not a breach.
+  6. **Measure.** Check that the control works, with tests, logs and audits.
+
+  ### Constraints that change the answer
+
+  - **Safety.** A screen lock on an incubator must never hide an alarm. Prefer badge tap login and leave alarms always visible.
+  - **Certification.** Changing a medical device can need new regulator review. Some controls go in the network around the device instead.
+  - **Power and memory.** A small device may not run a full antivirus. Use allow listing and secure boot instead.
+  - **Legacy.** Old systems that cannot be patched get compensating controls, like isolation and monitoring.
+
+  ### Advanced principles
+
+  - **Defense in depth.** Several independent layers.
+  - **Diversity of defense.** Layers from different vendors or methods, so one bug does not beat them all.
+  - **Zero trust.** Check identity and device health on every request.
+  - **Assume breach.** Design as if an attacker is already inside, so detection and containment matter.
+
+  !key A compensating control must give similar protection to the one it replaces, and it must be written down with the reason. Auditors will ask.
+
+diagrams:
+  - type: cycle
+    title: The control life cycle
+    nodes: [["Find the risk", "atk"], ["Choose controls", "def"], ["Build and deploy", "box"], ["Test they work", "raised"], ["Monitor", "box"], ["Review and improve", "def"]]
+    center: Controls age as threats change
+    caption: A control that worked last year may not work against today's attackers. Review on a schedule.
+
+life:
+  - ["WannaCry and the NHS, 2017", "Ransomware spread through an old Windows file sharing flaw. A patch had been out for two months. Many UK hospital systems were hit and some appointments and operations were cancelled. Patching is a corrective control, and segmentation would have slowed the spread."]
+  - ["Colonial Pipeline, 2021", "Attackers logged in to an old VPN account that had no MFA, using a leaked password. The company shut down fuel pipeline operations for days. One preventive control, MFA on remote access, would have blocked the entry."]
+  - ["A compensating control in a lab", "A hospital lab had analysers running an old operating system that the vendor would not let anyone patch. The team put them on their own network, allowed only the lab system to talk to them and alerted on any other traffic."]
+
+tradeoffs:
+  - ["Preventive controls", "Stop harm before it starts.", "Can block real users, and none are perfect."]
+  - ["Detective controls", "Catch what got through.", "Need people to watch and act on alerts."]
+  - ["Compensating controls", "Cover gaps you cannot close.", "Often weaker, need extra documentation and review."]
+  - ["Many layers", "One failure is not a breach.", "Cost and complexity grow with each layer."]
+
+mistakes:
+  - Buying a tool before knowing which risk it lowers.
+  - Only preventive controls, with no way to detect or recover.
+  - Controls that break safety or usability, so staff bypass them.
+  - Backups that are online and get encrypted by the same ransomware.
+  - Never testing that a control still works.
+
+quiz:
+  - type: sort
+    q: Which kind of control is each one?
+    rows:
+      - ["Alert when a device sends traffic to a new country", "Detective"]
+      - ["Require MFA for remote access", "Preventive"]
+      - ["Restore a server from backup", "Corrective"]
+      - ["A warning banner at login", "Deterrent"]
+    opts: ["Preventive", "Detective", "Corrective", "Deterrent"]
+    why: Ask when the control acts, before, during or after.
+  - q: An old infusion pump cannot be patched. What is the best control?
+    opts: ["Ignore it until it breaks", "Isolate it on its own segment with an allow list and monitoring", "Disconnect it and stop using it at once"]
+    a: 1
+    why: A compensating control lowers the risk while care continues.
+  - type: fill
+    q: The risk left after all controls are in place is called ____ risk.
+    a: ["residual"]
+    why: A risk owner must accept the residual risk.
+  - q: Spot the problem. "Our backups run every night to a network share that every server can write to."
+    opts: ["Ransomware on any server can encrypt or delete the backups", "Nightly is too often", "Network shares are too slow"]
+    a: 0
+    why: Keep at least one copy offline or immutable.
+  - q: A screen lock after 1 minute is proposed for the incubator display. What is the main concern?
+    opts: ["It could hide alarms or slow a nurse in an emergency", "It uses too much power", "It is too strong"]
+    a: 0
+    why: Safety comes first. Keep alarms visible and use quick badge login for settings only.
+  - q: What is a benefit of a control that removes a whole class of bugs, like signed updates?
+    opts: ["You no longer need to find each fake update one by one", "It makes the device cheaper", "It replaces all other controls"]
+    a: 0
+    why: Class wide controls scale better than chasing single attacks.
+
+interview:
+  - q: How do you choose security controls for a system with tight cost and safety limits?
+    keys:
+      - ["Start from risks and threats", [risk, threat]]
+      - ["Use catalogs or frameworks", [nist, cis, iso, 62443, catalog, framework]]
+      - ["Consider constraints like safety, cost, usability", [safety, cost, usab, constraint, performance]]
+      - ["Layer prevent, detect and correct, and test them", [layer, depth, detect, recover, correct, test, measure]]
+    a: |
+      I start from the risk list, so every control has a reason. I use a catalog like NIST SP 800-53 or the CIS Controls to see options. Then I check limits. Safety first, so nothing may block an alarm or care. Then cost, skills, performance and certification. I prefer controls that remove a whole class of problems, like signed updates or segmentation. I layer preventive, detective and corrective controls, and where an ideal control is impossible I write a compensating control with a clear reason. Finally I check each control works, and I review the set when threats change.
+    fb: Mentioning safety and compensating controls shows you can work in real, messy environments.
+  - q: What is a compensating control? Give an example.
+    keys:
+      - ["An alternative when the required control is not possible", [alternative, cannot, not possible, instead, replace]]
+      - ["Gives similar protection and is documented", [similar, document, justif, equivalent]]
+      - ["A concrete example like isolating an unpatchable system", [isolat, segment, monitor, legacy, old]]
+    a: |
+      A compensating control is a different safeguard used when the required control cannot be applied, for a valid reason. It must give similar protection and be documented. For example, a medical device that cannot be patched because of certification is put on an isolated network segment with an allow list and traffic monitoring. PCI DSS uses the same idea when a company cannot meet a requirement as written.
+    fb: Saying that auditors expect a documented reason is what makes this answer complete.
+
+desk:
+  title: Pick the controls for a hospital rollout
+  lede: The hospital will install 40 incubators. Help the biomedical team choose controls.
+  situation: |
+    The hospital has a flat network. The budget allows one new firewall and some staff time. The devices cannot run extra software.
+  rounds:
+    - title: Round 1. Sort the controls
+      items:
+        - type: sort
+          q: Which type is each control?
+          rows:
+            - ["A policy that only biomedical staff may plug in service laptops", "Administrative"]
+            - ["A firewall segment for all incubators", "Technical"]
+            - ["Tamper evident seals on device cases", "Physical"]
+          opts: ["Administrative", "Technical", "Physical"]
+          why: A good set mixes all three.
+        - q: Which single control gives the biggest risk reduction here?
+          opts: ["Segmenting the incubators from the flat network", "A poster about passwords", "Changing the screen colours"]
+          a: 0
+          why: On a flat network, any infected laptop can reach every device.
+    - title: Round 2. Gaps and workarounds
+      items:
+        - q: The devices cannot send logs to the hospital's log system. What is a good workaround?
+          opts: ["Log the traffic at the new firewall and alert on anything unusual", "Turn off logging", "Ask nurses to write logs by hand"]
+          a: 0
+          why: Detect at the network when the device cannot report itself.
+        - type: open
+          q: Write a short note that records a compensating control for the missing device antivirus.
+          a: "Control gap. Incubators cannot run antivirus because of vendor certification. Compensating controls. Secure boot and signed firmware from the vendor, devices on an isolated segment that only the gateway can reach, USB ports sealed and checked monthly, and firewall alerts on new traffic. Residual risk is low and accepted by the head of biomedical engineering. Review in 12 months."
+  card: |
+    - Prevent, detect, correct. Deter and compensate.
+    - Administrative, technical, physical.
+    - Start from risk. Respect safety and limits.
+    - Offline backups. Test controls. Write down gaps.
+
+refs:
+  - "CIS. [Critical Security Controls](https://www.cisecurity.org/controls)."
+  - "NIST. [SP 800-53 Rev. 5](https://csrc.nist.gov/pubs/sp/800/53/r5/upd1/final)."
+  - "CISA. [Stop Ransomware guide](https://www.cisa.gov/stopransomware/ransomware-guide)."

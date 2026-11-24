@@ -66,6 +66,37 @@ rounds:
       - type: open
         q: A team stores the database password in a ConfigMap. What do you tell them?
         a: "Passwords belong in a Secret, or better in an external secrets manager synced into Secrets. Limit who can read Secrets with RBAC, and turn on encryption at rest for etcd, because Secrets are only base64 encoded by default."
+
+  - title: Round 4. Spot it, fix it
+    items:
+      - q: Find two problems in this Dockerfile. Pick the best answer.
+        info: |
+          ```dockerfile
+          FROM ubuntu:latest
+          ENV DB_PASSWORD=hunter2
+          COPY . /app
+          RUN apt-get update && apt-get install -y python3
+          CMD ["python3", "/app/main.py"]
+          ```
+        opts: ["A secret is baked into the image, and it runs as root on an unpinned base", "CMD should be RUN", "COPY must come after CMD"]
+        a: 0
+        why: Pass secrets at runtime from a secrets store, pin the base image, and add a non root USER.
+      - q: A pod spec has `privileged true` and mounts the host root folder. What is the risk?
+        opts: ["A break in the container gives control of the whole node", "The pod starts slower", "It uses more memory"]
+        a: 0
+        why: Block privileged pods with Pod Security Standards, restricted level.
+      - type: sort
+        q: Benefit or risk?
+        rows:
+          - ["A NetworkPolicy that allows only the web pods to reach the database", "Benefit"]
+          - ["Mounting /var/run/docker.sock into an app container", "Risk"]
+          - ["readOnlyRootFilesystem in the security context", "Benefit"]
+        opts: ["Benefit", "Risk"]
+        why: Know which settings shrink the blast radius.
+      - type: open
+        q: SSH password login is on and the server log shows thousands of failed root logins a day. Give a mitigation and a quick workaround.
+        a: "Mitigation. Use SSH keys only, set PasswordAuthentication no and PermitRootLogin no, and allow SSH only from a VPN or bastion. Quick workaround today. Add fail2ban and a firewall rule limiting port 22 to known IPs."
+
 card: |
   - df, free, journalctl, ss, curl.
   - Dependency files before code in Dockerfiles.

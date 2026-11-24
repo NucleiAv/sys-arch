@@ -22,32 +22,32 @@
       d: The client sends random bytes, the cipher suites it supports and an X25519 public key share. It guesses the group the server will pick, which saves a round trip.
       f: {Version: "1.3", Cipher suite offer: "TLS_AES_128_GCM_SHA256, TLS_CHACHA20_POLY1305_SHA256", Key share: "X25519 public key"}
       p:
-        - [c, s, "ClientHello + key share", sec]
+        - [c, s, "ClientHello + key share", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "512", "Handshake type": "0x01 ClientHello", "Legacy version": "0x0303", "Cipher suites": "0x1301, 0x1303", "Supported versions": "0x0304 TLS 1.3", "Key share": "X25519, 32 bytes", "Server name": "shop.example"}}]
     - t: ServerHello with a key share
       tag: hello
       d: The server picks a suite and sends its own public share. Now both sides compute the same shared secret with Diffie Hellman. The eavesdropper saw both public shares, but cannot compute the secret.
       f: {Chosen suite: TLS_AES_128_GCM_SHA256, Shared secret: "known to client and server only"}
       p:
-        - [s, c, "ServerHello + key share", sec]
+        - [s, c, "ServerHello + key share", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "122", "Handshake type": "0x02 ServerHello", "Cipher suite": "0x1301 TLS_AES_128_GCM_SHA256", "Supported versions": "0x0304 TLS 1.3", "Key share": "X25519, 32 bytes"}}]
       on: [c, s, eve]
     - t: Encrypted handshake
       tag: auth
       d: From here everything is encrypted with handshake keys. The server sends EncryptedExtensions, its Certificate, a CertificateVerify signature over the handshake so far, and Finished, a MAC over the whole handshake.
       p:
-        - [s, c, "EncryptedExtensions, Certificate", sec]
-        - [s, c, "CertificateVerify, Finished", sec]
+        - [s, c, "EncryptedExtensions, Certificate", sec, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "2890", "Payload": "EncryptedExtensions and Certificate, encrypted with handshake keys"}}]
+        - [s, c, "CertificateVerify, Finished", sec, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "330", "Payload": "CertificateVerify and server Finished, encrypted"}}]
     - t: Client checks and finishes
       tag: auth
       d: The client checks the certificate chain and name, checks the signature with the public key in the certificate, then sends its own Finished. Any change by an attacker would break the Finished MAC.
       p:
-        - [c, s, "Finished", sec]
+        - [c, s, "Finished", sec, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "74", "Payload": "client Finished, encrypted"}}]
     - t: Application data
       tag: data
       d: Both sides derive traffic keys from the shared secret with HKDF and send application data protected with AES GCM. The eavesdropper sees only random looking records.
       p:
-        - [c, s, "application data (encrypted)", data]
-        - [s, c, "application data (encrypted)", data]
-        - [eve, eve, "cannot read", bad]
+        - [c, s, "application data (encrypted)", data, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "517", "Payload": "request bytes plus a 16 byte tag"}}]
+        - [s, c, "application data (encrypted)", data, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "1400", "Payload": "response bytes plus a 16 byte tag"}}]
+        - [eve, eve, "cannot read", bad, {"fields": {"Sees": "IP addresses, ports, sizes, timing, server name", "Cannot see": "content, cookies, passwords"}}]
       bad: [eve]
   quiz:
     - q: What gives TLS 1.3 forward secrecy?
@@ -91,28 +91,28 @@
       d: Each side sends KEXINIT with its list of key exchange, host key, cipher and MAC algorithms. They pick the first match from the client list.
       f: {Key exchange: curve25519-sha256, Host key: ssh-ed25519, Cipher: chacha20-poly1305}
       p:
-        - [me, srv, "KEXINIT", sec]
-        - [srv, me, "KEXINIT", sec]
+        - [me, srv, "KEXINIT", sec, {"fields": {"Packet length": "1500", "Padding length": "6", "Message number": "20 KEXINIT", "Contents": "curve25519-sha256, ssh-ed25519, chacha20-poly1305@openssh.com, and more choices"}}]
+        - [srv, me, "KEXINIT", sec, {"fields": {"Packet length": "1080", "Padding length": "6", "Message number": "20 KEXINIT", "Contents": "the server's list of choices, the first match wins"}}]
     - t: Key exchange and host key
       tag: kex
       d: The client sends an ephemeral public key. The server answers with its ephemeral key, its long term host key and a signature. The client checks the host key against `known_hosts`. Both sides send NEWKEYS and switch to encryption.
       f: {Host key fingerprint: "SHA256:k3X...9Qw", known_hosts: "match"}
       p:
-        - [me, srv, "KEX_ECDH_INIT (ephemeral key)", sec]
-        - [srv, me, "KEX_ECDH_REPLY (host key, signature)", sec]
-        - [me, srv, "NEWKEYS", sec]
+        - [me, srv, "KEX_ECDH_INIT (ephemeral key)", sec, {"fields": {"Packet length": "44", "Padding length": "6", "Message number": "30 KEX_ECDH_INIT", "Contents": "client ephemeral public key, 32 bytes"}}]
+        - [srv, me, "KEX_ECDH_REPLY (host key, signature)", sec, {"fields": {"Packet length": "188", "Padding length": "6", "Message number": "31 KEX_ECDH_REPLY", "Contents": "host key, server ephemeral key, signature over the exchange hash"}}]
+        - [me, srv, "NEWKEYS", sec, {"fields": {"Packet length": "12", "Padding length": "6", "Message number": "21 NEWKEYS", "Contents": "from now on, everything is encrypted"}}]
     - t: Public key login
       tag: auth
       d: The client asks to log in as deploy with its ed25519 key. It signs data tied to this session with the private key. The server checks the signature with the public key in `authorized_keys`. The private key never leaves the laptop.
       p:
-        - [me, srv, "USERAUTH_REQUEST deploy publickey + signature", sec]
-        - [srv, me, "USERAUTH_SUCCESS", res]
+        - [me, srv, "USERAUTH_REQUEST deploy publickey + signature", sec, {"fields": {"Packet length": "588", "Padding length": "6", "Message number": "50 USERAUTH_REQUEST", "Contents": "user deploy, method publickey, ssh-ed25519 key and signature, encrypted"}}]
+        - [srv, me, "USERAUTH_SUCCESS", res, {"fields": {"Packet length": "12", "Padding length": "6", "Message number": "52 USERAUTH_SUCCESS", "Contents": "encrypted"}}]
     - t: Open a channel and run a command
       tag: channel
       d: The client opens a session channel and asks to run `uptime`. The output comes back in the encrypted channel.
       p:
-        - [me, srv, "CHANNEL_OPEN session, exec uptime", req]
-        - [srv, me, "CHANNEL_DATA  12:01 up 41 days", res]
+        - [me, srv, "CHANNEL_OPEN session, exec uptime", req, {"fields": {"Packet length": "44", "Padding length": "6", "Message number": "90 CHANNEL_OPEN", "Contents": "session, then 98 CHANNEL_REQUEST exec uptime"}}]
+        - [srv, me, "CHANNEL_DATA  12:01 up 41 days", res, {"fields": {"Packet length": "60", "Padding length": "6", "Message number": "94 CHANNEL_DATA", "Contents": "12:01 up 41 days"}}]
   quiz:
     - type: fill
       q: "SSH uses TCP port ____ by default."
@@ -148,34 +148,34 @@
       tag: ssh
       d: The client does the full SSH handshake and logs in with a key, exactly as in the SSH animation.
       p:
-        - [me, srv, "SSH handshake and login", sec]
+        - [me, srv, "SSH handshake and login", sec, {"fields": {"Layer": "SSH", "Steps": "version, key exchange, user auth"}}]
     - t: Start the sftp subsystem
       tag: start
       d: The client opens a session channel and requests the `sftp` subsystem. Then it sends INIT with version 3. The server answers VERSION 3.
       p:
-        - [me, srv, "subsystem sftp", req]
-        - [me, srv, "SSH_FXP_INIT v3", req]
-        - [srv, me, "SSH_FXP_VERSION 3", res]
+        - [me, srv, "subsystem sftp", req, {"fields": {"SSH message": "98 CHANNEL_REQUEST", "Request": "subsystem", "Name": "sftp"}}]
+        - [me, srv, "SSH_FXP_INIT v3", req, {"fields": {"Length": "5", "Type": "1 SSH_FXP_INIT", "Version": "3"}}]
+        - [srv, me, "SSH_FXP_VERSION 3", res, {"fields": {"Length": "5", "Type": "2 SSH_FXP_VERSION", "Version": "3"}}]
     - t: Open the file
       tag: transfer
       d: The client opens `/reports/may.csv` for reading. The server answers with a handle, a short id for the open file.
       p:
-        - [me, srv, "SSH_FXP_OPEN /reports/may.csv", req]
-        - [srv, me, "SSH_FXP_HANDLE h1", res]
+        - [me, srv, "SSH_FXP_OPEN /reports/may.csv", req, {"fields": {"Length": "38", "Type": "3 SSH_FXP_OPEN", "Request ID": "1", "Path": "/reports/may.csv", "Flags": "0x00000001 READ"}}]
+        - [srv, me, "SSH_FXP_HANDLE h1", res, {"fields": {"Length": "11", "Type": "102 SSH_FXP_HANDLE", "Request ID": "1", "Handle": "h1"}}]
     - t: Read in pieces
       tag: transfer
       d: The client sends several READ requests at once, each for a piece of the file. The server answers with DATA. Many requests in flight keep the transfer fast.
       p:
-        - [me, srv, "SSH_FXP_READ h1 offset 0", req]
-        - [me, srv, "SSH_FXP_READ h1 offset 32768", req]
-        - [srv, me, "SSH_FXP_DATA", data]
-        - [srv, me, "SSH_FXP_DATA", data]
+        - [me, srv, "SSH_FXP_READ h1 offset 0", req, {"fields": {"Length": "23", "Type": "5 SSH_FXP_READ", "Request ID": "2", "Handle": "h1", "Offset": "0", "Len": "32768"}}]
+        - [me, srv, "SSH_FXP_READ h1 offset 32768", req, {"fields": {"Length": "23", "Type": "5 SSH_FXP_READ", "Request ID": "3", "Handle": "h1", "Offset": "32768", "Len": "32768"}}]
+        - [srv, me, "SSH_FXP_DATA", data, {"fields": {"Length": "32777", "Type": "103 SSH_FXP_DATA", "Request ID": "2", "Data": "32768 bytes"}}]
+        - [srv, me, "SSH_FXP_DATA", data, {"fields": {"Length": "9817", "Type": "103 SSH_FXP_DATA", "Request ID": "3", "Data": "9808 bytes, end of file"}}]
     - t: Close
       tag: close
       d: The client closes the handle. The server answers STATUS OK.
       p:
-        - [me, srv, "SSH_FXP_CLOSE h1", req]
-        - [srv, me, "SSH_FXP_STATUS OK", res]
+        - [me, srv, "SSH_FXP_CLOSE h1", req, {"fields": {"Length": "11", "Type": "4 SSH_FXP_CLOSE", "Request ID": "4", "Handle": "h1"}}]
+        - [srv, me, "SSH_FXP_STATUS OK", res, {"fields": {"Length": "21", "Type": "101 SSH_FXP_STATUS", "Request ID": "4", "Code": "0 SSH_FX_OK"}}]
   quiz:
     - q: Is SFTP the same as FTP over TLS?
       opts: ["Yes", "No, SFTP is a separate protocol that runs inside SSH"]
@@ -212,24 +212,24 @@
       tag: compare
       d: With normal DNS, the question "where is clinic.example" crosses the local network in plain text on UDP 53. Anyone on the path can read and even change it.
       p:
-        - [pc, isp, "DNS query clinic.example (plain)", bad]
+        - [pc, isp, "DNS query clinic.example (plain)", bad, {"fields": {"Transaction ID": "0x3f10", "Flags": "0x0100 standard query, recursion desired", "Questions": "1", "Answer RRs": "0", "Authority RRs": "0", "Additional RRs": "0", "Contains": "clinic.example A, readable by anyone on the path"}}]
       bad: [isp]
     - t: Open HTTPS to the resolver
       tag: tls
       d: With DoH, the browser opens a TLS connection to its DoH resolver on port 443, or reuses one.
       p:
-        - [pc, doh, "TLS handshake", sec]
+        - [pc, doh, "TLS handshake", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "512", "Handshake type": "0x01 ClientHello", "Server name": "dns.example", "ALPN": "h2"}}]
     - t: Ask inside HTTPS
       tag: query
       d: The browser sends the DNS message as the body of a POST. The network sees only encrypted HTTPS to the resolver.
       f: {Method: POST, Path: /dns-query, Content-Type: application/dns-message}
       p:
-        - [pc, doh, "POST /dns-query (encrypted)", sec]
+        - [pc, doh, "POST /dns-query (encrypted)", sec, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "180", "Payload": "HTTP/2 POST /dns-query, content-type application/dns-message, the DNS question"}}]
     - t: Answer inside HTTPS
       tag: answer
       d: The resolver answers with the DNS response in the body. The browser connects to the site as usual.
       p:
-        - [doh, pc, "200 application/dns-message (encrypted)", res]
+        - [doh, pc, "200 application/dns-message (encrypted)", res, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "140", "Payload": "HTTP/2 200, content-type application/dns-message, the DNS answer"}}]
   quiz:
     - type: fill
       q: "The content type of a DoH message is application/____."
@@ -267,22 +267,22 @@
       tag: query
       d: The resolver asks for www.example.com A with the DO bit set. The answer comes with an RRSIG signed by the example.com zone key.
       p:
-        - [res, ex, "query A, DO bit", req]
-        - [ex, res, "A 203.0.113.10 + RRSIG", res]
+        - [res, ex, "query A, DO bit", req, {"fields": {"Transaction ID": "0x2b1c", "Flags": "0x0010 checking disabled off, EDNS DO bit set", "Questions": "1", "Answer RRs": "0", "Additional RRs": "1", "Contains": "example.com A"}}]
+        - [ex, res, "A 203.0.113.10 + RRSIG", res, {"fields": {"Transaction ID": "0x2b1c", "Flags": "0x8400 authoritative", "Questions": "1", "Answer RRs": "2", "Additional RRs": "1", "Contains": "A 203.0.113.10 and RRSIG type 46"}}]
     - t: Check the zone key
       tag: chain
       d: The resolver gets the example.com DNSKEY and checks the RRSIG with it. Then it must trust that key.
       p:
-        - [res, ex, "query DNSKEY", req]
-        - [ex, res, "DNSKEY + RRSIG", res]
+        - [res, ex, "query DNSKEY", req, {"fields": {"Transaction ID": "0x2b1d", "Flags": "0x0000 query", "Questions": "1", "Answer RRs": "0", "Additional RRs": "1", "Contains": "example.com DNSKEY"}}]
+        - [ex, res, "DNSKEY + RRSIG", res, {"fields": {"Transaction ID": "0x2b1d", "Flags": "0x8400 authoritative", "Questions": "1", "Answer RRs": "3", "Additional RRs": "1", "Contains": "DNSKEY 256 ZSK, DNSKEY 257 KSK, RRSIG"}}]
     - t: Walk up the chain
       tag: chain
       d: The .com zone has a DS record, a hash of the example.com key, signed by .com. The root has a DS for .com, signed by the root key, which the resolver already trusts.
       p:
-        - [res, com, "query DS example.com", req]
-        - [com, res, "DS + RRSIG", res]
-        - [res, root, "query DS com", req]
-        - [root, res, "DS + RRSIG", res]
+        - [res, com, "query DS example.com", req, {"fields": {"Transaction ID": "0x2b1e", "Flags": "0x0000 query", "Questions": "1", "Answer RRs": "0", "Additional RRs": "1", "Contains": "example.com DS"}}]
+        - [com, res, "DS + RRSIG", res, {"fields": {"Transaction ID": "0x2b1e", "Flags": "0x8400 authoritative", "Questions": "1", "Answer RRs": "2", "Additional RRs": "1", "Contains": "DS key tag 31406 SHA-256 digest, RRSIG"}}]
+        - [res, root, "query DS com", req, {"fields": {"Transaction ID": "0x2b1f", "Flags": "0x0000 query", "Questions": "1", "Answer RRs": "0", "Additional RRs": "1", "Contains": "com DS"}}]
+        - [root, res, "DS + RRSIG", res, {"fields": {"Transaction ID": "0x2b1f", "Flags": "0x8400 authoritative", "Questions": "1", "Answer RRs": "2", "Additional RRs": "1", "Contains": "DS for com, RRSIG by the root key"}}]
     - t: Answer is valid
       tag: valid
       d: Every link checks out. The resolver returns the answer with the AD flag, authenticated data.
@@ -291,7 +291,7 @@
       tag: attack
       d: An attacker injects a fake answer. It has no valid signature from the zone key, so the resolver rejects it and returns SERVFAIL instead of a lie.
       p:
-        - [bad, res, "A 198.51.100.66 (no valid RRSIG)", bad]
+        - [bad, res, "A 198.51.100.66 (no valid RRSIG)", bad, {"fields": {"Transaction ID": "0x2b1c", "Flags": "0x8400 authoritative", "Questions": "1", "Answer RRs": "1", "Additional RRs": "1", "Contains": "A 198.51.100.66 with no valid RRSIG, so it fails validation"}}]
       bad: [bad]
   quiz:
     - q: Does DNSSEC encrypt DNS?
@@ -329,32 +329,32 @@
       tag: discover
       d: The access point sends beacons about 10 times a second with the SSID and its security settings. The phone can also send a probe request.
       p:
-        - [ap, phone, "Beacon SSID HomeNet, WPA2", ctl]
+        - [ap, phone, "Beacon SSID HomeNet, WPA2", ctl, {"fields": {"Frame control": "0x8000 management, beacon", "BSSID": "3c:22:fb:aa:00:01", "SSID": "HomeNet", "RSN": "WPA2, AES-CCMP, PSK", "Interval": "100 TU"}}]
     - t: Authenticate and associate
       tag: join
       d: An open system authentication exchange, then association. These do not check the password. They just start the link.
       p:
-        - [phone, ap, "Authentication request", ctl]
-        - [ap, phone, "Authentication response", ctl]
-        - [phone, ap, "Association request", ctl]
-        - [ap, phone, "Association response", ctl]
+        - [phone, ap, "Authentication request", ctl, {"fields": {"Frame control": "0xb000 management, authentication", "Algorithm": "0 open system", "Sequence": "1"}}]
+        - [ap, phone, "Authentication response", ctl, {"fields": {"Frame control": "0xb000 management, authentication", "Algorithm": "0 open system", "Sequence": "2", "Status": "0 success"}}]
+        - [phone, ap, "Association request", ctl, {"fields": {"Frame control": "0x0000 management, association request", "SSID": "HomeNet", "RSN": "WPA2 PSK, CCMP"}}]
+        - [ap, phone, "Association response", ctl, {"fields": {"Frame control": "0x1000 management, association response", "Status": "0 success", "AID": "1"}}]
     - t: 4 way handshake, messages 1 and 2
       tag: handshake
       d: The AP sends a random ANonce. The phone makes a random SNonce, computes the PTK from the PMK, both nonces and both MAC addresses, and sends SNonce with a MIC. The MIC proves it knows the PMK.
       p:
-        - [ap, phone, "M1 ANonce", sec]
-        - [phone, ap, "M2 SNonce + MIC", sec]
+        - [ap, phone, "M1 ANonce", sec, {"fields": {"EtherType": "0x888e EAPOL", "Descriptor": "2 RSN", "Key info": "0x008a", "Message": "M1", "Replay counter": "1", "ANonce": "32 random bytes"}}]
+        - [phone, ap, "M2 SNonce + MIC", sec, {"fields": {"EtherType": "0x888e EAPOL", "Descriptor": "2 RSN", "Key info": "0x010a", "Message": "M2", "Replay counter": "1", "SNonce": "32 random bytes", "MIC": "16 bytes"}}]
     - t: Messages 3 and 4
       tag: handshake
       d: The AP checks the MIC, sends the GTK encrypted with the new keys, and the phone confirms. Both install the keys. Traffic is now encrypted with AES CCMP.
       p:
-        - [ap, phone, "M3 GTK (encrypted) + MIC", sec]
-        - [phone, ap, "M4 ACK", sec]
+        - [ap, phone, "M3 GTK (encrypted) + MIC", sec, {"fields": {"EtherType": "0x888e EAPOL", "Descriptor": "2 RSN", "Key info": "0x13ca", "Message": "M3", "Replay counter": "2", "Key data": "GTK, encrypted", "MIC": "16 bytes"}}]
+        - [phone, ap, "M4 ACK", sec, {"fields": {"EtherType": "0x888e EAPOL", "Descriptor": "2 RSN", "Key info": "0x030a", "Message": "M4", "Replay counter": "2", "MIC": "16 bytes"}}]
     - t: The offline guessing risk
       tag: risk
       d: A listener who captured M1 and M2 can try millions of password guesses offline and check each against the MIC. Short passwords fall quickly.
       p:
-        - [eve, eve, "offline guesses vs captured MIC", bad]
+        - [eve, eve, "offline guesses vs captured MIC", bad, {"fields": {"Attack": "offline dictionary", "Needs": "M1 and M2 from the air", "Speed": "limited only by the attacker's hardware"}}]
       bad: [eve]
   quiz:
     - q: Does the Wi-Fi password travel over the air in WPA2?
@@ -389,20 +389,20 @@
       tag: sae
       d: Both sides turn the password into a secret point on an elliptic curve, then each sends a Commit with a random scalar and element. Nothing here lets a listener test guesses.
       p:
-        - [phone, ap, "SAE Commit", sec]
-        - [ap, phone, "SAE Commit", sec]
+        - [phone, ap, "SAE Commit", sec, {"fields": {"Frame control": "0xb000 management, authentication", "Algorithm": "3 SAE", "Sequence": "1 commit", "Status": "0", "Contents": "group 19, scalar and element, 96 bytes"}}]
+        - [ap, phone, "SAE Commit", sec, {"fields": {"Frame control": "0xb000 management, authentication", "Algorithm": "3 SAE", "Sequence": "1 commit", "Status": "0", "Contents": "group 19, scalar and element, 96 bytes"}}]
     - t: SAE Confirm
       tag: sae
       d: Each side sends a Confirm that proves it derived the same key. If the password were wrong, the confirm would fail. The result is a fresh PMK.
       p:
-        - [phone, ap, "SAE Confirm", sec]
-        - [ap, phone, "SAE Confirm", sec]
+        - [phone, ap, "SAE Confirm", sec, {"fields": {"Frame control": "0xb000 management, authentication", "Algorithm": "3 SAE", "Sequence": "2 confirm", "Status": "0", "Contents": "send confirm counter, confirm hash"}}]
+        - [ap, phone, "SAE Confirm", sec, {"fields": {"Frame control": "0xb000 management, authentication", "Algorithm": "3 SAE", "Sequence": "2 confirm", "Status": "0", "Contents": "send confirm counter, confirm hash"}}]
     - t: Association and 4 way handshake
       tag: handshake
       d: The phone associates, then the usual 4 way handshake runs with the new PMK to make session keys.
       p:
-        - [phone, ap, "Association", ctl]
-        - [ap, phone, "4 way handshake M1 to M4", sec]
+        - [phone, ap, "Association", ctl, {"fields": {"Frame control": "0x0000 management, association request", "RSN": "WPA3 SAE, PMF required"}}]
+        - [ap, phone, "4 way handshake M1 to M4", sec, {"fields": {"EtherType": "0x888e EAPOL", "Descriptor": "2 RSN", "Key info": "0x008a", "Message": "M1 to M4", "Note": "same 4 way handshake, keys come from SAE so offline guessing fails"}}]
     - t: Recording does not help
       tag: risk
       d: The listener recorded everything, but cannot test password guesses offline. Each guess needs a full live exchange with the access point, which can rate limit.
@@ -444,34 +444,34 @@
       tag: eap
       d: The laptop associates and sends EAPOL-Start. The AP blocks all other traffic until the login succeeds.
       p:
-        - [laptop, ap, "EAPOL-Start", ctl]
+        - [laptop, ap, "EAPOL-Start", ctl, {"fields": {"EtherType": "0x888e EAPOL", "Version": "2", "Packet type": "1 EAPOL-Start"}}]
     - t: Identity
       tag: eap
       d: The AP asks for an identity. The laptop answers. The AP wraps the answer in a RADIUS Access-Request.
       p:
-        - [ap, laptop, "EAP Request Identity", ctl]
-        - [laptop, ap, "EAP Response Identity asha", req]
-        - [ap, rad, "Access-Request (EAP inside)", req]
+        - [ap, laptop, "EAP Request Identity", ctl, {"fields": {"EtherType": "0x888e EAPOL", "Code": "1 Request", "Type": "1 Identity", "Identifier": "1"}}]
+        - [laptop, ap, "EAP Response Identity asha", req, {"fields": {"EtherType": "0x888e EAPOL", "Code": "2 Response", "Type": "1 Identity", "Identifier": "1", "Identity": "asha"}}]
+        - [ap, rad, "Access-Request (EAP inside)", req, {"fields": {"Code": "1 Access-Request", "Identifier": "7", "Authenticator": "16 bytes", "User Name": "asha", "EAP Message": "EAP Response Identity", "Message Authenticator": "HMAC-MD5"}}]
     - t: The EAP method runs
       tag: tls
       d: RADIUS and the laptop run EAP-TLS through the AP, in several Access-Challenge rounds. They build a TLS session and check each other's certificates.
       p:
-        - [rad, ap, "Access-Challenge", sec]
-        - [ap, laptop, "EAP TLS ServerHello, certificate", sec]
-        - [laptop, ap, "EAP TLS client certificate", sec]
-        - [ap, rad, "Access-Request", sec]
+        - [rad, ap, "Access-Challenge", sec, {"fields": {"Code": "11 Access-Challenge", "Identifier": "7", "Authenticator": "16 bytes", "EAP Message": "EAP Request, type 13 EAP-TLS start"}}]
+        - [ap, laptop, "EAP TLS ServerHello, certificate", sec, {"fields": {"EtherType": "0x888e EAPOL", "Code": "1 Request", "Type": "13 EAP-TLS", "Contains": "TLS ServerHello and RADIUS server certificate"}}]
+        - [laptop, ap, "EAP TLS client certificate", sec, {"fields": {"EtherType": "0x888e EAPOL", "Code": "2 Response", "Type": "13 EAP-TLS", "Contains": "TLS client certificate and key exchange"}}]
+        - [ap, rad, "Access-Request", sec, {"fields": {"Code": "1 Access-Request", "Identifier": "8", "Authenticator": "16 bytes", "EAP Message": "EAP-TLS client data"}}]
     - t: Accept and keys
       tag: accept
       d: RADIUS checks the account in the directory and sends Access-Accept with key material for the AP, and maybe a VLAN for this user.
       f: {Result: Access-Accept, VLAN: "20 staff"}
       p:
-        - [rad, dir, "check account", req]
-        - [rad, ap, "Access-Accept + keys + VLAN 20", res]
+        - [rad, dir, "check account", req, {"fields": {"Message ID": "1", "Operation": "3 SearchRequest", "Filter": "(sAMAccountName=asha)", "Attributes": "memberOf, userAccountControl"}}]
+        - [rad, ap, "Access-Accept + keys + VLAN 20", res, {"fields": {"Code": "2 Access-Accept", "Identifier": "8", "Authenticator": "16 bytes", "MS MPPE Recv Key": "encrypted key for the AP", "Tunnel Private Group ID": "20", "EAP Message": "EAP Success"}}]
     - t: 4 way handshake and access
       tag: handshake
       d: The AP and the laptop run the 4 way handshake with the new key. The port opens. Each user has their own keys, and IT can disable one account without changing a shared password.
       p:
-        - [ap, laptop, "4 way handshake", sec]
+        - [ap, laptop, "4 way handshake", sec, {"fields": {"EtherType": "0x888e EAPOL", "Descriptor": "2 RSN", "Key info": "0x008a", "Message": "M1 to M4", "Note": "keys come from the EAP-TLS session"}}]
   quiz:
     - type: fill
       q: "RADIUS authentication uses UDP port ____."
@@ -514,24 +514,24 @@
       tag: probe
       d: The phone requests `http://connectivitycheck.gstatic.com/generate_204`. It expects 204 No Content.
       p:
-        - [phone, gw, "GET /generate_204", req]
+        - [phone, gw, "GET /generate_204", req, {"raw": "GET /generate_204 HTTP/1.1\r\nHost: connectivitycheck.gstatic.com\r\n\r\n"}]
     - t: Intercepted
       tag: redirect
       d: The gateway intercepts the request and answers with a 302 redirect to the portal. Not a 204, so the phone opens the login sheet.
       p:
-        - [gw, phone, "302 Location login.hotel.example", bad]
+        - [gw, phone, "302 Location login.hotel.example", bad, {"raw": "HTTP/1.1 302 Found\r\nLocation: https://login.hotel.example/?mac=a4:5e:60:12:34:56\r\n\r\n"}]
     - t: Log in
       tag: login
       d: You enter your room number and accept the terms. The portal tells the gateway to allow your device by its MAC and IP.
       p:
-        - [phone, portal, "POST room 412, accept terms", req]
-        - [portal, gw, "allow 10.20.0.55", ctl]
+        - [phone, portal, "POST room 412, accept terms", req, {"fields": {"Method": "POST", "Path": "/login", "Body": "room=412&name=asha&accept=yes", "Transport": "HTTPS"}}]
+        - [portal, gw, "allow 10.20.0.55", ctl, {"fields": {"Rule": "allow", "Client IP": "10.20.0.55", "Client MAC": "a4:5e:60:12:34:56", "Duration": "24 hours"}}]
     - t: Online
       tag: done
       d: The connectivity check now reaches the real server and gets 204. Normal browsing works.
       p:
-        - [phone, net, "GET /generate_204", req]
-        - [net, phone, "204 No Content", res]
+        - [phone, net, "GET /generate_204", req, {"raw": "GET /generate_204 HTTP/1.1\r\nHost: connectivitycheck.gstatic.com\r\n\r\n"}]
+        - [net, phone, "204 No Content", res, {"raw": "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"}]
   quiz:
     - q: How does a phone detect a captive portal?
       opts: ["It reads the SSID", "It requests a known test URL and checks for the expected answer, such as 204", "It asks the user"]
@@ -569,25 +569,25 @@
       d: The laptop sends one message with an ephemeral public key, its own static public key encrypted, and an encrypted timestamp that stops replays.
       f: {Message: Handshake Initiation, Size: "148 bytes", Contains: "ephemeral key, encrypted static key, encrypted timestamp, MACs"}
       p:
-        - [laptop, vpn, "Handshake Initiation", sec]
+        - [laptop, vpn, "Handshake Initiation", sec, {"fields": {"Message type": "1 handshake initiation", "Reserved": "0", "Sender index": "0x9a1c3e07", "Ephemeral": "32 bytes", "Static": "encrypted, 48 bytes", "Timestamp": "encrypted, 28 bytes", "MACs": "mac1 and mac2, 16 bytes each"}}]
     - t: Handshake response
       tag: handshake
       d: The server knows the laptop public key, so it can check the message. It replies with its own ephemeral key. Both sides now derive the session keys.
       f: {Message: Handshake Response, Size: "92 bytes"}
       p:
-        - [vpn, laptop, "Handshake Response", sec]
+        - [vpn, laptop, "Handshake Response", sec, {"fields": {"Message type": "2 handshake response", "Reserved": "0", "Sender index": "0x4f2d8b11", "Receiver index": "0x9a1c3e07", "Ephemeral": "32 bytes", "Empty": "encrypted, 16 bytes", "MACs": "mac1 and mac2"}}]
     - t: Tunnel a packet
       tag: data
       d: The laptop sends an IP packet for 10.0.5.20. WireGuard encrypts the whole packet and sends it in UDP to the server. The server decrypts it and checks the inner source is in the AllowedIPs of this peer.
       p:
-        - [laptop, vpn, "Transport data (encrypted IP packet)", data]
-        - [vpn, db, "IP packet 10.8.0.2 to 10.0.5.20", data]
+        - [laptop, vpn, "Transport data (encrypted IP packet)", data, {"fields": {"Message type": "4 transport data", "Reserved": "0", "Receiver index": "0x9a1c3e07", "Counter": "0", "Packet": "inner IP packet, encrypted with ChaCha20-Poly1305"}}]
+        - [vpn, db, "IP packet 10.8.0.2 to 10.0.5.20", data, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "63", "Protocol": "6 TCP", "Src": "10.8.0.2", "Dst": "10.0.5.20"}}]
     - t: Reply through the tunnel
       tag: data
       d: The reply goes back the same way. After two minutes the peers do a new handshake for fresh keys.
       p:
-        - [db, vpn, "IP reply", res]
-        - [vpn, laptop, "Transport data (encrypted)", data]
+        - [db, vpn, "IP reply", res, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "64", "Protocol": "6 TCP", "Src": "10.0.5.20", "Dst": "10.8.0.2"}}]
+        - [vpn, laptop, "Transport data (encrypted)", data, {"fields": {"Message type": "4 transport data", "Reserved": "0", "Receiver index": "0x4f2d8b11", "Counter": "0", "Packet": "inner reply, encrypted"}}]
   quiz:
     - q: What is cryptokey routing?
       opts: ["Routing by MAC address", "Each peer public key is tied to the IP ranges it may use", "Routing by DNS"]
@@ -624,28 +624,28 @@
       tag: ike
       d: Gateway A proposes algorithms and sends a Diffie Hellman key share and a nonce. B picks algorithms and sends its own. Now they share a secret for the next messages.
       p:
-        - [gwa, gwb, "IKE_SA_INIT SA, KE, Ni", sec]
-        - [gwb, gwa, "IKE_SA_INIT SA, KE, Nr", sec]
+        - [gwa, gwb, "IKE_SA_INIT SA, KE, Ni", sec, {"fields": {"Initiator SPI": "0x8a1f00d4c3b2a190", "Version": "0x20", "Exchange type": "34 IKE_SA_INIT", "Flags": "0x08 initiator", "Message ID": "0", "Payloads": "SA, KE group 19, Nonce"}}]
+        - [gwb, gwa, "IKE_SA_INIT SA, KE, Nr", sec, {"fields": {"Initiator SPI": "0x8a1f00d4c3b2a190", "Version": "0x20", "Exchange type": "34 IKE_SA_INIT", "Flags": "0x20 response", "Message ID": "0", "Payloads": "SA, KE group 19, Nonce, CERTREQ"}}]
     - t: IKE_AUTH
       tag: ike
       d: Encrypted now, each gateway proves its identity with a certificate signature. They agree on traffic selectors, 10.1.0.0/16 to 10.2.0.0/16, and set up the Child SA.
       f: {Traffic selectors: "10.1.0.0/16 <-> 10.2.0.0/16", Auth: certificates}
       p:
-        - [gwa, gwb, "IKE_AUTH IDi, AUTH, SA, TS", sec]
-        - [gwb, gwa, "IKE_AUTH IDr, AUTH, SA, TS", sec]
+        - [gwa, gwb, "IKE_AUTH IDi, AUTH, SA, TS", sec, {"fields": {"Initiator SPI": "0x8a1f00d4c3b2a190", "Version": "0x20", "Exchange type": "35 IKE_AUTH", "Flags": "0x08 initiator", "Message ID": "1", "Payloads": "SK with IDi, CERT, AUTH, SA, TSi, TSr"}}]
+        - [gwb, gwa, "IKE_AUTH IDr, AUTH, SA, TS", sec, {"fields": {"Initiator SPI": "0x8a1f00d4c3b2a190", "Version": "0x20", "Exchange type": "35 IKE_AUTH", "Flags": "0x20 response", "Message ID": "1", "Payloads": "SK with IDr, CERT, AUTH, SA, TSi, TSr"}}]
     - t: ESP carries the data
       tag: esp
       d: The office PC sends a normal packet to 10.2.0.20. Gateway A encrypts the whole packet in ESP tunnel mode, with a new outer header between the gateway addresses.
       p:
-        - [pc, gwa, "IP 10.1.0.15 to 10.2.0.20", data]
-        - [gwa, gwb, "ESP (encrypted inner packet)", data]
-        - [gwb, srv, "IP 10.1.0.15 to 10.2.0.20", data]
+        - [pc, gwa, "IP 10.1.0.15 to 10.2.0.20", data, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "64", "Protocol": "6 TCP", "Src": "10.1.0.15", "Dst": "10.2.0.20"}}]
+        - [gwa, gwb, "ESP (encrypted inner packet)", data, {"fields": {"Outer src": "198.51.100.10", "Outer dst": "203.0.113.10", "Protocol": "50 ESP", "SPI": "0xc0de0001", "Sequence number": "1", "Payload": "encrypted inner packet and an integrity tag"}}]
+        - [gwb, srv, "IP 10.1.0.15 to 10.2.0.20", data, {"fields": {"Version": "4", "IHL": "5", "Total length": "60", "Identification": "0x1c46", "TTL": "63", "Protocol": "6 TCP", "Src": "10.1.0.15", "Dst": "10.2.0.20"}}]
     - t: Rekey
       tag: ike
       d: Before the keys get old, the gateways run CREATE_CHILD_SA to make new ones, with no break in traffic.
       p:
-        - [gwa, gwb, "CREATE_CHILD_SA", sec]
-        - [gwb, gwa, "CREATE_CHILD_SA", sec]
+        - [gwa, gwb, "CREATE_CHILD_SA", sec, {"fields": {"Initiator SPI": "0x8a1f00d4c3b2a190", "Version": "0x20", "Exchange type": "36 CREATE_CHILD_SA", "Flags": "0x08 initiator", "Message ID": "2", "Payloads": "SK with SA, Nonce, KE, rekey"}}]
+        - [gwb, gwa, "CREATE_CHILD_SA", sec, {"fields": {"Initiator SPI": "0x8a1f00d4c3b2a190", "Version": "0x20", "Exchange type": "36 CREATE_CHILD_SA", "Flags": "0x20 response", "Message ID": "2", "Payloads": "SK with SA, Nonce, KE"}}]
   quiz:
     - type: fill
       q: "ESP is IP protocol number ____."
@@ -679,29 +679,29 @@
       tag: login
       d: At login, the PC sends AS-REQ with a timestamp encrypted with a key made from your password. This is pre authentication.
       p:
-        - [pc, kdc, "AS-REQ (encrypted timestamp)", sec]
+        - [pc, kdc, "AS-REQ (encrypted timestamp)", sec, {"fields": {"pvno": "5", "msg type": "10 AS-REQ", "realm": "CORP.EXAMPLE", "cname": "asha", "sname": "krbtgt/CORP.EXAMPLE", "padata": "PA-ENC-TIMESTAMP, AES256", "etype": "18 aes256-cts"}}]
     - t: AS-REP with a TGT
       tag: login
       d: The KDC decrypts the timestamp with its copy of your key, so it knows you. It returns a TGT, encrypted with the KDC own key, plus a session key encrypted with your key.
       f: {TGT: "encrypted with krbtgt key", Session key: "encrypted with user key", Lifetime: "about 10 hours"}
       p:
-        - [kdc, pc, "AS-REP (TGT + session key)", sec]
+        - [kdc, pc, "AS-REP (TGT + session key)", sec, {"fields": {"pvno": "5", "msg type": "11 AS-REP", "realm": "CORP.EXAMPLE", "cname": "asha", "ticket": "TGT, encrypted with the krbtgt key", "enc part": "session key, encrypted with the user key"}}]
     - t: TGS-REQ for a service
       tag: ticket
       d: You open the intranet. The PC sends the TGT and an authenticator to the KDC and asks for a ticket for `HTTP/intranet.corp.example`.
       p:
-        - [pc, kdc, "TGS-REQ (TGT, SPN HTTP/intranet)", sec]
+        - [pc, kdc, "TGS-REQ (TGT, SPN HTTP/intranet)", sec, {"fields": {"pvno": "5", "msg type": "12 TGS-REQ", "realm": "CORP.EXAMPLE", "sname": "HTTP/intranet", "padata": "AP-REQ with the TGT and an authenticator"}}]
     - t: TGS-REP with a service ticket
       tag: ticket
       d: The KDC returns a service ticket encrypted with the web app key. The PC cannot read it. It only passes it on.
       p:
-        - [kdc, pc, "TGS-REP (service ticket)", sec]
+        - [kdc, pc, "TGS-REP (service ticket)", sec, {"fields": {"pvno": "5", "msg type": "13 TGS-REP", "realm": "CORP.EXAMPLE", "sname": "HTTP/intranet", "ticket": "service ticket, encrypted with the web service key"}}]
     - t: AP-REQ to the service
       tag: access
       d: The browser sends the service ticket and an authenticator in the HTTP Authorization header. The web app decrypts the ticket with its own key and knows it is you. No password was sent to the web app.
       p:
-        - [pc, web, "AP-REQ (Authorization Negotiate)", sec]
-        - [web, pc, "200 OK, welcome asha", res]
+        - [pc, web, "AP-REQ (Authorization Negotiate)", sec, {"fields": {"Header": "Authorization: Negotiate", "Token": "SPNEGO wrapping AP-REQ", "msg type": "14 AP-REQ"}}]
+        - [web, pc, "200 OK, welcome asha", res, {"raw": "HTTP/1.1 200 OK\r\nWWW-Authenticate: Negotiate oRQwEqADCgEA...\r\nContent-Type: text/html\r\n\r\n"}]
   quiz:
     - q: Who can read a service ticket?
       opts: ["The user", "Only the service it is for, because it is encrypted with that service key", "Anyone on the network"]
@@ -737,28 +737,28 @@
       tag: tls
       d: The app connects to port 389 and asks to upgrade to TLS with the StartTLS extended operation. Then it does a TLS handshake.
       p:
-        - [app, ldap, "ExtendedRequest StartTLS", sec]
-        - [ldap, app, "ExtendedResponse success, TLS handshake", sec]
+        - [app, ldap, "ExtendedRequest StartTLS", sec, {"fields": {"Message ID": "1", "Operation": "23 ExtendedRequest", "requestName": "1.3.6.1.4.1.1466.20037 StartTLS"}}]
+        - [ldap, app, "ExtendedResponse success, TLS handshake", sec, {"fields": {"Message ID": "1", "Operation": "24 ExtendedResponse", "resultCode": "0 success"}}]
     - t: Bind as a service account
       tag: bind
       d: The app binds as its own service account to be allowed to search.
       p:
-        - [app, ldap, "BindRequest cn=webapp", sec]
-        - [ldap, app, "BindResponse success", res]
+        - [app, ldap, "BindRequest cn=webapp", sec, {"fields": {"Message ID": "2", "Operation": "0 BindRequest", "version": "3", "name": "cn=webapp,ou=services,dc=corp,dc=example", "auth": "simple, inside TLS"}}]
+        - [ldap, app, "BindResponse success", res, {"fields": {"Message ID": "2", "Operation": "1 BindResponse", "resultCode": "0 success"}}]
     - t: Search for the user
       tag: search
       d: A user logs in as asha. The app searches for her entry and her groups.
       f: {Base: "ou=people,dc=corp,dc=example", Scope: subtree, Filter: "(uid=asha)"}
       p:
-        - [app, ldap, "SearchRequest (uid=asha)", req]
-        - [ldap, app, "SearchResultEntry uid=asha, memberOf=staff", res]
-        - [ldap, app, "SearchResultDone", res]
+        - [app, ldap, "SearchRequest (uid=asha)", req, {"fields": {"Message ID": "3", "Operation": "3 SearchRequest", "baseObject": "ou=people,dc=corp,dc=example", "scope": "2 subtree", "filter": "(uid=asha)", "attributes": "cn, mail, memberOf"}}]
+        - [ldap, app, "SearchResultEntry uid=asha, memberOf=staff", res, {"fields": {"Message ID": "3", "Operation": "4 SearchResultEntry", "objectName": "uid=asha,ou=people,dc=corp,dc=example", "memberOf": "cn=staff,ou=groups,dc=corp,dc=example"}}]
+        - [ldap, app, "SearchResultDone", res, {"fields": {"Message ID": "3", "Operation": "5 SearchResultDone", "resultCode": "0 success"}}]
     - t: Check her password
       tag: bind
       d: The app binds as asha with the password she typed. Success means the password is right.
       p:
-        - [app, ldap, "BindRequest uid=asha", sec]
-        - [ldap, app, "BindResponse success", res]
+        - [app, ldap, "BindRequest uid=asha", sec, {"fields": {"Message ID": "4", "Operation": "0 BindRequest", "version": "3", "name": "uid=asha,ou=people,dc=corp,dc=example", "auth": "simple, the user's password, inside TLS"}}]
+        - [ldap, app, "BindResponse success", res, {"fields": {"Message ID": "4", "Operation": "1 BindResponse", "resultCode": "0 success"}}]
   quiz:
     - type: fill
       q: "LDAP over TLS from the start, LDAPS, uses port ____."
@@ -794,31 +794,31 @@
       d: The app makes a random code_verifier and sends the browser to the provider with the hash of it, the scopes it wants and a state value.
       f: {response_type: code, scope: "openid photos.read", code_challenge_method: S256}
       p:
-        - [app, user, "302 to /authorize?...code_challenge", req]
-        - [user, auth, "GET /authorize", req]
+        - [app, user, "302 to /authorize?...code_challenge", req, {"raw": "HTTP/1.1 302 Found\r\nLocation: https://auth.example/authorize?response_type=code&client_id=app123&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&scope=openid%20photos.read&state=af0ifjsldkj&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256\r\n\r\n"}]
+        - [user, auth, "GET /authorize", req, {"raw": "GET /authorize?response_type=code&client_id=app123&scope=openid%20photos.read&state=af0ifjsldkj&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256 HTTP/1.1\r\nHost: auth.example\r\n\r\n"}]
     - t: Log in and consent
       tag: login
       d: You log in at the provider, not at the app, and agree to "read your photos". The app never sees your password.
       p:
-        - [user, auth, "password, MFA, consent", sec]
+        - [user, auth, "password, MFA, consent", sec, {"fields": {"Method": "POST", "Path": "/login", "Then": "MFA code, consent screen for photos.read", "Transport": "HTTPS"}}]
     - t: Code comes back
       tag: code
       d: The provider redirects the browser back to the app with a one time code and the same state.
       p:
-        - [auth, user, "302 to app/callback?code=...&state=...", res]
-        - [user, app, "GET /callback?code=...", res]
+        - [auth, user, "302 to app/callback?code=...&state=...", res, {"raw": "HTTP/1.1 302 Found\r\nLocation: https://app.example/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=af0ifjsldkj\r\n\r\n"}]
+        - [user, app, "GET /callback?code=...", res, {"raw": "GET /callback?code=SplxlOBeZQQYbYS6WxSbIA&state=af0ifjsldkj HTTP/1.1\r\nHost: app.example\r\n\r\n"}]
     - t: Swap the code for tokens
       tag: token
       d: The app sends the code and the original code_verifier to the token endpoint. The provider checks the hash matches and returns an access token and, for OpenID Connect, an ID token.
       p:
-        - [app, auth, "POST /token code + code_verifier", sec]
-        - [auth, app, "access_token, id_token", sec]
+        - [app, auth, "POST /token code + code_verifier", sec, {"raw": "POST /token HTTP/1.1\r\nHost: auth.example\r\nContent-Type: application/x-www-form-urlencoded\r\n\r\ngrant_type=authorization_code&code=SplxlOBeZQQYbYS6WxSbIA&redirect_uri=https%3A%2F%2Fapp.example%2Fcallback&code_verifier=dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"}]
+        - [auth, app, "access_token, id_token", sec, {"raw": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n\r\n{\"access_token\":\"eyJhbGciOi...\",\"token_type\":\"Bearer\",\"expires_in\":900,\"id_token\":\"eyJ...\"}"}]
     - t: Call the API
       tag: api
       d: The app calls the photos API with the access token as a Bearer token. The API checks it and returns only what the scope allows.
       p:
-        - [app, api, "GET /photos, Authorization Bearer", req]
-        - [api, app, "200 photos", res]
+        - [app, api, "GET /photos, Authorization Bearer", req, {"raw": "GET /photos HTTP/1.1\r\nHost: api.example\r\nAuthorization: Bearer eyJhbGciOi...\r\n\r\n"}]
+        - [api, app, "200 photos", res, {"raw": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"photos\":[{\"id\":\"p1\"},{\"id\":\"p2\"}]}"}]
   quiz:
     - q: What does PKCE protect against?
       opts: ["Slow logins", "A stolen authorization code being used by another app", "Weak passwords"]

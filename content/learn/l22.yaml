@@ -196,3 +196,11 @@ refs:
   - "Tyler Akidau. [Streaming 101](https://www.oreilly.com/radar/the-world-beyond-batch-streaming-101/)."
   - "Apache Flink. [Timely stream processing](https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/)."
   - "Debezium. [Change data capture](https://debezium.io/documentation/reference/stable/index.html)."
+
+security: |
+  Data pipelines copy data everywhere, which multiplies privacy risk.
+
+  - **Minimize** what you collect, and drop or hash personal fields early.
+  - Control who can query the warehouse. Analysts rarely need names.
+  - Track **lineage**, where each field came from, so you can delete a person's data on request.
+  - Streams can also power security, for example real time fraud and anomaly detection.

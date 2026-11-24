@@ -153,3 +153,11 @@ refs:
   - "Martin Kleppmann. [CRDTs, the hard parts](https://martin.kleppmann.com/2020/07/06/crdt-hard-parts-hydra.html)."
   - "Figma. [How Figma's multiplayer technology works](https://www.figma.com/blog/how-figmas-multiplayer-technology-works/)."
   - "Yjs. [Shared data types for building collaborative software](https://docs.yjs.dev/)."
+
+security: |
+  Shared documents need careful access control.
+
+  - Check permissions on every edit operation, not only when the document opens.
+  - When access is removed, close the live connection.
+  - Keep a full version history for audit and recovery.
+  - Sanitize rich content, so a pasted script cannot run in other users' browsers.

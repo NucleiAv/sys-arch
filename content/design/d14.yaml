@@ -170,3 +170,11 @@ refs:
   - "OWASP. [Top 10 for LLM applications](https://genai.owasp.org/llm-top-10/)."
   - "Anthropic. [Prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)."
   - "Advent of System Design. [Day 28, serving an AI app](https://www.devmaxx.dev/advent)."
+
+security: |
+  AI chat apps add new kinds of risk.
+
+  - **Prompt injection.** Text from users, files or web pages can tell the model to ignore its rules. Treat model output as untrusted and limit what tools it may call.
+  - **Data leaks.** Do not let one user's data reach another's context. Scope retrieval by user permissions.
+  - **Abuse and cost.** Rate limit, set token budgets and watch for automated scraping.
+  - Log prompts and outputs carefully, since they may hold personal data. See the OWASP Top 10 for LLM applications.

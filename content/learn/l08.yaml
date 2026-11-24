@@ -195,3 +195,11 @@ refs:
   - "Martin Kleppmann. Designing Data-Intensive Applications, chapter 5, replication."
   - "GitHub. [October 21 post-incident analysis](https://github.blog/news-insights/company-news/oct21-post-incident-analysis/)."
   - "Amazon. [Dynamo, Amazon's highly available key value store](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf)."
+
+security: |
+  Every replica is another copy to protect.
+
+  - Encrypt **replication traffic**, especially across regions.
+  - Replicas need the same access control as the primary. A read replica used for analytics is a common leak.
+  - Backups are not replicas. Replication copies a mistake or a ransomware encryption instantly. Keep point in time backups as well.
+  - Delete requests under privacy laws must reach every replica and backup within your stated time.

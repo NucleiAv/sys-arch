@@ -1,0 +1,238 @@
+slug: d15
+num: "15"
+short: Peer to peer network
+title: Design a peer to peer file sharing network
+time: about 80 minutes
+tags: [P2P, DHT, Kademlia, NAT, integrity]
+lede: Millions of computers share big files with each other, with no central server holding the data. Like BitTorrent, IPFS or the peer to peer part of game and system updates.
+
+ask: |
+  Users share large files, from 100 MB to 50 GB. Anyone with a short link can download a file from other users who already have it. The system must work with no central file server, keep working when many peers leave, and make sure nobody receives a corrupted or fake file.
+
+reqs:
+  func:
+    - Publish a file and get a short link, a magnet link with the file's hash.
+    - Find peers who have the file, with or without a central tracker.
+    - Download pieces from many peers at once and upload to others.
+    - Check every piece so corrupted or fake data is rejected.
+  nonfunc:
+    - Scale to millions of peers and files with no single point of failure.
+    - Fast downloads that grow as more people share.
+    - Work behind home routers that use NAT.
+    - Resist bad peers that lie or send junk.
+  out:
+    - Payments, search for content by name, legal and licensing checks.
+
+estimate:
+  intro: |
+    A popular 2 GB file is downloaded by 1 million people in its first day. Pieces are 1 MB each.
+  items:
+    - type: num
+      q: How many pieces does the 2 GB file have? Use 1 GB as 1024 MB.
+      a: 2048
+      tol: 1
+      unit: pieces
+      why: 2048 MB divided by 1 MB is 2048 pieces.
+    - type: num
+      q: Each piece hash is 32 bytes, SHA-256. How many KB of hashes does the file need?
+      a: 64
+      tol: 1
+      unit: KB
+      why: 2048 times 32 bytes is 65536 bytes, which is 64 KB. Small enough to fetch first.
+    - type: num
+      q: If one central server sent all of it, how many PB a day is that? 1 million times 2 GB.
+      a: 2
+      tol: 0.1
+      unit: PB
+      why: 2 million GB is 2000 TB, about 2 PB in a day. That is why peers sharing with peers is so powerful.
+  after: |
+    !key With peer to peer, every downloader also uploads. Capacity grows with demand instead of being crushed by it.
+
+api: |
+  ```
+  magnet:?xt=urn:btih:<info hash>&dn=ubuntu.iso      the short link
+  Peer wire messages over TCP or uTP
+    handshake(info_hash, peer_id)
+    bitfield(pieces I have)
+    interested / not_interested
+    choke / unchoke
+    request(piece, offset, length)       blocks of 16 KB
+    piece(piece, offset, data)
+    have(piece)                          tell peers about a new piece
+  DHT messages over UDP
+    ping, find_node(target_id), get_peers(info_hash), announce_peer(info_hash, port)
+  ```
+
+data: |
+  | Item | Where | Holds |
+  | --- | --- | --- |
+  | Metadata | Fetched from peers by info hash | File names, sizes, piece size, list of piece hashes |
+  | Info hash | Inside the link | Hash of the metadata, so the metadata itself can be checked |
+  | Routing table | Each peer, in memory | About 160 buckets of up to 8 contacts, ordered by XOR distance |
+  | Peer list | DHT nodes closest to the info hash | Addresses of peers that have the file, with a timeout |
+  | Piece bitmap | Each peer | Which pieces it has |
+
+  Everything is **content addressed**. You name data by its hash, so anyone can check that what they got is what they asked for.
+
+scenes:
+  - title: Joining a swarm and getting a file
+    stats: [Step, Pieces you have, Peers known]
+    nodes:
+      me: {label: Your laptop, x: 0, y: 2, kind: box}
+      dht1: {label: DHT node A, x: 2, y: 0, kind: raised}
+      dht2: {label: DHT node near hash, x: 4, y: 0, kind: raised, tag: XOR close}
+      p1: {label: Peer 1, x: 3, y: 2, kind: def}
+      p2: {label: Peer 2, x: 5, y: 2, kind: def}
+      bad: {label: Bad peer, x: 3, y: 4, kind: atk}
+    links: [[me, dht1], [dht1, dht2], [me, dht2], [me, p1], [me, p2], [me, bad], [p1, p2]]
+    steps:
+      - title: Open the magnet link
+        text: The link holds only the info hash. Your client asks a DHT node it already knows for nodes closer to that hash.
+        on: [me, dht1]
+        flow: [[me, dht1, ink], [dht1, me, def]]
+        stats: [Lookup, "0", "0"]
+      - title: Walk closer to the hash
+        text: Each answer gives nodes whose ids are closer to the hash by XOR distance. In a few hops you reach nodes that store the peer list for this file.
+        on: [me, dht2]
+        flow: [[me, dht2, ink], [dht2, me, def]]
+        stats: [Get peers, "0", "40"]
+      - title: Get the metadata
+        text: A peer sends the metadata. Your client hashes it and checks it matches the info hash in the link. Now you have the list of piece hashes.
+        on: [me, p1]
+        flow: [[p1, me, def]]
+        mark: {me: ok}
+        stats: [Metadata, "0", "40"]
+      - title: Download from many peers
+        text: You ask for the rarest pieces first, from several peers at once. Each piece is checked against its hash before you keep it and tell others you have it.
+        on: [me, p1, p2]
+        flow: [[p1, me, def], [p2, me, def]]
+        stats: [Swarm, "512 of 2048", "40"]
+      - title: A bad peer sends junk
+        text: The bad peer sends a piece that does not match its hash. Your client drops it, asks someone else, and bans that peer.
+        on: [me, bad]
+        flow: [[bad, me, atk]]
+        mark: {bad: bad, me: ok}
+        stats: [Reject, "512 of 2048", "39"]
+      - title: Give back
+        text: As soon as you have pieces, you upload them to others. Peers that upload to you get served first, which is called tit for tat.
+        on: [me, p1, p2]
+        flow: [[me, p1, ink], [me, p2, ink]]
+        stats: [Seed, "2048 of 2048", "39"]
+
+hld: |
+  1. **Content addressing.** A file is described by metadata, and the metadata's hash is the file's name, the info hash.
+  2. **Peer discovery.** A **tracker** server is simplest. A **DHT** removes the central point. Peers also swap peer lists with each other, called peer exchange.
+  3. **Piece transfer.** Files are split into pieces, pieces into 16 KB blocks. Each piece has a hash in the metadata.
+  4. **Choosing pieces.** Rarest first, so no piece disappears when its last owner leaves.
+  5. **Fairness.** Each peer uploads to the few peers that give it the best speed, and every 30 seconds tries one random peer, an optimistic unchoke, so newcomers get a start.
+  6. **NAT traversal.** Home routers block incoming connections. Peers use UPnP to open ports, hole punching with help from a third peer, or relays as a last resort.
+
+diagrams:
+  - type: flow
+    title: From a link to a verified file
+    nodes: [["Magnet link", "box", "info hash"], ["DHT lookup", "raised", "find peers"], ["Metadata", "def", "check against info hash"], ["Pieces", "def", "check each hash"], ["Seed", "box", "upload to others"]]
+    edges: ["", "", "", ""]
+    caption: Trust comes from hashes, not from peers. Any peer can be a liar and you still end up with the right file.
+
+deep:
+  - ["How Kademlia finds things", "Every node and every file key has a 160 bit id. Distance is the XOR of two ids, read as a number. Each node keeps contacts in buckets by distance, with many near itself and a few far away. A lookup asks the closest known nodes for even closer ones, a few in parallel. Each step roughly halves the distance, so a lookup takes about log2 of the number of nodes steps, around 20 for a million nodes, and usually fewer in practice."]
+  - ["Churn", "Peers come and go all the time. Peer lists in the DHT expire unless peers announce again. Data lives on the k closest nodes, often 8, so a few leaving does not lose it. Rarest first keeps every piece spread out."]
+  - ["Why rarest first", "If everyone grabbed piece 1 first, the last pieces would be held by only the first seeder. When that seeder leaves, nobody can finish. Rarest first makes rare pieces common quickly."]
+  - ["Tracker or DHT", "A tracker is simple and fast and gives stats, but it is a single point of failure and an easy target to shut down. A DHT has no center but is slower to start and harder to secure. Many clients use both."]
+  - ["Hybrid peer to peer", "Many companies use peer to peer only to save bandwidth, with a central server as the source of truth. Windows Delivery Optimization and some game launchers share updates between nearby machines, while signatures come from the vendor."]
+
+tradeoffs:
+  - ["Pure peer to peer", "No server costs, scales with users, no single point of failure.", "Slow start for rare files, hard to control, hard to secure."]
+  - ["Central server", "Simple, fast, full control.", "Bandwidth costs grow with every user."]
+  - ["Small pieces", "Share sooner, less lost on a bad piece.", "Bigger metadata, more hashes to check."]
+  - ["DHT discovery", "No central tracker to fail or block.", "Open to Sybil and poisoning attacks."]
+
+security: |
+  Peer to peer networks are open to anyone, so assume some peers are hostile.
+
+  - **Integrity.** Hash every piece and check the metadata against the info hash. This stops corrupted and fake data.
+  - **Authenticity.** A hash proves the file matches the link, not that the link is from a trusted source. For software updates, sign the metadata with the publisher's key.
+  - **Sybil attacks.** One attacker makes thousands of fake nodes to control parts of the DHT. Defenses include tying node ids to IP addresses, keeping long lived contacts and querying several paths.
+  - **Eclipse attacks.** Bad nodes surround a victim so all its contacts are attackers. Keep diverse contacts and prefer peers that stay online a long time.
+  - **Privacy.** Your IP address is visible to everyone in the swarm. Encryption of the peer link hides content from your network, but not your IP from peers.
+  - **Malware.** A correct hash of a bad file is still a bad file. Users must trust the source of the link.
+
+task:
+  intro: |
+    Explain the full design, then defend it against bad peers.
+  items:
+    - q: Explain how a new user downloads a 2 GB file from a peer to peer network using only a magnet link, and how the design stays fast and correct with millions of peers.
+      keys:
+        - ["Content addressing with an info hash and piece hashes", [info hash, hash, content address, piece hash, sha]]
+        - ["Peer discovery with a DHT like Kademlia or a tracker", [dht, kademlia, tracker, xor, peer exchange]]
+        - ["Parallel downloads of pieces, rarest first", [rarest, parallel, pieces, many peers, swarm]]
+        - ["Fairness with tit for tat and optimistic unchoke", [tit for tat, choke, unchoke, upload, fair]]
+        - ["NAT traversal", [nat, hole punch, upnp, relay]]
+      a: |
+        The magnet link holds the info hash, the hash of the file's metadata. The client looks up peers in a Kademlia DHT, walking toward nodes whose ids are XOR close to the info hash, which takes about log2 of the network size in steps. It gets the metadata from a peer and checks it against the info hash, so it now trusts the list of piece hashes. It downloads 1 MB pieces in parallel from many peers, rarest first, and checks each piece hash before keeping it. It uploads pieces to others, and peers prefer to serve those who upload to them, with an optimistic unchoke every 30 seconds for newcomers. UPnP, hole punching and relays handle home routers. Because each downloader also uploads, capacity grows with demand, and because every piece is hashed, bad peers cannot corrupt the result.
+      fb: The two ideas that carry the answer are content addressing for trust and the DHT for discovery. Name both early.
+
+interview:
+  - q: How does Kademlia find the peers for a file in a network of 10 million nodes?
+    keys:
+      - ["Node ids and keys share an id space, distance is XOR", [xor, id, distance, 160]]
+      - ["Routing table of buckets by distance", [bucket, k-bucket, routing table]]
+      - ["Iterative lookup asking closer nodes, in parallel", [iterative, closer, parallel, alpha, ask]]
+      - ["Log n steps", [log, hops, steps, 23, 24]]
+    a: |
+      Each node and each key has a 160 bit id. Distance between two ids is their XOR. Each node keeps buckets of contacts at different distances, many close and few far. To find the peers for a file, the client asks the closest nodes it knows, usually three at a time, for nodes closer to the info hash. Each answer brings it closer, roughly halving the distance. With 10 million nodes that is at most about 23 or 24 steps, since 2 to the 23 is about 8 million, and in practice fewer. The closest nodes store the list of peers who announced the file.
+    fb: Explaining XOR distance and why it gives log n steps shows you understand, not just remember.
+  - q: An attacker wants to stop people from downloading a file in your DHT. What can they do, and how do you defend?
+    keys:
+      - ["Sybil, many fake nodes", [sybil, fake node, many identities]]
+      - ["Eclipse or take over the nodes near the key", [eclipse, surround, near the key, closest]]
+      - ["Poisoning with fake peers or junk data", [poison, fake peer, junk, index]]
+      - ["Defenses like id tied to IP, diverse paths, long lived contacts, hashes", [ip, diverse, multiple paths, long lived, hash, verify, tracker]]
+    a: |
+      The attacker can run many fake nodes, a Sybil attack, and choose ids close to the file's info hash so they hold its peer list, then return nothing or fake peers. They can also try an eclipse attack that fills one victim's routing table. Defenses. Derive node ids from the IP address so one machine cannot pick ids freely. Query several disjoint paths and merge results. Prefer long lived contacts, since attackers' nodes are usually new. Use peer exchange and a tracker as backup discovery. Junk data is already handled because every piece is checked against its hash.
+    fb: Saying that hashes protect data but not discovery shows you see where the real weakness is.
+
+desk:
+  title: Fix the swarm
+  lede: Your peer to peer update system for a game launcher has problems. Find them and fix them.
+  situation: |
+    The launcher shares 30 GB game updates between players to save bandwidth. Players report slow starts, some corrupt installs, and a security researcher says updates could be faked.
+  rounds:
+    - title: Round 1. Spot the issue
+      items:
+        - q: Downloads stall at 99 percent when the first seeders go offline. What is the likely cause?
+          opts: ["Pieces were picked in order, so the last pieces stayed rare", "Pieces are too small", "The DHT is too fast"]
+          a: 0
+          why: Rarest first keeps every piece spread across the swarm.
+        - q: Players report corrupt installs. The client checks one hash of the whole 30 GB file at the end. What is the problem?
+          opts: ["One bad piece is found only after 30 GB, and you cannot tell which peer sent it", "SHA-256 is too weak", "The file is too small"]
+          a: 0
+          why: Hash each piece so you reject bad data at once and ban the peer that sent it.
+        - q: The researcher says updates could be faked. The metadata comes from any peer and is checked only against the hash in a link sent by a game server over plain HTTP. What is the security bug?
+          opts: ["The link itself is not protected, so an attacker on the network can swap it", "Peers should use UDP", "Hashes cannot be faked"]
+          a: 0
+          why: Sign the metadata with the publisher's key, and fetch the link over HTTPS.
+    - title: Round 2. Benefits and workarounds
+      items:
+        - type: sort
+          q: Match each change to its main benefit.
+          rows:
+            - ["Optimistic unchoke every 30 seconds", "New players get their first pieces"]
+            - ["A fallback download from the company CDN", "Rare files still download fast"]
+            - ["Signed metadata", "Fake updates are rejected"]
+          opts: ["New players get their first pieces", "Rare files still download fast", "Fake updates are rejected"]
+          why: Each fix targets one problem.
+        - type: open
+          q: Players on strict office networks cannot connect to any peers. What is a workaround?
+          a: "Fall back to the CDN for those players, or to relay servers. Let the client detect when no inbound or outbound peer connections work within a minute and switch automatically. Peer to peer is a bandwidth saver, not the only path."
+  card: |
+    - Name data by its hash. Check every piece.
+    - DHT with XOR distance. About log n steps.
+    - Rarest first. Tit for tat. Optimistic unchoke.
+    - Hashes protect data, not discovery. Sign the source.
+
+refs:
+  - "Petar Maymounkov and David Mazieres. [Kademlia, a peer to peer information system based on the XOR metric, 2002](https://pdos.csail.mit.edu/~petar/papers/maymounkov-kademlia-lncs.pdf)."
+  - "BitTorrent.org. [The BitTorrent protocol specification, BEP 3](https://www.bittorrent.org/beps/bep_0003.html) and [DHT protocol, BEP 5](https://www.bittorrent.org/beps/bep_0005.html)."
+  - "Bram Cohen. [Incentives build robustness in BitTorrent, 2003](https://www.bittorrent.org/bittorrentecon.pdf)."
+  - "IPFS. [How IPFS works](https://docs.ipfs.tech/concepts/how-ipfs-works/)."

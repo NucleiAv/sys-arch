@@ -1,6 +1,6 @@
 # Boxes and Arrows
 
-System design, architecture, infrastructure and network protocols, from zero to mastery, in plain words. Built and curated by <a href="https://anmol-vats-portfolio.vercel.app/" target="_blank" rel="noopener">Anmol Vats</a>.
+System design, architecture, infrastructure, network protocols and secure architecture with risk and GRC, from zero to mastery, in plain words. Built and curated by <a href="https://anmol-vats-portfolio.vercel.app/" target="_blank" rel="noopener">Anmol Vats</a>.
 
 **Website.** https://nucleiav.github.io/sys-arch/
 
@@ -9,15 +9,16 @@ System design, architecture, infrastructure and network protocols, from zero to 
 | Part | What you get | Where |
 | --- | --- | --- |
 | Start here | 9 short steps, from what a system is to how an architect thinks, with a scale simulator and a practice step at the end. | [`basics.html`](basics.html) |
-| Concepts | 27 lessons in 5 levels, numbered 1.1 to 5.2. Design versus architecture, how a request travels, REST, GraphQL, gRPC, real time APIs, estimation, scaling, databases, caching, sharding, consistency, queues, consensus, failure, observability, security, microservices, multi-region and stream processing. Each level ends with a practice page. | [`learn/`](learn/) |
+| Concepts | 38 lessons in 6 levels, numbered 1.1 to 6.11. Design versus architecture, how a request travels, REST, GraphQL, gRPC, real time APIs, estimation, scaling, databases, caching, sharding, consistency, queues, consensus, failure, observability, security, microservices, multi-region and stream processing. Each level ends with a practice page. | [`learn/`](learn/) |
+| Secure architecture, risk and GRC | Level 6 of Concepts, 11 lessons that follow one product, a connected infant incubator. Security principles, cryptography and access control, security requirements and standards, secure by design, threat modeling with STRIDE, controls, risk management, secure development and testing, patches and incidents in the field, laws and GRC, and the security architect's role with a release decision report. Every other lesson and design also has a security lens section. | [`learn/s01.html`](learn/s01.html) |
 | Infra | 14 lessons in 4 levels. Git, branches, GitHub and pull requests, GitHub Actions, Linux, Docker, Compose, Kubernetes, AWS, networks and storage, serverless, Terraform and safe deploys. Practice includes commands, Dockerfiles, YAML and Terraform to read and fix. Each level ends with a practice page. | [`infra/`](infra/) |
-| Protocols | 62 protocols animated packet by packet, with a network view, a sequence view, a current step panel, a packet inspector with fields and hex, playback speed and practice questions for each protocol. | [`protocols.html`](protocols.html) |
-| Design it | The method, then 14 full design tasks, from a link shortener to an AI chat app. | [`design/`](design/) |
+| Protocols | 62 protocols animated packet by packet, with a network view, a sequence view, a current step panel, a packet inspector with fields and hex, playback speed and practice questions for each protocol. On wide screens the step panel and inspector sit beside the animation. | [`protocols.html`](protocols.html) |
+| Design it | The method, then 17 full design tasks, from a link shortener to an AI chat app, a peer to peer network, a discussion forum and a secure medical device platform. | [`design/`](design/) |
 | Interview | Every interview question in one bank with a filter and a random question button. Write an answer and get feedback on the key points you covered. | [`interview.html`](interview.html) |
-| The plan | 12 weeks, about 6 hours a week, mixing all parts. Ticks save in your browser. | [`plan.html`](plan.html) |
+| The plan | 14 weeks, about 6 hours a week, mixing all parts. Ticks save in your browser. | [`plan.html`](plan.html) |
 | Library | Books, docs, practice sites, specifications and engineering blogs. | [`library.html`](library.html) |
 
-Every lesson has the idea in one minute, an animated diagram, key words, how it works, real life scenarios, trade-offs, common mistakes, a practice quiz, practice interview questions, a practice desk and references.
+Every lesson has the idea in one minute, an animated diagram, key words, how it works, real life scenarios, trade-offs, common mistakes, a security lens, a practice quiz, practice interview questions, a practice desk and references. Practice includes spot the bug, spot the risk or GRC issue, name the benefit, pick the mitigation and find a workaround. Answer options and dropdowns are shuffled each time a page loads.
 
 ## How the pages are made
 
@@ -26,10 +27,10 @@ Every page is generated from YAML. Edit the content, then rebuild.
 ```
 content/basics.yaml              Start here steps
 content/learn/_order.yaml        levels and lesson order for Concepts
-content/learn/*.yaml             concept lessons and level practice pages (p1 to p5)
+content/learn/*.yaml             concept lessons, level 6 security lessons (s01 to s11) and level practice pages (p1 to p6)
 content/infra/_order.yaml        levels and lesson order for Infra
 content/infra/*.yaml             infra lessons and level practice pages (ip1 to ip4)
-content/design/*.yaml            design tasks d00 to d14
+content/design/*.yaml            design tasks d00 to d17
 content/protocols/*.yaml         protocol animations, one list per file
 content/protocols/_page.yaml     help text under the protocol explorer
 content/interview.yaml, plan.yaml, library.yaml, home.yaml
@@ -53,6 +54,7 @@ python tools/build.py
 - Lesson scenes are blocks on an isometric grid (`nodes` with `x` and `y`) and `steps` that light blocks (`on`), move packets (`flow`), add badges (`mark`), hide blocks (`show`) and update stat cards (`stats`).
 - Questions are `mcq`, `fill` (use `____` for the blank), `num` (with `tol` and `unit`), `sort`, `open` and interview questions with `keys`, a model answer `a` and extra feedback `fb`. Any question can show code or config in `info`.
 - A level practice page has `kind: practice` and `rounds`, like a practice desk.
+- `security` adds a Security lens section to a lesson, or a Security and abuse section to a design.
 
 ### Protocol format
 
@@ -76,13 +78,13 @@ python tools/build.py
       d: What happens, in plain words.
       f: {Field: value}                 # shown in the current step panel
       p:                                # packets, in order
-        - [from, to, "label", kind, {fields: {Name: value}, raw: "text bytes"}]
+        - [from, to, "label", kind, {fields: {Name: value}, raw: "text bytes", hex: "optional real wire bytes"}]
       good: A tip.
   quiz: [...]
   refs: [...]
 ```
 
-Packet kinds are `req`, `res`, `ctl`, `sec`, `data` and `bad`. Icons are laptop, phone, user, camera, tv, router, switch, ap, cloud, globe, gateway, server, web, mail, folder, terminal, dns, clock, proxy, db, queue, lock, key, shield and plc. In the network view a packet travels along the shortest path of links between its two nodes.
+The hex view shows `hex` bytes when given, the bytes of `raw` for text protocols, and otherwise each field value encoded as bytes, colour coded per field. Packet kinds are `req`, `res`, `ctl`, `sec`, `data` and `bad`. Icons are laptop, phone, user, camera, tv, router, switch, ap, cloud, globe, gateway, server, web, mail, folder, terminal, dns, clock, proxy, db, queue, lock, key, shield and plc. In the network view a packet travels along the shortest path of links between its two nodes.
 
 ### Writing rules
 

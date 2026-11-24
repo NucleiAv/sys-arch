@@ -1,0 +1,230 @@
+short: Security in the field
+title: Security in the field, patches, updates, intel and incidents
+time: about 60 minutes
+tags: [patching, OTA, threat intel, incident response]
+lede: Shipping is the start, not the end. Learn how products stay secure for years with patch management and safe over the air updates, how threat intelligence tells you what to fix first, and how to handle an incident.
+
+idea: |
+  New vulnerabilities are found every day in code that was fine yesterday. A product that cannot be updated will become unsafe. So the architect must plan four things before launch.
+
+  1. **Patch management.** How you find, test and ship fixes, and how fast.
+  2. **Over the air updates**, OTA. How fixes reach devices safely, without bricking them.
+  3. **Threat intelligence.** How you learn about new threats that affect your product.
+  4. **Incident management.** What you do when something goes wrong.
+
+  For a medical device this is also a legal duty. Regulators expect a plan to monitor, find and fix vulnerabilities after the product is on the market.
+
+  !eli5 A car needs oil changes, recalls and a number to call after a crash. Software products need the same things. Updates, warnings about new dangers and a plan for bad days.
+
+scenes:
+  - title: A safe over the air update
+    stats: [Step, Safeguard, State]
+    nodes:
+      srv: {label: Update server, x: 0, y: 1, kind: raised}
+      ring1: {label: 1 percent of devices, x: 3, y: 0, kind: def, tag: canary}
+      ring2: {label: All devices, x: 3, y: 2, kind: box}
+      dev: {label: One incubator, x: 6, y: 1, kind: def, tag: A and B slots}
+    links: [[srv, ring1], [srv, ring2], [ring1, dev], [ring2, dev]]
+    steps:
+      - title: Sign and stage
+        text: The update is signed in the HSM and has a version higher than any before. It goes first to a small canary ring.
+        on: [srv, ring1]
+        flow: [[srv, ring1, def]]
+        stats: [Stage, "signature, version", canary only]
+      - title: Install to the spare slot
+        text: The device downloads in the background, checks the signature and writes the new image to slot B. Slot A keeps running the old version.
+        on: [ring1, dev]
+        flow: [[ring1, dev, def]]
+        stats: [Install, A and B slots, old version still runs]
+      - title: Wait for a safe moment
+        text: The device installs only when no baby is inside, or a nurse approves it. It never reboots during care.
+        on: [dev]
+        mark: {dev: warn}
+        stats: [Schedule, clinical approval, waiting]
+      - title: Boot and check health
+        text: The device boots slot B. Secure boot checks the signature. A health check tests the heater, sensors and alarm. If any fail, it rolls back to slot A.
+        on: [dev]
+        mark: {dev: ok}
+        stats: [Verify, health check and rollback, running new version]
+      - title: Widen the rollout
+        text: Canary devices report healthy for a week. The update goes to 10 percent, then to all. A stop button halts it at any sign of trouble.
+        on: [srv, ring2, dev]
+        flow: [[srv, ring2, def], [ring2, dev, def]]
+        stats: [Roll out, staged rings, all devices updated]
+
+terms:
+  - [Patch management, "The process to find, test, approve and install fixes."]
+  - [OTA update, "Over the air update. Software delivered to devices over a network."]
+  - [A and B slots, "Two copies of the system. Update the spare one and switch, so a failed update can roll back."]
+  - [Anti rollback, "A rule that stops installing an older, vulnerable version, often with a counter in secure storage."]
+  - [Staged rollout, "Releasing to a small group first, then more, watching health at each stage."]
+  - [Threat intelligence, "Information about threats, attackers and vulnerabilities that helps you decide what to do."]
+  - [CVE, "Common Vulnerabilities and Exposures. A public id for one known vulnerability, like CVE-2021-44228."]
+  - [ISAC, "Information Sharing and Analysis Center. A group where companies in one sector share threat information. Health-ISAC for health care."]
+  - [Incident, "An event that harms or threatens the security of a system or its data."]
+  - [CVD, "Coordinated vulnerability disclosure. A process for researchers to report bugs and for the maker to fix them before details go public."]
+
+how: |
+  ### Patch management for products
+
+  1. **Monitor.** Watch your SBOM against vulnerability feeds, and take reports from researchers.
+  2. **Assess.** Is the bug in our product? Is it reachable? What harm can it do? Use the risk method from lesson 6.7.
+  3. **Plan.** Fix, or use a compensating control, and tell customers.
+  4. **Test.** Regression, safety and security tests. Medical devices also check if the change needs regulator review.
+  5. **Release.** Staged rollout with monitoring.
+  6. **Verify.** Track how many devices run the fix. Old versions in the field are risk you still own.
+
+  Many teams set fix deadlines by severity, for example critical in 15 days, high in 30 days, and faster for bugs on the CISA KEV list.
+
+  ### Safe over the air updates
+
+  - **Signed images** checked before install and at boot.
+  - **Anti rollback** so an attacker cannot install an old, signed but vulnerable version.
+  - **A and B slots** and a health check, with automatic rollback.
+  - **Staged rings** with a stop button.
+  - **Safe timing.** Never interrupt a clinical function.
+  - **Update the update system.** Frameworks like The Update Framework, TUF, and Uptane for cars protect against a stolen key or a hacked update server.
+
+  ### Threat intelligence that helps engineers
+
+  | Level | Example | Who uses it |
+  | --- | --- | --- |
+  | Strategic | Ransomware groups now target hospitals | Leadership, budget |
+  | Operational | A campaign is exploiting a VPN product we use | Security operations |
+  | Tactical | IP addresses, file hashes, attacker techniques from ATT&CK | Detection rules |
+  | Vulnerability intel | CVE, KEV, EPSS, vendor advisories | Product and patch teams |
+
+  Sources include national agencies like CISA, sector groups like Health-ISAC, vendor advisories and researchers. Machine readable sharing uses STIX and TAXII.
+
+  ### Incident management
+
+  NIST SP 800-61 describes the classic phases.
+
+  1. **Preparation.** Plans, contacts, logs, tools and practice drills.
+  2. **Detection and analysis.** Notice something, confirm it, judge its scope.
+  3. **Containment, eradication and recovery.** Stop the spread, remove the cause, restore service.
+  4. **Post incident activity.** A blameless review and fixes so it does not happen again.
+
+  Revision 3 of the guide, from 2025, maps this work to the six functions of the NIST Cybersecurity Framework 2.0.
+
+  !warn Many laws have short deadlines to report. GDPR gives 72 hours to tell the regulator after you become aware of a personal data breach. Know your deadlines before an incident, not during one.
+
+diagrams:
+  - type: cycle
+    title: The incident response cycle
+    nodes: [["Prepare", "def"], ["Detect and analyse", "atk"], ["Contain", "raised"], ["Eradicate", "raised"], ["Recover", "box"], ["Learn", "def"]]
+    center: Practice before you need it
+    caption: The lessons learned step feeds back into preparation. Teams that practice respond faster and calmer.
+
+life:
+  - ["CrowdStrike update, July 2024", "A faulty content update for a security product crashed about 8.5 million Windows computers in hours, including hospital and airline systems. It went to all customers at once. Staged rollout and stronger testing of content updates were among the fixes."]
+  - ["Jeep recall by USB stick, 2015", "After the remote hack, the car maker could not update cars over the air. It mailed USB sticks to owners and blocked the port on the mobile network. Products that can update safely over the air recover much faster."]
+  - ["Change Healthcare, 2024", "Ransomware hit a large US health payment company. Attackers entered through a remote access portal with no MFA. Pharmacies and hospitals across the country could not process claims for weeks, and data on over 100 million people was stolen."]
+
+tradeoffs:
+  - ["Fast patching", "Smaller window for attackers.", "Less testing time, risk of breaking things."]
+  - ["Staged rollout", "Limits the damage of a bad update.", "Slower to protect everyone."]
+  - ["Automatic updates", "High patch rates.", "Must never interrupt care. Hospitals want control."]
+  - ["Public disclosure", "Customers can protect themselves.", "Attackers learn too. Coordinate timing."]
+
+mistakes:
+  - A product with no way to update in the field.
+  - Updates without signatures or anti rollback.
+  - Pushing an update to every device at once.
+  - No SBOM, so you cannot tell if a new CVE affects you.
+  - An incident plan that nobody has practiced.
+  - No public way for researchers to report bugs.
+
+quiz:
+  - type: sort
+    q: Put each action in the right incident phase.
+    rows:
+      - ["Run a tabletop drill", "Preparation"]
+      - ["Pull the infected server off the network", "Containment"]
+      - ["Write a blameless review", "Post incident"]
+      - ["Confirm that the alert is real", "Detection and analysis"]
+    opts: ["Preparation", "Detection and analysis", "Containment", "Post incident"]
+    why: Each phase has its own goals.
+  - q: Why use A and B slots for firmware updates?
+    opts: ["A failed update can roll back to the working version", "It doubles the speed", "It removes the need for signatures"]
+    a: 0
+    why: The old version stays intact until the new one proves healthy.
+  - type: fill
+    q: Stopping an attacker from installing an older, vulnerable signed version is called anti ____.
+    a: ["rollback"]
+    why: Signatures alone do not stop old versions, which are also validly signed.
+  - q: A new CVE is announced in a TLS library. What lets you answer "are our devices affected?" fastest?
+    opts: ["An up to date SBOM for each firmware version", "Asking each developer", "Waiting for a customer to report it"]
+    a: 0
+    why: Match the SBOM against the CVE's affected versions.
+  - q: Spot the problem in this update plan. "Push version 4.2 to all 30000 devices at 2 in the morning. Reboot when done."
+    opts: ["No staged rollout and a reboot that may interrupt care", "2 in the morning is too late", "Version numbers should be even"]
+    a: 0
+    why: Stage it, and install only when the device is not in clinical use.
+  - q: Which source is best for knowing which vulnerabilities attackers exploit right now?
+    opts: ["The CISA Known Exploited Vulnerabilities list", "A vendor's marketing page", "The CVSS calculator"]
+    a: 0
+    why: KEV lists vulnerabilities with evidence of active exploitation.
+
+interview:
+  - q: Design a safe over the air update system for a medical device.
+    keys:
+      - ["Signed images verified on device, secure boot", [sign, verif, secure boot]]
+      - ["Anti rollback version check", [rollback, version, downgrade]]
+      - ["A and B partitions with health check and automatic rollback", [a/b, a and b, slot, partition, health, roll back]]
+      - ["Staged rollout with monitoring and a stop", [stage, canary, ring, percent, halt, stop]]
+      - ["Clinical safety, do not interrupt care, hospital control", [clinical, care, patient, approv, safe time, in use]]
+    a: |
+      The build signs each image with a key in an HSM. The device verifies the signature before install and secure boot verifies it at every start. A monotonic version counter blocks downgrades. The device has A and B slots, so it installs to the spare slot in the background and only switches after a health check of sensors, heater and alarms, with automatic rollback if anything fails. Installs happen only when the device is not in clinical use or a nurse approves. We roll out in rings, 1 percent, 10 percent, then all, with telemetry and a stop button. I would also use a framework like TUF so a stolen server key alone cannot push malicious updates.
+    fb: The clinical safety point is what separates a device answer from a phone app answer.
+  - q: Walk me through the first hour of a security incident.
+    keys:
+      - ["Confirm and assess scope", [confirm, scope, triage, assess, verify]]
+      - ["Assemble the team, incident lead, communication", [team, lead, commander, call, communicat]]
+      - ["Contain without destroying evidence", [contain, isolat, evidence, preserve, forensic]]
+      - ["Check legal and reporting duties", [legal, report, regulat, notify, 72, deadline]]
+    a: |
+      First, confirm the alert is real and get a rough scope, which systems and data are involved. Then open the incident, name an incident lead and pull in the right people from the runbook, including legal and communications for anything with personal data. Contain fast but carefully, for example isolating hosts from the network instead of wiping them, so evidence is kept. Keep a timeline of every action. Check reporting duties early, like GDPR's 72 hours or contract terms, so the clock does not surprise us. Then plan eradication and recovery.
+    fb: Preserving evidence and starting the legal clock early are the details that impress.
+
+desk:
+  title: A vulnerability report arrives
+  lede: A researcher emails that the incubator's web settings page can be reached without login.
+  situation: |
+    The report includes steps to reproduce it on firmware 3.1. There are 12000 devices in 300 hospitals. Most run 3.1, some still run 2.8.
+  rounds:
+    - title: Round 1. Triage
+      items:
+        - q: What should happen first?
+          opts: ["Thank the researcher, confirm receipt and reproduce the bug", "Ignore it, the researcher is not a customer", "Post the details on social media"]
+          a: 0
+          why: Coordinated disclosure starts with a fast, polite reply and verification.
+        - type: sort
+          q: Match each task to the patch management step.
+          rows:
+            - ["Check which firmware versions have the bug", "Assess"]
+            - ["Tell hospitals to block the settings port until the fix", "Plan"]
+            - ["Track how many devices run the fixed version", "Verify"]
+          opts: ["Assess", "Plan", "Verify"]
+          why: Patching is a process, not one action.
+    - title: Round 2. Workaround and fix
+      items:
+        - type: open
+          q: Write the workaround for hospitals while the fix is built.
+          a: "Until firmware 3.2 is installed, block TCP port 443 on the incubators from all hosts except the nurse station gateway, using your firewall or switch access lists. Local care and alarms are not affected. We will release 3.2 within 30 days and contact you again."
+        - q: Some devices run 2.8, which cannot install 3.2 directly. What is the right plan?
+          opts: ["Ship a 2.9 fix or an upgrade path, and keep the network workaround until then", "Leave 2.8 devices as they are", "Tell hospitals to throw them away"]
+          a: 0
+          why: You own the risk of every version in the field.
+  card: |
+    - Plan updates before launch.
+    - Sign, block rollback, A and B slots, staged rings.
+    - Watch SBOM against CVE, KEV and advisories.
+    - Prepare, detect, contain, eradicate, recover, learn.
+    - Know reporting deadlines in advance.
+
+refs:
+  - "NIST. [SP 800-61 Rev. 3, Incident Response Recommendations](https://csrc.nist.gov/pubs/sp/800/61/r3/final)."
+  - "The Update Framework. [TUF](https://theupdateframework.io/) and [Uptane](https://uptane.org/)."
+  - "CISA. [Coordinated Vulnerability Disclosure Process](https://www.cisa.gov/coordinated-vulnerability-disclosure-process)."
+  - "Health-ISAC. [Health Information Sharing and Analysis Center](https://health-isac.org/)."

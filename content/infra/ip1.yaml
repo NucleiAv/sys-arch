@@ -58,6 +58,43 @@ rounds:
       - type: open
         q: Your deploy job uses a long lived AWS access key stored as a secret. What should you change and why?
         a: "Use OIDC. Give the workflow permission id-token write, create an IAM role that trusts GitHub's OIDC provider for this repository and branch, and use aws-actions/configure-aws-credentials to get short lived credentials. There is then no long lived key to leak or rotate."
+
+  - title: Round 4. Spot it, fix it
+    items:
+      - q: Find the security problem in this workflow.
+        info: |
+          ```yaml
+          on: pull_request_target
+          permissions: write-all
+          jobs:
+            test:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                  with:
+                    ref: ${{ github.event.pull_request.head.sha }}
+                - run: npm install && npm test
+          ```
+        opts: ["Untrusted pull request code runs with write permissions and secrets", "ubuntu-latest is not allowed", "npm test should run before install"]
+        a: 0
+        why: pull_request_target runs with the base repository's secrets. Use pull_request for untrusted code and set permissions to read.
+      - q: A developer committed an AWS key, then deleted it in the next commit. Is the risk gone?
+        opts: ["No. It is still in history and may already be copied. Rotate the key now", "Yes, the latest commit is clean", "Only if the repository is private"]
+        a: 0
+        why: Treat any pushed secret as leaked. Rotate first, then clean history.
+      - type: fill
+        q: To stop a third party action from changing under you, pin it to a full commit ____.
+        a: ["sha", "hash"]
+        why: Tags can be moved. A commit SHA cannot.
+      - type: sort
+        q: Match each GitHub setting to its benefit.
+        rows:
+          - ["Branch protection with required reviews", "No unreviewed code on main"]
+          - ["Secret scanning push protection", "Blocks keys before they land"]
+          - ["CODEOWNERS for the infra folder", "The right people review risky files"]
+        opts: ["No unreviewed code on main", "Blocks keys before they land", "The right people review risky files"]
+        why: Small settings, big protection.
+
 card: |
   - add, commit, push, pull, revert.
   - Conflicts, choose, clean, add, commit.

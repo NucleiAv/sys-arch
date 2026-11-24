@@ -191,3 +191,11 @@ refs:
   - "AWS. [Uploading objects with presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html)."
   - "Cloudflare. [What is a CDN?](https://www.cloudflare.com/learning/cdn/what-is-a-cdn/)"
   - "Netflix. [Open Connect overview](https://openconnect.netflix.com/en/)."
+
+security: |
+  Public storage buckets are one of the most common breach causes.
+
+  - Block public access by default and share files with **signed URLs** that expire.
+  - Scan uploads for malware and check file types by content, not by name.
+  - Serve user uploads from a **separate domain** so a harmful file cannot run scripts on your main site.
+  - Turn on versioning and object lock for important data, so ransomware cannot delete it.

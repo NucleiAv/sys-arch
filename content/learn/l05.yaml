@@ -179,3 +179,12 @@ refs:
   - "NGINX. [What is load balancing?](https://www.nginx.com/resources/glossary/load-balancing/)"
   - "AWS Builders' Library. [Implementing health checks](https://aws.amazon.com/builders-library/implementing-health-checks/)."
   - "Cloudflare. [What is a reverse proxy?](https://www.cloudflare.com/learning/cdn/glossary/reverse-proxy/)"
+
+security: |
+  The load balancer is usually the front door, so it carries many controls.
+
+  - **TLS termination** with modern settings and automatic certificate renewal.
+  - A **web application firewall** for common attacks and bot rules.
+  - **Rate limits** and connection limits against floods.
+  - Trust `X-Forwarded-For` only from your own proxies. Otherwise attackers fake their IP.
+  - Hide internal server names and versions in responses.

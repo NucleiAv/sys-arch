@@ -188,3 +188,10 @@ refs:
   - "PostgreSQL. [Using EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html)."
   - "Martin Kleppmann. Designing Data-Intensive Applications, chapter 3, storage and retrieval."
   - "System Design Simulator. [B-tree and LSM tree simulators](https://systemdesignsimulator.org/)."
+
+security: |
+  Indexes and storage engines have security edges too.
+
+  - Deleted rows may stay on disk until compaction or vacuum. Use encryption at rest so leftovers on old disks are unreadable.
+  - Search indexes and replicas copy data. Apply the same access control and encryption to every copy.
+  - A slow, unindexed query can be a denial of service. Limit query time and page size.

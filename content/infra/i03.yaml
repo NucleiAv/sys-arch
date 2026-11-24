@@ -178,3 +178,12 @@ refs:
   - "GitHub Docs. [GitHub flow](https://docs.github.com/en/get-started/using-github/github-flow)."
   - "GitHub Docs. [About protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)."
   - "Google. [Engineering practices, code review](https://google.github.io/eng-practices/review/)."
+
+security: |
+  GitHub is part of your supply chain.
+
+  - Require **MFA** for everyone in the organization.
+  - Use **branch protection** and **CODEOWNERS** so sensitive files need the right reviewers.
+  - Turn on **secret scanning** and **push protection**, and **Dependabot** alerts.
+  - Review third party GitHub apps and their permissions. Give the least access.
+  - Use fine grained personal tokens with expiry instead of classic tokens.

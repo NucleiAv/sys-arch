@@ -187,3 +187,11 @@ refs:
   - "Alex Xu. System Design Interview volume 1, chapter 8, design a URL shortener."
   - "Bitly Engineering. [Lessons learned building a distributed system that handles 6 billion clicks a month](https://word.bitly.com/post/28558800777/lessons-learned-building-a-distributed-system-that)."
   - "MDN. [301 Moved Permanently](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301) and [302 Found](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302)."
+
+security: |
+  Link shorteners are popular with spammers and phishers.
+
+  - Scan target URLs against safe browsing lists and block known bad domains.
+  - Rate limit link creation per user and per IP.
+  - Show a preview page for flagged links.
+  - Do not make short codes sequential, or people can list every link. Private links need random codes and access checks.

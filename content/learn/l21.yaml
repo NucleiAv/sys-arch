@@ -191,3 +191,11 @@ refs:
   - "AWS. [Disaster recovery options in the cloud](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)."
   - "Google Cloud. [Disaster recovery planning guide](https://cloud.google.com/architecture/dr-scenarios-planning-guide)."
   - "Netflix. [Active active for multi-regional resiliency](https://netflixtechblog.com/active-active-for-multi-regional-resiliency-c47719f6685b)."
+
+security: |
+  Multi-region designs must respect law and resist disasters, including cyber ones.
+
+  - **Data residency.** Some laws require personal data to stay in a country or region.
+  - Disaster recovery plans must include **ransomware**. Keep immutable backups in a separate account.
+  - Practice failover. A recovery plan nobody tested is a hope, not a control.
+  - Each region is another place to patch, monitor and secure. Use the same code and config for all.

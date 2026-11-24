@@ -1,0 +1,227 @@
+short: Risk management
+title: Security risk management
+time: about 60 minutes
+tags: [risk, likelihood, impact, CVSS, ALE, register]
+lede: You can never remove all risk. You can measure it, rank it and decide what to do with it, on purpose and in writing. Learn the definitions, the common ways to score risk, and how a risk register drives decisions.
+
+idea: |
+  **Risk** is the chance that a threat uses a vulnerability and causes harm to an asset, together with how bad that harm would be. A short way to say it is
+
+  **risk = likelihood × impact**
+
+  A risk with a high chance and a small harm, like spam, can rank below a risk with a small chance and a terrible harm, like a fake firmware update that overheats babies.
+
+  Risk management is a loop. **Identify** risks, **analyse** and score them, **treat** them, **monitor** them, and repeat. Treating a risk means one of four choices. **Avoid** it, **mitigate** it, **transfer** it or **accept** it. Each choice has a named **risk owner**, a person with the authority to decide.
+
+  !eli5 Crossing a quiet street has a small chance of harm, so you look both ways and go. Crossing a highway has a big chance of terrible harm, so you avoid it and use a bridge. You made a risk decision both times.
+
+scenes:
+  - title: Scoring three risks for the incubator
+    stats: [Step, Likelihood, Impact, Score]
+    nodes:
+      r1: {label: Fake firmware update, x: 0, y: 0, kind: atk}
+      r2: {label: Readings leak on Wi-Fi, x: 0, y: 2, kind: atk}
+      r3: {label: Cloud dashboard outage, x: 0, y: 4, kind: atk}
+      mx: {label: Risk matrix, x: 3, y: 2, kind: def}
+      reg: {label: Risk register, x: 6, y: 2, kind: raised}
+    links: [[r1, mx], [r2, mx], [r3, mx], [mx, reg]]
+    steps:
+      - title: Fake firmware update
+        text: Without signatures, an attacker on the network could install firmware. Likelihood medium, 3 of 5. Impact catastrophic, 5 of 5, since a baby could be harmed.
+        on: [r1, mx]
+        flow: [[r1, mx, atk]]
+        stats: [Firmware, "3", "5", "15, high"]
+      - title: Readings leak
+        text: Unencrypted readings could be read on hospital Wi-Fi. Likelihood likely, 4. Impact moderate, 3, a privacy breach that must be reported.
+        on: [r2, mx]
+        flow: [[r2, mx, atk]]
+        stats: [Leak, "4", "3", "12, high"]
+      - title: Dashboard outage
+        text: The maker's cloud dashboard goes down. Likelihood possible, 3. Impact minor, 2, since local alarms still work.
+        on: [r3, mx]
+        flow: [[r3, mx, ink]]
+        stats: [Outage, "3", "2", "6, medium"]
+      - title: Treat and record
+        text: Fake firmware, mitigate with signed updates. Readings leak, mitigate with TLS. Dashboard outage, accept, with the product owner as risk owner. All go in the register.
+        on: [mx, reg]
+        flow: [[mx, reg, def]]
+        mark: {reg: ok}
+        stats: [Treat, set, set, owners named]
+      - title: Residual risk
+        text: After signing, the fake firmware risk drops to likelihood 1, impact 5, score 5. The owner signs that this residual risk is acceptable for release.
+        on: [r1, reg]
+        mark: {r1: ok}
+        stats: [Residual, "1", "5", "5, low"]
+
+terms:
+  - [Risk, "The chance of a harmful event and how bad its result would be."]
+  - [Likelihood, "How probable it is that the event happens in a given time."]
+  - [Impact, "How bad the result would be. Harm to people, money, law, reputation."]
+  - [Inherent risk, "Risk before any controls."]
+  - [Residual risk, "Risk after controls are in place."]
+  - [Risk appetite, "How much risk an organization is willing to take to reach its goals."]
+  - [Risk owner, "The person who has the authority and the duty to decide how a risk is treated."]
+  - [Risk register, "A living list of risks with scores, treatments, owners and dates."]
+  - [CVSS, "Common Vulnerability Scoring System. Scores the severity of a single vulnerability from 0 to 10."]
+  - [ALE, "Annualized loss expectancy. The expected money lost per year from one risk."]
+
+how: |
+  ### Qualitative scoring with a matrix
+
+  Most teams score likelihood and impact from 1 to 5 and multiply.
+
+  | Score | Band | Usual action |
+  | --- | --- | --- |
+  | 15 to 25 | High | Must treat before release. Leadership sees it. |
+  | 8 to 14 | Medium | Treat on a plan, with a date. |
+  | 1 to 7 | Low | Accept or treat when cheap. |
+
+  It is quick and easy to discuss. Its weakness is that the numbers are opinions. Write down why you chose each score.
+
+  ### Quantitative scoring with money
+
+  1. **Asset value**, AV. What the asset is worth.
+  2. **Exposure factor**, EF. The share of the value lost in one event.
+  3. **Single loss expectancy**, SLE = AV × EF.
+  4. **Annual rate of occurrence**, ARO. How many times a year you expect it.
+  5. **Annualized loss expectancy**, ALE = SLE × ARO.
+
+  If a control costs less per year than the ALE it removes, it pays for itself. The **FAIR** model is a more detailed way to do this with ranges instead of single numbers.
+
+  ### Scoring vulnerabilities is not the same as scoring risk
+
+  **CVSS** scores how severe a vulnerability is in general, for example 9.8 critical. It does not know your system. A critical bug in a feature you turned off is a small risk for you. Add context.
+
+  - **EPSS** estimates the chance that a vulnerability will be exploited in the next 30 days.
+  - **CISA KEV** is a list of vulnerabilities that attackers are already exploiting.
+  - **Your context.** Is it reachable? What asset is behind it? Is it safety critical?
+
+  ### Frameworks you will meet
+
+  - **NIST SP 800-30** for doing risk assessments.
+  - **NIST SP 800-37**, the Risk Management Framework, for US federal systems.
+  - **ISO 31000** for risk management in general, and **ISO/IEC 27005** for information security risk.
+  - **ISO 14971** for risk in medical devices. Security risks that can hurt patients feed into this safety process.
+
+  !key Accepting a risk is a valid choice, but only when the right person accepts it, in writing, with a review date. An engineer quietly ignoring a bug is not risk acceptance.
+
+diagrams:
+  - type: cycle
+    title: The risk management loop
+    nodes: [["Identify", "atk"], ["Analyse and score", "raised"], ["Treat", "def"], ["Accept residual", "box"], ["Monitor", "box"], ["Report", "def"]]
+    center: Owners decide, the register remembers
+    caption: Run the loop at design, before release and whenever something big changes.
+
+life:
+  - ["Equifax, 2017", "A critical flaw in a web framework was announced with a patch in March. Equifax did not patch one public system. Attackers got in within weeks and took data on about 147 million people. The risk was known and scored high, but the process to treat it failed."]
+  - ["Log4Shell, 2021", "A flaw in a common Java logging library scored the top CVSS score of 10. Teams that knew where the library ran, from software lists, could rank their exposure in hours. Others spent weeks searching."]
+  - ["A risk accepted the right way", "A device maker found that an old Bluetooth chip could leak the device's serial number. Impact was low and the fix needed new hardware. The product head accepted the risk in writing for one year, and the next model used a new chip."]
+
+tradeoffs:
+  - ["Qualitative matrix", "Fast, easy to explain.", "Subjective, hard to compare with money."]
+  - ["Quantitative, ALE or FAIR", "Speaks the language of budgets.", "Needs data you often do not have."]
+  - ["CVSS alone", "Standard and widely used.", "Ignores your context and exploit activity."]
+  - ["Accept a risk", "No cost now.", "The harm stays possible. Needs an owner and a review date."]
+
+mistakes:
+  - Treating the CVSS score as the risk to your business.
+  - Risk registers that nobody updates after the first workshop.
+  - Engineers accepting risks they have no authority to accept.
+  - No review date for accepted risks.
+  - Forgetting safety impact when scoring device risks.
+
+quiz:
+  - type: num
+    q: A server is worth 200000 dollars. One ransomware event destroys 25 percent of its value. What is the single loss expectancy?
+    a: 50000
+    tol: 1
+    unit: dollars
+    why: SLE = AV × EF = 200000 × 0.25 = 50000.
+  - type: num
+    q: With that SLE of 50000 dollars, you expect the event about once every 2.5 years, an ARO of 0.4. What is the ALE?
+    a: 20000
+    tol: 1
+    unit: dollars a year
+    why: ALE = SLE × ARO = 50000 × 0.4 = 20000. A control costing less than this per year can pay for itself.
+  - type: sort
+    q: Which treatment is each decision?
+    rows:
+      - ["Remove the remote service feature completely", "Avoid"]
+      - ["Buy cyber insurance", "Transfer"]
+      - ["Add signed updates", "Mitigate"]
+      - ["Write down the risk and live with it for a year", "Accept"]
+    opts: ["Avoid", "Transfer", "Mitigate", "Accept"]
+    why: Four treatments. Every one needs an owner.
+  - q: A library has a CVSS 9.8 flaw, but the vulnerable function is never reachable in your product. What is true?
+    opts: ["The risk to your product is low, record the reasoning", "It is critical risk no matter what", "CVSS scores are always wrong"]
+    a: 0
+    why: CVSS is severity in general. Risk needs your context.
+  - type: fill
+    q: The risk that remains after controls is ____ risk.
+    a: ["residual"]
+    why: Inherent risk minus what controls remove leaves residual risk.
+  - q: Spot the GRC issue. "A developer marked the SQL injection finding as risk accepted, because the release is tomorrow."
+    opts: ["The developer is not the risk owner and cannot accept it", "SQL injection is not a real risk", "Findings should be deleted, not accepted"]
+    a: 0
+    why: Only the risk owner with authority can accept, in writing, with a review date.
+
+interview:
+  - q: How do you prioritize a list of 200 vulnerabilities from a scan?
+    keys:
+      - ["Do not rely on CVSS alone", [cvss, severity, alone, not just]]
+      - ["Use exploit data like KEV or EPSS", [kev, epss, exploit, in the wild, actively]]
+      - ["Use context like reachability, exposure and asset value", [reachab, exposed, internet, asset, context, critical system]]
+      - ["Group, assign owners and set deadlines or SLAs", [owner, sla, deadline, group, ticket]]
+    a: |
+      I start with what attackers already use. Anything on the CISA KEV list, or with a high EPSS score, goes first. Then I add context. Is the vulnerable component reachable, is the system internet facing, and what asset or safety function sits behind it? A medium bug on an internet facing login can beat a critical bug in a lab tool with no network. I group findings by fix, since one library upgrade may close 40 items, assign owners and set deadlines by risk band. Anything we cannot fix soon gets a compensating control and a formal acceptance by the risk owner.
+    fb: Mentioning KEV or EPSS plus reachability is what interviewers look for today.
+  - q: Explain the difference between risk acceptance and ignoring a risk.
+    keys:
+      - ["Acceptance is a documented decision", [document, writing, record, register]]
+      - ["By an owner with authority", [owner, authority, management, accountable]]
+      - ["With a review date or conditions", [review, date, expire, revisit]]
+    a: |
+      Risk acceptance is a documented decision by the risk owner, someone with the authority and budget, who understands the risk and agrees to live with it for a set time. It is recorded in the register with the reason, any compensating controls and a review date. Ignoring a risk is when nobody decides, nobody owns it and nobody will notice if it grows. Auditors and courts treat these very differently.
+    fb: The words owner, written and review date are the three anchors.
+
+desk:
+  title: Run the risk review before release
+  lede: Release is in two weeks. You present the top risks to the product head.
+  situation: |
+    Open items. R1, the service port allows a default password. R2, logs hold the baby's name in plain text. R3, the cloud dashboard has no second region. R4, a library has a known flaw in a function the product does not use.
+  rounds:
+    - title: Round 1. Rank and treat
+      items:
+        - type: sort
+          q: Pick the best treatment for each risk.
+          rows:
+            - ["R1, default service password", "Mitigate before release"]
+            - ["R3, dashboard has one region", "Accept with an owner and review date"]
+            - ["R4, unused vulnerable function", "Accept with reasoning, upgrade in next release"]
+          opts: ["Mitigate before release", "Accept with an owner and review date", "Accept with reasoning, upgrade in next release"]
+          why: R1 is easy to exploit and hits integrity. R3 has local alarms as fallback. R4 is not reachable.
+        - q: R2 logs names in plain text. Which treatment is best?
+          opts: ["Mitigate. Log a patient id instead of the name", "Transfer it to the hospital", "Accept, logs are internal"]
+          a: 0
+          why: Removing the data is cheap and removes the privacy risk.
+    - title: Round 2. Talk to leadership
+      items:
+        - type: open
+          q: Write two sentences for the product head about R1, in business language.
+          a: "Anyone with five minutes alone with an incubator can change its safety settings using a password printed in our public manual. Fixing it needs three days of work, and shipping without the fix risks patient harm, a recall and regulator action."
+        - q: The product head wants to accept R1 to hit the date. What do you do?
+          opts: ["Record your recommendation, explain the safety impact, and escalate if the owner still accepts", "Quietly fix it without telling anyone", "Refuse to release and resign"]
+          a: 0
+          why: Your job is to make the risk clear and the decision recorded. The owner decides, and you escalate safety concerns through the agreed path.
+  card: |
+    - Risk = likelihood × impact.
+    - Avoid, mitigate, transfer, accept.
+    - ALE = SLE × ARO. SLE = AV × EF.
+    - CVSS is severity, not your risk. Add KEV, EPSS and context.
+    - Owners accept in writing, with a date.
+
+refs:
+  - "NIST. [SP 800-30 Rev. 1, Guide for Conducting Risk Assessments](https://csrc.nist.gov/pubs/sp/800/30/r1/final)."
+  - "FIRST. [CVSS v4.0](https://www.first.org/cvss/) and [EPSS](https://www.first.org/epss/)."
+  - "CISA. [Known Exploited Vulnerabilities catalog](https://www.cisa.gov/known-exploited-vulnerabilities-catalog)."
+  - "The FAIR Institute. [What is FAIR](https://www.fairinstitute.org/what-is-fair)."

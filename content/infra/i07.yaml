@@ -204,3 +204,10 @@ refs:
   - "Docker Docs. [Docker Compose overview](https://docs.docker.com/compose/)."
   - "Docker Docs. [Compose file reference](https://docs.docker.com/reference/compose-file/)."
   - "Docker Docs. [Networking in Compose](https://docs.docker.com/compose/how-tos/networking/)."
+
+security: |
+  Compose files often end up with weak defaults.
+
+  - Do not publish database ports to the host unless you need to.
+  - Keep secrets in a `.env` file that git ignores, or use Docker secrets.
+  - Do not mount the Docker socket into containers. It gives root on the host.

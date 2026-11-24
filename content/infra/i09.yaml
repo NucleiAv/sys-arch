@@ -245,3 +245,11 @@ refs:
   - "Kubernetes Docs. [Horizontal Pod Autoscaling](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)."
   - "Kubernetes Docs. [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/)."
   - "Helm. [Docs](https://helm.sh/docs/)."
+
+security: |
+  Config and secrets need special care in Kubernetes.
+
+  - Kubernetes Secrets are only base64 encoded. Turn on encryption at rest for etcd, or use an external secrets manager.
+  - Set **resource limits** so one pod cannot starve the node.
+  - Set `readOnlyRootFilesystem`, drop Linux capabilities and disallow privilege escalation in the pod security context.
+  - Use admission policies, like OPA Gatekeeper or Kyverno, to block risky manifests.

@@ -1,0 +1,159 @@
+kind: practice
+title: Level 6 practice, secure architecture, risk and GRC
+time: about 45 minutes
+lede: Mixed questions on everything in level 6. Find the bug, the risk, the governance gap, the benefit, the fix and the workaround. Some are quick, some make you think. Every answer has a reason.
+
+situation: |
+  Most questions use the connected infant incubator from this level. Some use other products, because the same ideas apply everywhere.
+
+rounds:
+  - title: Round 1. Find the security bug
+    items:
+      - q: What is wrong with this update check?
+        info: |
+          ```python
+          def install(image, sig):
+              if hashlib.sha256(image).hexdigest() == sig:
+                  flash(image)
+          ```
+        opts: ["A hash is not a signature. Anyone can compute the SHA-256 of their own image", "SHA-256 is broken", "flash should be called before the check"]
+        a: 0
+        why: Use a real signature check with a public key, like Ed25519 verify. A hash proves nothing about who made the file.
+      - q: Find the access control bug.
+        info: |
+          ```python
+          @app.get("/patients/<pid>")
+          @login_required
+          def patient(pid):
+              return db.get_patient(pid)
+          ```
+        opts: ["It checks login but not that this user may see this patient", "GET should be POST", "pid should be a string"]
+        a: 0
+        why: Broken object level authorization, also called IDOR. Check the caller's ward or care team for this patient.
+      - q: Spot the problem in this config.
+        info: |
+          ```yaml
+          tls:
+            min_version: "1.0"
+            verify_peer: false
+          ```
+        opts: ["Old TLS is allowed and the peer certificate is not checked, so a man in the middle works", "YAML cannot hold TLS settings", "min_version must be a number"]
+        a: 0
+        why: Require TLS 1.2 or later and always verify certificates.
+      - type: sort
+        q: Which STRIDE threat does each bug enable?
+        rows:
+          - ["No audit log of setting changes", "Repudiation"]
+          - ["Any network host can send commands", "Spoofing"]
+          - ["A normal user can call the admin reset API", "Elevation of privilege"]
+          - ["Debug endpoint prints memory contents", "Information disclosure"]
+        opts: ["Repudiation", "Spoofing", "Elevation of privilege", "Information disclosure"]
+        why: STRIDE gives a name to each kind of harm.
+  - title: Round 2. Name the benefit
+    items:
+      - q: What is the main benefit of A and B firmware slots?
+        opts: ["A failed update rolls back to a known good version", "They double storage", "They make signatures optional"]
+        a: 0
+        why: The device is never left without working software.
+      - q: What is the benefit of keeping an SBOM for every release?
+        opts: ["You can tell within minutes whether a new CVE affects you", "It makes the code faster", "Regulators stop asking questions"]
+        a: 0
+        why: Knowing what is inside is the first step to fixing it.
+      - type: sort
+        q: Which principle gives each benefit?
+        rows:
+          - ["A stolen service account can read only one table", "Least privilege"]
+          - ["A new storage bucket is private until someone shares it", "Fail-safe defaults"]
+          - ["An infected laptop cannot reach the incubators", "Segmentation"]
+        opts: ["Least privilege", "Fail-safe defaults", "Segmentation"]
+        why: Name the principle when you explain a control.
+      - type: fill
+        q: Doing security work early, when fixes are cheap, is called shift ____.
+        a: ["left"]
+        why: Fixing a design flaw on paper costs far less than a recall.
+  - title: Round 3. Find the GRC issue
+    items:
+      - q: "Identify the governance issue. The security policy was approved in 2019 and nobody has read it since."
+        opts: ["Policies need owners, regular review and to match practice", "Policies should never change", "Old policies are more trusted"]
+        a: 0
+        why: A stale policy gives false comfort and fails audits.
+      - q: An engineer writes "risk accepted" on a critical finding to meet a deadline. What is wrong?
+        opts: ["Only the risk owner with authority can accept risk, in writing, with a review date", "Critical findings cannot exist", "The engineer should delete the finding"]
+        a: 0
+        why: Acceptance is a governance decision, not an engineering shortcut.
+      - q: Your company passed ISO 27001 last month. A customer asks if your product is secure. What is the honest answer?
+        opts: ["Our management system is certified. Here are the product's own test results and open risks", "Yes, we are certified, so the product is secure", "Certification is secret"]
+        a: 0
+        why: Certification covers the management system scope, not proof that one product resists attack.
+      - type: sort
+        q: Match each duty to its rule.
+        rows:
+          - ["Tell the regulator about a personal data breach within 72 hours", "GDPR"]
+          - ["Include an SBOM in a medical device submission", "FDA section 524B"]
+          - ["Protect stored card numbers and use MFA for admin access", "PCI DSS"]
+          - ["Administrative, physical and technical safeguards for health data", "HIPAA Security Rule"]
+        opts: ["GDPR", "FDA section 524B", "PCI DSS", "HIPAA Security Rule"]
+        why: Know which rules apply before you design.
+  - title: Round 4. Pick the mitigation
+    items:
+      - q: The cloud dashboard can send commands to every incubator worldwide. What is the best mitigation?
+        opts: ["Scope commands per hospital and require local approval for any setting change", "Add a bigger firewall to the cloud", "Hide the command page"]
+        a: 0
+        why: Shrink the blast radius and keep safety decisions local.
+      - q: Phishing emails led to two stolen staff passwords this year. Which control helps most?
+        opts: ["Phishing resistant MFA such as passkeys or security keys", "Longer password rules", "A monthly reminder email"]
+        a: 0
+        why: Passkeys check the website's name, so a fake site cannot use them.
+      - type: sort
+        q: Pick the response for each threat.
+        rows:
+          - ["A feature that sends full patient names to marketing analytics", "Eliminate, stop sending the data"]
+          - ["A data center fire", "Transfer and mitigate, insurance and a second region"]
+          - ["A low risk info leak of the device model number", "Accept, with an owner"]
+        opts: ["Eliminate, stop sending the data", "Transfer and mitigate, insurance and a second region", "Accept, with an owner"]
+        why: Not every threat gets the same answer.
+      - type: num
+        q: A breach of a patient portal would cost about 2000000 dollars. You expect one such breach every 10 years. A control removes 80 percent of that risk and costs 100000 dollars a year. What is the ALE before the control, in dollars a year?
+        a: 200000
+        tol: 1
+        unit: dollars a year
+        why: ALE = 2000000 × 0.1 = 200000. The control removes 160000 a year of expected loss for 100000, so it pays for itself.
+  - title: Round 5. Find a workaround
+    items:
+      - q: A critical bug is in the device's web settings page. The fix needs 4 weeks of testing. What is the best workaround now?
+        opts: ["Tell hospitals to block the settings port except from the gateway, and watch for access", "Do nothing until the fix", "Turn off all incubators"]
+        a: 0
+        why: A network block lowers the risk without stopping care.
+      - q: An unpatchable lab analyser runs an old operating system. What is a sound compensating control?
+        opts: ["Isolate it on its own segment with an allow list and alerting", "Give it internet access for updates", "Install any antivirus without the vendor's approval"]
+        a: 0
+        why: Isolation plus monitoring covers the gap, and is documented with a reason.
+      - type: open
+        q: The identity provider is down and nurses cannot log in to the station. Write a safe workaround.
+        a: "Use a sealed break glass account held by the charge nurse. Its use alerts security, every action is logged and the password is changed afterwards. Device screens keep showing readings and alarms locally, so care continues without network login."
+      - type: open
+        q: A supplier ends support for the device's operating system next year. Give one short term workaround and one long term fix.
+        a: "Short term, record the risk, tighten network isolation and watch advisories for that OS, and negotiate extended support if offered. Long term, plan a migration to a supported OS in the next hardware or firmware version, and tell customers the support impact."
+  - title: Round 6. Put it all together
+    items:
+      - type: sort
+        q: Put the security activities in life cycle order. Which phase does each one belong to?
+        rows:
+          - ["Threat model the architecture", "Design"]
+          - ["SAST and secret scanning on each pull request", "Build"]
+          - ["Fuzz the device protocol and run a pen test", "Test"]
+          - ["Staged OTA rollout with rollback", "Field"]
+        opts: ["Design", "Build", "Test", "Field"]
+        why: Each phase has its own security work.
+      - type: open
+        q: "Design task. A fitness band sends heart rate to a phone app and a cloud service, and gets firmware updates. List the top three threats, one control for each, and one law that may apply."
+        a: "Threat 1, fake firmware. Control, signed updates with anti rollback and secure boot. Threat 2, someone nearby reads or changes Bluetooth data. Control, authenticated pairing and encrypted link. Threat 3, cloud account takeover exposes health history. Control, MFA or passkeys and rate limits on login. Law, GDPR in Europe because heart rate is health data, a special category of personal data. HIPAA usually does not apply to a consumer device unless it works for a covered health provider."
+      - type: open
+        q: Write the first two sentences of a release decision report for a product that has one high risk still open.
+        a: "Recommendation, not fit for release yet. The update channel accepts unsigned firmware, which would let an attacker on the hospital network change heater behaviour, and the fix with signing and verification needs about three weeks."
+card: |
+  - Hash is not a signature. Login is not authorization.
+  - Name the principle and the STRIDE letter.
+  - Owners accept risk, in writing, with a date.
+  - Compliance is the floor. Test the product itself.
+  - When you cannot fix now, isolate, watch and document.

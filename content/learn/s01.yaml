@@ -1,0 +1,229 @@
+short: Security foundations
+title: Security foundations and design principles
+time: about 50 minutes
+tags: [CIA, history, principles, incubator]
+lede: Before you can secure a system, you need words for what "secure" means. Learn the goals of security, a short history of how we got here, and the classic design principles every architect still uses.
+
+idea: |
+  Security means a system keeps doing what it should, and only that, even when someone tries to make it do something else. A normal bug happens by accident. A security bug is one that a person **chooses** to trigger, again and again, at the worst time.
+
+  We describe the goals with three letters, **CIA**.
+
+  1. **Confidentiality.** Only the right people can read the data.
+  2. **Integrity.** Nobody can change the data or the system without being allowed to.
+  3. **Availability.** The system works when people need it.
+
+  Many teams add **authenticity**, you know who sent something, and **non-repudiation**, a person cannot later deny that they did it.
+
+  In this level we follow one product from start to finish. It is a **connected infant incubator** in a hospital. It keeps a baby warm, it reports to a nurse station over the network, and it gets software updates. For this product, integrity and availability can be a matter of life. A wrong temperature is worse than a leaked log.
+
+  !eli5 Think of a diary with a lock. Confidentiality means your brother cannot read it. Integrity means he cannot rip out a page or write in it. Availability means you can still open it when you want to write.
+
+scenes:
+  - title: One incubator, three security goals
+    stats: [Step, Goal at risk, Harm]
+    nodes:
+      inc: {label: Incubator, x: 0, y: 1, kind: def, tag: device}
+      net: {label: Hospital network, x: 2, y: 1, kind: raised}
+      ns: {label: Nurse station, x: 4, y: 0, kind: box}
+      ehr: {label: Health records, x: 4, y: 2, kind: raised}
+      atk: {label: Attacker, x: 2, y: 3, kind: atk}
+    links: [[inc, net], [net, ns], [net, ehr], [atk, net]]
+    steps:
+      - title: Normal day
+        text: The incubator reads the temperature every second and sends it to the nurse station. It also writes a summary to the health record.
+        on: [inc, net, ns, ehr]
+        flow: [[inc, net, ink], [net, ns, ink], [net, ehr, ink]]
+        stats: [Normal, none, none]
+      - title: Confidentiality attack
+        text: The attacker listens on the network. The messages are not encrypted, so the attacker reads the baby's name and health data.
+        on: [atk, net]
+        flow: [[net, atk, atk]]
+        mark: {ehr: warn}
+        stats: [Read, Confidentiality, Private data leaks]
+      - title: Integrity attack
+        text: The attacker sends a fake command, "set target to 39 degrees". The incubator does not check who sent it, so it obeys.
+        on: [atk, inc]
+        flow: [[atk, net, atk], [net, inc, atk]]
+        mark: {inc: bad}
+        stats: [Change, Integrity, Baby can overheat]
+      - title: Availability attack
+        text: The attacker floods the nurse station with junk. Real alarms do not get through.
+        on: [atk, ns]
+        flow: [[atk, net, atk], [net, ns, atk]]
+        mark: {ns: bad}
+        stats: [Flood, Availability, Alarms are missed]
+      - title: The fix is a design, not a patch
+        text: Encrypt and authenticate every message, let the incubator accept commands only from signed sources, keep a local safe limit that no command can override, and put devices on their own network segment.
+        on: [inc, net, ns, ehr]
+        flow: [[inc, net, def], [net, ns, def]]
+        mark: {inc: ok, ns: ok}
+        stats: [Secure design, all three, Harm is limited]
+
+terms:
+  - [Asset, "Something of value that you must protect. Patient data, the device, the hospital's trust."]
+  - [Threat, "Something or someone that can cause harm. A thief, a bored teenager, a nation state, a flood."]
+  - [Vulnerability, "A weakness that a threat can use. A missing check, an old library, a weak password."]
+  - [Exploit, "The method or code that uses a vulnerability."]
+  - [Attack surface, "Every place where an attacker can try to get in. Ports, APIs, USB, update channels, people."]
+  - [CIA triad, "Confidentiality, integrity and availability. The three classic security goals."]
+  - [Safety, "Freedom from harm to people. In medical devices, security failures can become safety failures."]
+  - [Trust boundary, "A line where data or control passes between parts that trust each other differently."]
+
+how: |
+  ### A very short history
+
+  | Time | What changed |
+  | --- | --- |
+  | 1970s | Shared mainframes. Saltzer and Schroeder publish the design principles below, in 1975. |
+  | 1988 | The Morris worm spreads over the early internet and slows thousands of machines. |
+  | 2000s | Web apps, worms like Code Red, and the first big data breaches. Companies create security teams. |
+  | 2010s | Cloud, mobile and connected devices. Stuxnet shows that code can break physical machines. |
+  | 2020s | Supply chain attacks like SolarWinds and the xz backdoor. Laws start to require security in products. |
+
+  ### Security looks different in each kind of product
+
+  | Product | What matters most | Special problem |
+  | --- | --- | --- |
+  | Web or cloud app | Confidentiality of user data | Huge attack surface, open to the whole internet |
+  | Medical device | Integrity and availability, patient safety | Runs for 10 years or more, hard to patch, needs regulator approval |
+  | Car | Safety, integrity of controls | Many suppliers, updates must work in the field |
+  | Factory control system | Availability | Old protocols with no login, like Modbus |
+  | Phone app | Data on a lost or stolen device | You do not control the device |
+
+  ### The classic design principles
+
+  In 1975 Saltzer and Schroeder wrote eight principles. They still guide good architecture.
+
+  1. **Economy of mechanism.** Keep the design small and simple. Simple things have fewer bugs.
+  2. **Fail-safe defaults.** Deny by default. Give access only when a rule says yes.
+  3. **Complete mediation.** Check every access, every time. Do not trust an old check.
+  4. **Open design.** The design can be public. Security must come from keys, not from secrets about how it works.
+  5. **Separation of privilege.** Ask for two conditions for very important actions, like two keys or two people.
+  6. **Least privilege.** Give each user and program only the access it needs, for only as long as it needs it.
+  7. **Least common mechanism.** Share as little as possible between users, since every shared part is a path between them.
+  8. **Psychological acceptability.** Make security easy to use, or people will work around it.
+
+  Two more ideas are used everywhere today. **Defense in depth** means several layers, so one failure is not a breach. **Secure by default** means the product is safe when it leaves the box, without extra setup.
+
+  !key A good architect can name the principle behind each control. "We check the token on every call" is complete mediation. "The service account can only read one table" is least privilege.
+
+diagrams:
+  - type: layers
+    title: Defense in depth for the incubator
+    attack: a fake command
+    layers:
+      - ["Separate device network", "Most of the hospital cannot reach the device", "partial"]
+      - ["Mutual TLS", "Only known nurse stations can connect", "stop"]
+      - ["Signed commands with roles", "Only a nurse role may change settings", "stop"]
+      - ["Hard safety limit in firmware", "No command can go above 37.5 degrees", "stop"]
+      - ["Audit log and alarm", "Every change is recorded and shown", "partial"]
+    caption: Each layer catches what the one before missed. The last layer protects the baby even if all the network layers fail.
+
+life:
+  - ["The Morris worm, 1988", "A student released a program that copied itself across the internet using known bugs and weak passwords. A coding mistake made it spread far faster than planned, and it slowed or crashed thousands of machines. It led to the first computer emergency response team, CERT."]
+  - ["Stuxnet, found in 2010", "A worm reached machines in an industrial plant that had no internet link, probably on USB drives. It changed how centrifuges spun while showing normal values to operators. It proved that software attacks can cause physical damage."]
+  - ["Insulin pump warnings, 2019", "The US regulator warned that some older insulin pumps had radio links with no proper authentication. A nearby attacker could change the dose. The maker could not patch them and offered patients newer models instead."]
+
+tradeoffs:
+  - ["Very strict security", "Lower risk of attack.", "Slower to use. Nurses may write passwords on the device."]
+  - ["Simple design", "Fewer bugs, easier review.", "May lack features users ask for."]
+  - ["Open design", "Experts can review it, no false comfort.", "Attackers can read it too, so the keys must be strong."]
+  - ["Security by obscurity only", "Cheap at first.", "Breaks the moment someone reverse engineers the device."]
+
+mistakes:
+  - Thinking security is only about confidentiality. In devices, integrity and availability often matter more.
+  - Treating security as a feature you add at the end.
+  - Allowing access by default and blocking known bad things, instead of denying by default.
+  - Relying on a secret design instead of strong keys.
+  - Making security so painful that people bypass it.
+
+quiz:
+  - q: An attacker changes the target temperature on the incubator. Which goal is broken?
+    opts: ["Confidentiality", "Integrity", "Availability"]
+    a: 1
+    why: Integrity means nobody changes data or behaviour without permission.
+  - type: sort
+    q: Match each event to the goal it breaks.
+    rows:
+      - ["A nurse cannot see alarms because the network is flooded", "Availability"]
+      - ["A stolen laptop shows patient names", "Confidentiality"]
+      - ["A log entry is edited to hide a change", "Integrity"]
+    opts: ["Confidentiality", "Integrity", "Availability"]
+    why: Reading is confidentiality, changing is integrity, being blocked is availability.
+  - type: fill
+    q: Giving each program only the access it needs is the principle of least ____.
+    a: ["privilege"]
+    why: Least privilege limits the damage when one part is broken into.
+  - q: A team says "attackers cannot find the debug port because it is not in the manual". Which principle does this break?
+    opts: ["Open design", "Economy of mechanism", "Least common mechanism"]
+    a: 0
+    why: Security must not depend on hiding how the system works. Attackers open the case and find the port.
+  - q: Which is the best example of complete mediation?
+    opts: ["Check the user's role once at login and remember it all day", "Check permission on every request to change a setting", "Hide the settings page from normal users"]
+    a: 1
+    why: Complete mediation means every access is checked, every time. A hidden page is not a check.
+  - q: Identify the security weakness. "The incubator accepts any command on port 9000. Only hospital staff know the port."
+    opts: ["No authentication, it relies on obscurity", "The port number is too high", "Commands should use UDP"]
+    a: 0
+    why: Anyone on the network can send commands. Knowing a port number is not proof of identity.
+
+interview:
+  - q: Explain the CIA triad and say which part matters most for a connected medical device.
+    keys:
+      - ["Defines confidentiality as only allowed people can read", [confidential, read, disclos, private]]
+      - ["Defines integrity as no unauthorized changes", [integrity, change, modif, tamper]]
+      - ["Defines availability as working when needed", [availab, uptime, when needed, working]]
+      - ["Says integrity and availability matter most because of patient safety", [safety, patient, harm, life]]
+    a: |
+      Confidentiality means only authorized people can read data. Integrity means data and behaviour cannot be changed without permission. Availability means the system works when people need it. For a web app, confidentiality of user data is often the main worry. For a connected medical device, integrity and availability usually come first, because a changed setting or a missed alarm can hurt a patient. Confidentiality still matters, because health data is private and protected by law.
+    fb: Strong answers tie the goals to the product. The same triad has different priorities in different products.
+  - q: Pick three of Saltzer and Schroeder's principles and give an example of each in a modern system.
+    keys:
+      - ["Least privilege with an example like narrow service roles", [least privilege, narrow, only the access]]
+      - ["Fail-safe defaults, deny by default", [default, deny]]
+      - ["Complete mediation, check every request", [every request, every access, mediation, each time]]
+      - ["Open design or economy of mechanism or separation of privilege", [open design, obscurity, simple, economy, two person, separation]]
+    a: |
+      Least privilege. A payment service gets a database user that can only insert into the payments table, not read the users table. Fail-safe defaults. A new cloud storage bucket is private until someone adds a rule to share it. Complete mediation. The API checks that the caller owns the object on every request, not only at login. I could also name open design, where we use public, tested algorithms like AES and keep only the keys secret.
+    fb: Concrete examples beat definitions. Interviewers want to hear that you can spot the principle in real code and config.
+
+desk:
+  title: Day one as the incubator's security architect
+  lede: You join the incubator team. Look at the current design and spot what is wrong.
+  situation: |
+    The **CribCare 2** incubator has a touch screen, a Wi-Fi chip, a USB port for service, and a web page for settings. The service password is `cribcare` on every unit. Updates are copied from a USB stick. The device trusts any message from the hospital network.
+  rounds:
+    - title: Round 1. Spot the issue
+      items:
+        - type: sort
+          q: Which principle does each problem break?
+          rows:
+            - ["The same service password on every unit", "Least privilege"]
+            - ["Settings page open to everyone on the network", "Fail-safe defaults"]
+            - ["Any network message is trusted without a check", "Complete mediation"]
+          opts: ["Least privilege", "Fail-safe defaults", "Complete mediation"]
+          why: A shared password gives every holder access to every unit. An open page is allow by default. Trusting any message skips the check.
+        - q: What is the most serious issue with USB updates in this design?
+          opts: ["USB is slow", "Nothing checks that the update came from the maker", "USB sticks get lost"]
+          a: 1
+          why: Without a signature check, anyone with a USB stick can install their own firmware.
+    - title: Round 2. Benefits and mitigations
+      items:
+        - q: The team adds a firmware limit of 37.5 degrees that no command can change. What is the main benefit?
+          opts: ["It protects the baby even if every network control fails", "It makes the device faster", "It removes the need for authentication"]
+          a: 0
+          why: A local safety limit is the last layer of defense in depth.
+        - type: open
+          q: Name one mitigation for the shared service password, and one workaround the hospital can use until the fix ships.
+          a: "Mitigation. Give each unit a unique password set at the factory, or better, service login with personal accounts and a second factor. Workaround until then. Block the service port with network rules so only the biomedical engineering room can reach it, and change the password on each unit by hand."
+  card: |
+    - CIA. Read, change, use.
+    - In devices, integrity and availability touch safety.
+    - Deny by default. Check every time. Give the least access.
+    - Security from keys, not from hidden designs.
+
+refs:
+  - "Saltzer and Schroeder. [The Protection of Information in Computer Systems, 1975](https://www.cs.virginia.edu/~evans/cs551/saltzer/)."
+  - "NIST. [SP 800-160 Vol. 1, Engineering Trustworthy Secure Systems](https://csrc.nist.gov/pubs/sp/800/160/v1/r1/final)."
+  - "FBI. [The Morris worm](https://www.fbi.gov/history/famous-cases/morris-worm)."

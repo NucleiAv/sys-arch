@@ -12,6 +12,8 @@
   };
   const TICK = '<span class="box"></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13c2 1.4 3.7 3.2 5.2 5.4C11.6 12.6 15.4 7.4 21 3"/></svg>';
   const norm = s => String(s).toLowerCase().replace(/[^a-z0-9.]/g, "");
+  /* Shuffle so the right answer is never in the same place. Returns a new list of indexes. */
+  const mix = n => { const a = [...Array(n).keys()]; for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
   /* ---------- question sets ---------- */
   function renderSet(box) {
@@ -25,12 +27,12 @@
       const info = it.info ? `<div class="qinfo">${it.info}</div>` : "";
       if (it.type === "mcq") {
         return `<div class="q mcq" data-q="${qid}">${num}<p class="qq">${it.q}</p>${info}
-          <div class="opts">${it.opts.map((o, j) => `<button type="button" data-j="${j}">${o}</button>`).join("")}</div>
+          <div class="opts">${mix(it.opts.length).map(j => `<button type="button" data-j="${j}">${it.opts[j]}</button>`).join("")}</div>
           <div class="why">${it.why || ""}</div></div>`;
       }
       if (it.type === "sort") {
         return `<div class="q sort" data-q="${qid}">${num}<p class="qq">${it.q}</p>${info}
-          <div class="rows">${it.rows.map((r, j) => `<label class="srow"><span>${r[0]}</span><select data-j="${j}"><option value="">Choose</option>${it.opts.map(o => `<option>${o}</option>`).join("")}</select><i class="mark" aria-hidden="true"></i></label>`).join("")}</div>
+          <div class="rows">${mix(it.rows.length).map(j => `<label class="srow"><span>${it.rows[j][0]}</span><select data-j="${j}"><option value="">Choose</option>${mix(it.opts.length).map(o => `<option>${it.opts[o]}</option>`).join("")}</select><i class="mark" aria-hidden="true"></i></label>`).join("")}</div>
           <button type="button" class="btn btn-quiet btn-sm check-btn">Check my answers</button><div class="why">${it.why || ""}</div></div>`;
       }
       if (it.type === "num") {

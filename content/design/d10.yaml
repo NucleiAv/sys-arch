@@ -167,3 +167,12 @@ refs:
   - "Stripe. [Designing robust and predictable APIs with idempotency](https://stripe.com/blog/idempotency)."
   - "Square Engineering. [Books, an immutable double entry accounting database service](https://developer.squareup.com/blog/books-an-immutable-double-entry-accounting-database-service/)."
   - "Alex Xu. System Design Interview volume 2, chapter 11, payment system."
+
+security: |
+  Payments are a top target and a regulated area.
+
+  - Use a **payment provider's tokenization** so raw card numbers never touch your servers. This shrinks PCI DSS scope.
+  - Use **idempotency keys** to stop double charges.
+  - Keep a signed, append only **ledger** for audit.
+  - Detect fraud with rules and models. Use 3D Secure where needed.
+  - Separate duties. No single engineer can move money alone.

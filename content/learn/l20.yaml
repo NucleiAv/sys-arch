@@ -189,3 +189,12 @@ refs:
   - "Martin Fowler. [Microservices](https://martinfowler.com/articles/microservices.html) and [MonolithFirst](https://martinfowler.com/bliki/MonolithFirst.html)."
   - "Shopify Engineering. [Deconstructing the monolith](https://shopify.engineering/deconstructing-monolith-designing-software-maximizes-developer-productivity)."
   - "Chris Richardson. [Pattern, API gateway](https://microservices.io/patterns/apigateway.html)."
+
+security: |
+  Microservices add many internal boundaries.
+
+  - Use **mutual TLS** and service identity, often with a service mesh, so services prove who they are.
+  - Check **authorization** in each service, not only at the gateway.
+  - Give each service its **own credentials** and its own data access.
+  - The **API gateway** is a strong control point. Authentication, rate limits, schema checks and logging.
+  - More services means a larger supply chain. Keep an SBOM per service.

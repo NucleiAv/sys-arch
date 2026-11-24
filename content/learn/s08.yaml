@@ -1,0 +1,246 @@
+short: Secure development and testing
+title: Secure software development and security testing
+time: about 65 minutes
+tags: [SSDLC, SAST, SCA, SBOM, fuzzing, pen test]
+lede: Most security bugs are written by tired, busy people, not by bad ones. Learn the habits and tools that keep code clean, how security testing differs from normal testing, and how to tie tests back to the threat model.
+
+idea: |
+  A **secure software development life cycle**, SSDLC, adds security work to each step of normal development. You plan with threat models, you code with safe patterns, tools check every change, and testers try to break the product the way an attacker would.
+
+  **Cyber hygiene** is the daily, boring part. Keep dependencies up to date, never put secrets in code, review every change, and fix warnings before they pile up. Like washing your hands, it stops most problems before they start.
+
+  **Security testing** is different from **functional testing**. A functional test asks "does the feature do what it should?" A security test asks "can someone make it do what it should **not**?" Functional tests use expected inputs. Security tests use strange, broken and hostile inputs.
+
+  !eli5 A functional test checks that your front door opens with your key. A security test checks that it stays shut when someone tries a hairpin, a credit card, a kick and the window next to it.
+
+scenes:
+  - title: A secure pipeline for the incubator software
+    stats: [Step, Check, Finds]
+    nodes:
+      dev: {label: Developer, x: 0, y: 1, kind: box}
+      pr: {label: Pull request, x: 2, y: 1, kind: raised}
+      ci: {label: CI checks, x: 4, y: 1, kind: def}
+      build: {label: Signed build, x: 6, y: 0, kind: def}
+      test: {label: Security tests, x: 6, y: 2, kind: raised}
+    links: [[dev, pr], [pr, ci], [ci, build], [ci, test]]
+    steps:
+      - title: Write and commit
+        text: A pre commit hook scans for secrets. It blocks a commit that contains an API key before it ever leaves the laptop.
+        on: [dev]
+        mark: {dev: ok}
+        stats: [Commit, secret scan, keys in code]
+      - title: Review
+        text: Another engineer reviews the change, using a short secure review checklist. Input checks, authorization, error handling and logging.
+        on: [dev, pr]
+        flow: [[dev, pr, ink]]
+        stats: [Review, human check, logic flaws]
+      - title: Automated checks
+        text: CI runs static analysis, SAST, on the code, dependency checks, SCA, on the libraries, and lints the infrastructure files.
+        on: [pr, ci]
+        flow: [[pr, ci, def]]
+        mark: {ci: warn}
+        stats: [CI, SAST and SCA, "injection, old libraries"]
+      - title: Build, sign and list parts
+        text: The build makes an SBOM, a list of every component and version, and signs the firmware image.
+        on: [ci, build]
+        flow: [[ci, build, def]]
+        stats: [Build, SBOM and signing, supply chain gaps]
+      - title: Break it on purpose
+        text: Fuzzers send millions of broken messages to the device API. Testers run abuse cases from the threat model and a pen test before release.
+        on: [ci, test]
+        flow: [[ci, test, atk]]
+        mark: {test: ok}
+        stats: [Test, "fuzzing, pen test", crashes and bypasses]
+
+terms:
+  - [SSDLC, "Secure software development life cycle. Security activities in every phase of building software."]
+  - [Cyber hygiene, "Basic, regular practices that keep systems healthy. Updates, least privilege, no secrets in code, backups."]
+  - [SAST, "Static application security testing. Reads source code to find bugs without running it. Semgrep, CodeQL, Bandit for Python."]
+  - [DAST, "Dynamic application security testing. Attacks the running app from outside. OWASP ZAP."]
+  - [SCA, "Software composition analysis. Finds known vulnerable libraries. Dependabot, pip-audit."]
+  - [SBOM, "Software bill of materials. A list of all components and versions in a product. SPDX and CycloneDX formats."]
+  - [Fuzzing, "Sending huge numbers of random or mutated inputs to find crashes and hangs."]
+  - [Penetration test, "Skilled people try to break into the system, within agreed rules."]
+  - [Abuse case, "A test case written from the attacker's goal, like replaying an old command."]
+  - [Negative test, "A test that checks a bad input or action is refused."]
+
+how: |
+  ### Frameworks for a secure development life cycle
+
+  - **NIST SSDF, SP 800-218.** Four groups. Prepare the organization, protect the software, produce well secured software, respond to vulnerabilities. US government buyers ask for it.
+  - **Microsoft SDL.** Training, requirements, threat modeling, tools, testing and response.
+  - **OWASP SAMM.** A model to measure how mature your practices are and plan the next step.
+  - **IEC 81001-5-1.** The same ideas, written for health software.
+
+  ### Common practices and the tools for them
+
+  | Practice | What it catches | Example tools |
+  | --- | --- | --- |
+  | Secret scanning | Keys and passwords in code | gitleaks, GitHub secret scanning |
+  | SAST | Injection, unsafe functions, weak crypto calls | Semgrep, CodeQL, Bandit |
+  | SCA and SBOM | Known vulnerable libraries | Dependabot, pip-audit, Syft, OWASP Dependency-Track |
+  | IaC scanning | Open buckets, wide firewall rules | Checkov, tfsec, Trivy |
+  | Linters and type checks | Whole classes of bugs, like None errors | Ruff, mypy |
+  | Code review | Logic and authorization flaws tools miss | Pull requests with a checklist |
+  | Memory safe languages | Buffer overflows and use after free | Rust, Go, Java, Python |
+
+  ### Security testing versus functional testing
+
+  | | Functional testing | Security testing |
+  | --- | --- | --- |
+  | Question | Does it do what it should? | Can it be made to do what it should not? |
+  | Inputs | Expected, valid | Unexpected, broken, hostile |
+  | Pass means | The feature works | The attack fails, safely |
+  | Coverage | Requirements and user stories | Threats, abuse cases, trust boundaries |
+  | Who | Developers and QA | Also security testers and outside experts |
+
+  ### Kinds of security testing
+
+  1. **Vulnerability scanning.** Automated checks for known issues.
+  2. **Fuzzing.** Random and mutated inputs at parsers and protocols. Great for device firmware. Tools include AFL++ and Atheris for Python.
+  3. **Penetration testing.** Humans chain small issues into real attacks.
+  4. **Red teaming.** A longer exercise that tests the people and the detection too.
+
+  ### Tie tests to the threat model
+
+  Every mitigation from the threat model should have at least one test. Spoofing threat T2 maps to a test that connects with a fake certificate and expects a refusal. Then you can show coverage. "All 24 threats rated high have passing tests."
+
+  !warn A tool with 600 open warnings is not a control. Tune the rules, fix or triage the findings, and block new high findings in CI. Otherwise people stop reading the results.
+
+diagrams:
+  - type: flow
+    title: Security work across the life cycle
+    nodes: [["Plan", "def", "requirements, threat model"], ["Code", "box", "safe patterns, review"], ["Build", "box", "SAST, SCA, SBOM, sign"], ["Test", "atk", "fuzz, DAST, pen test"], ["Release", "raised", "risk review, sign off"]]
+    edges: ["", "", "", ""]
+    caption: Each step feeds the next. Findings late in the line go back to the threat model.
+
+life:
+  - ["Heartbleed, 2014", "A missing length check in OpenSSL let attackers read up to 64 kilobytes of server memory per request, including private keys. Fuzzing tools later found the same bug in minutes. It pushed big companies to fund core open source projects and fuzzing programs like OSS-Fuzz."]
+  - ["The xz backdoor, 2024", "Over two years, a contributor gained trust in a small compression library and hid a backdoor in its release files. An engineer noticed that SSH logins were half a second slower and dug in. It showed that supply chain risk includes the people behind libraries."]
+  - ["MOVEit, 2023", "A SQL injection flaw in a file transfer product let a ransomware gang steal data from hundreds of organizations. SQL injection is one of the oldest bug classes and parameterized queries prevent it."]
+
+tradeoffs:
+  - ["SAST", "Runs early on every change, sees all code paths.", "False positives, misses logic and config issues."]
+  - ["DAST", "Tests the real running app.", "Needs a running system, misses hidden code paths."]
+  - ["Fuzzing", "Finds crashes humans never think of.", "Needs setup and compute, mostly finds memory and parser bugs."]
+  - ["Pen testing", "Finds chained and logic attacks.", "Expensive, a snapshot in time."]
+
+mistakes:
+  - Running scanners but never fixing the findings.
+  - Only testing the happy path.
+  - Secrets in code, even in private repositories.
+  - No SBOM, so you cannot answer "do we use the bad library?"
+  - A pen test the week before release, with no time to fix what it finds.
+
+quiz:
+  - q: Find the security bug in this code.
+    info: |
+      ```python
+      def get_patient(conn, pid):
+          sql = "SELECT * FROM patients WHERE id = '" + pid + "'"
+          return conn.execute(sql).fetchone()
+      ```
+    opts: ["SQL injection, the input is joined into the query", "It should use SELECT name instead of SELECT *", "fetchone is slower than fetchall"]
+    a: 0
+    why: Use a parameterized query like `conn.execute("SELECT * FROM patients WHERE id = ?", (pid,))`. The database then treats the input as data, not as code.
+  - q: Identify the issue.
+    info: |
+      ```python
+      API_KEY = "sk_live_51H8xQ2abc"
+      requests.post(URL, headers={"Authorization": API_KEY})
+      ```
+    opts: ["A live secret is hard coded in source code", "requests is not allowed in Python", "The header name is wrong"]
+    a: 0
+    why: Anyone with the code, or the git history, has the key. Load it from a secrets manager or environment, and rotate this key now.
+  - type: sort
+    q: Which tool type finds each problem first?
+    rows:
+      - ["An old library with a known CVE", "SCA"]
+      - ["String concatenation in a SQL query", "SAST"]
+      - ["The running web app sends no security headers", "DAST"]
+      - ["A parser crashes on a strange packet", "Fuzzing"]
+    opts: ["SCA", "SAST", "DAST", "Fuzzing"]
+    why: Each tool sees the product from a different side.
+  - type: fill
+    q: A list of every component and version in a product is a software bill of ____.
+    a: ["materials"]
+    why: An SBOM lets you answer "are we affected?" in minutes.
+  - q: Which is a security test, not a functional test?
+    opts: ["A nurse sets 36.5 degrees and the device shows 36.5", "A command with an expired signature is refused and logged", "The screen shows the temperature in large digits"]
+    a: 1
+    why: It checks that something bad is impossible.
+  - q: What is the benefit of mapping each threat to a test?
+    opts: ["You can show which threats are covered and which are not", "Tests run faster", "You no longer need a threat model"]
+    a: 0
+    why: Coverage turns the threat model into evidence.
+
+interview:
+  - q: How would you build security into a team's development process without slowing them down?
+    keys:
+      - ["Automate checks in CI like SAST, SCA, secret scanning", [ci, pipeline, sast, sca, secret, automat, scan]]
+      - ["Threat model and security requirements early", [threat model, requirement, design, early, shift left]]
+      - ["Tune tools and block only high findings, avoid noise", [tune, noise, false positive, block, high, gate]]
+      - ["Training, champions or paved roads, secure defaults", [champion, training, paved, template, default, library]]
+    a: |
+      I make the secure way the easy way. Templates and shared libraries give safe defaults, like parameterized database access and a standard auth module. CI runs secret scanning, SAST, SCA and IaC scans on every pull request, tuned so it blocks only new high findings and stays quiet otherwise. Each team has a security champion, and we threat model new features in a short session during design. Security tests from the threat model run with the normal test suite. Pen tests happen early enough to fix what they find. I track a few metrics, like time to fix highs, rather than raw counts.
+    fb: Paved roads and low noise gates are the signs of someone who has done this for real.
+  - q: How is security testing different from functional testing?
+    keys:
+      - ["Functional checks expected behaviour", [expected, should, feature, works, requirement]]
+      - ["Security checks what must not be possible", [should not, must not, abuse, misuse, attacker, negative]]
+      - ["Uses hostile or unexpected inputs, fuzzing, pen tests", [fuzz, hostile, unexpected, malform, pen test, invalid]]
+      - ["Is guided by the threat model", [threat model, threat]]
+    a: |
+      Functional testing checks that the system does what the requirements say, with expected inputs. Security testing checks that the system cannot be made to do what it must not do, using unexpected, broken and hostile inputs, abuse cases, fuzzing and pen testing. A functional pass means the feature works. A security pass means an attack fails safely. Good security tests come from the threat model, so each threat has a test, and they run alongside the functional suite.
+    fb: Linking tests back to the threat model shows you see the whole life cycle.
+
+desk:
+  title: Review a pull request for the device API
+  lede: A teammate opened a pull request. Read the code and find the problems.
+  situation: |
+    The change adds an endpoint that lets the nurse station set the alarm volume.
+  rounds:
+    - title: Round 1. Read the code
+      info: |
+        ```python
+        @app.post("/settings/volume")
+        def set_volume():
+            level = int(request.json["level"])
+            os.system("amixer set Master " + str(level) + "%")
+            log.info("volume set by " + request.headers.get("X-User", "unknown"))
+            return {"ok": True}
+        ```
+      items:
+        - type: sort
+          q: What kind of problem is each line?
+          rows:
+            - ["No check of who is calling", "Missing authorization"]
+            - ["The user name comes from a header anyone can set", "Spoofable identity"]
+            - ["No limit on level, like 0 to 100", "Missing input validation"]
+          opts: ["Missing authorization", "Spoofable identity", "Missing input validation"]
+          why: Each is a separate fix.
+        - q: The code converts level with int() before using it in os.system. Is command injection possible on this line?
+          opts: ["Not with this exact code, since int() fails on text, but os.system is still a risky pattern", "Yes, always", "Only on Windows"]
+          a: 0
+          why: int() blocks text today. A later change that removes it would open injection. Use a library call or subprocess with a list of arguments, never a shell string.
+    - title: Round 2. Fix and test
+      items:
+        - type: open
+          q: List the fixes you would ask for.
+          a: "Require an authenticated session and check the nurse role. Take the user id from the verified session, not from a header. Validate level is an integer from 0 to 100 and reject others with 400. Replace os.system with subprocess.run with an argument list and no shell, or a sound library. Add tests for a missing token, a wrong role, level 101 and level as text."
+        - q: Which test belongs in the security suite?
+          opts: ["Send level 150 and expect a 400 error and no change", "Send level 50 and expect volume 50", "Check that the response is JSON"]
+          a: 0
+          why: It checks that a bad input is refused.
+  card: |
+    - Hygiene. Update, no secrets in code, review every change.
+    - SAST reads code, DAST pokes the running app, SCA checks libraries.
+    - Keep an SBOM. Sign builds.
+    - Security tests ask what must not happen.
+    - Every high threat gets a test.
+
+refs:
+  - "NIST. [SP 800-218, Secure Software Development Framework](https://csrc.nist.gov/pubs/sp/800/218/final)."
+  - "OWASP. [Top 10](https://owasp.org/www-project-top-ten/) and [SAMM](https://owaspsamm.org/)."
+  - "CISA. [Software Bill of Materials](https://www.cisa.gov/sbom)."
+  - "Google. [OSS-Fuzz](https://google.github.io/oss-fuzz/)."

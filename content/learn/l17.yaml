@@ -199,3 +199,11 @@ refs:
   - "Martin Fowler. [Circuit breaker](https://martinfowler.com/bliki/CircuitBreaker.html)."
   - "Michael Nygard. Release It!, design and deploy production-ready software."
   - "Netflix. [Chaos engineering principles](https://principlesofchaos.org/)."
+
+security: |
+  Failure handling and security meet often.
+
+  - **Fail safe, not open.** If the auth service is down, deny access instead of letting everyone in.
+  - Retries can make a **denial of service** worse. Use backoff and jitter.
+  - Error messages should help users without leaking internals.
+  - Circuit breakers protect you from a slow or attacked dependency.

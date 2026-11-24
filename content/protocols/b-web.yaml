@@ -23,9 +23,9 @@
       tag: handshake
       d: The browser opens a TCP connection to port 443. SYN, SYN-ACK, ACK, as for plain HTTP.
       p:
-        - [client, web, "SYN", ctl]
-        - [web, client, "SYN-ACK", ctl]
-        - [client, web, "ACK", ctl]
+        - [client, web, "SYN", ctl, {"fields": {"Src port": "51514", "Dst port": "443", "Flags": "SYN", "Seq": "2000", "Window": "64240"}}]
+        - [web, client, "SYN-ACK", ctl, {"fields": {"Src port": "443", "Dst port": "51514", "Flags": "SYN ACK", "Seq": "9000", "Ack": "2001", "Window": "65160"}}]
+        - [client, web, "ACK", ctl, {"fields": {"Src port": "51514", "Dst port": "443", "Flags": "ACK", "Seq": "2001", "Ack": "9001", "Window": "502"}}]
     - t: ClientHello
       tag: tls
       d: The browser sends a TLS 1.3 ClientHello. It lists cipher suites, a key share for key agreement, the server name in SNI, and `h2` and `http/1.1` in ALPN.
@@ -37,8 +37,8 @@
       d: The server answers with ServerHello and its own key share. Both sides now compute the same secret keys. The rest of the handshake is already encrypted. The server sends its certificate, a signature that proves it owns the private key, and Finished.
       f: {Certificate: "CN shop.example", Issuer: "Example CA", Signed with: server private key}
       p:
-        - [web, client, "ServerHello + key share", sec]
-        - [web, client, "Certificate, CertificateVerify, Finished", sec]
+        - [web, client, "ServerHello + key share", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "122", "Handshake type": "0x02 ServerHello", "Cipher suite": "0x1301 TLS_AES_128_GCM_SHA256", "Key share": "X25519"}}]
+        - [web, client, "Certificate, CertificateVerify, Finished", sec, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "2890", "Payload": "Certificate, CertificateVerify and Finished, already encrypted"}}]
     - t: Check the certificate
       tag: verify
       d: The browser checks the certificate chain up to a root CA it already trusts, checks the name matches shop.example, and checks the dates. This basic check needs no call to the CA.
@@ -49,8 +49,8 @@
       tag: exchange
       d: The browser sends Finished, then the HTTP request, both encrypted. Anyone on the path sees only the server IP, the SNI name and the size and timing of encrypted records.
       p:
-        - [client, web, "Finished + GET / (encrypted)", sec]
-        - [web, client, "200 OK (encrypted)", res]
+        - [client, web, "Finished + GET / (encrypted)", sec, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "310", "Payload": "Finished, then GET / HTTP/1.1, encrypted"}}]
+        - [web, client, "200 OK (encrypted)", res, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "1290", "Payload": "HTTP/1.1 200 OK and the page, encrypted"}}]
   quiz:
     - q: What does the certificate prove?
       opts: ["That the site is fast", "That the server holds the private key for this domain name, vouched for by a trusted CA", "That the site has no bugs"]
@@ -88,31 +88,31 @@
       d: In the TLS handshake the browser offers `h2` with ALPN. The server picks `h2`. No extra round trip is needed to choose HTTP/2.
       f: {ALPN offer: "h2, http/1.1", ALPN chosen: h2}
       p:
-        - [client, web, "ClientHello ALPN h2", sec]
-        - [web, client, "ServerHello ALPN h2", sec]
+        - [client, web, "ClientHello ALPN h2", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "512", "Handshake type": "0x01 ClientHello", "ALPN": "h2, http/1.1"}}]
+        - [web, client, "ServerHello ALPN h2", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "122", "Handshake type": "0x02 ServerHello", "ALPN chosen": "h2"}}]
     - t: Connection preface and SETTINGS
       tag: setup
       d: The client sends a fixed preface string, then a SETTINGS frame. The server sends its own SETTINGS. Each side acknowledges the settings of the other.
       f: {Preface: "PRI * HTTP/2.0", Example setting: "MAX_CONCURRENT_STREAMS 100"}
       p:
         - [client, web, "Preface + SETTINGS", ctl, {raw: "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"}]
-        - [web, client, "SETTINGS", ctl]
-        - [client, web, "SETTINGS ACK", ctl]
+        - [web, client, "SETTINGS", ctl, {"fields": {"Length": "18", "Frame type": "0x4 SETTINGS", "Frame flags": "0x0", "Stream identifier": "0", "Contains": "MAX_CONCURRENT_STREAMS 100"}}]
+        - [client, web, "SETTINGS ACK", ctl, {"fields": {"Length": "0", "Frame type": "0x4 SETTINGS", "Frame flags": "0x1 ACK", "Stream identifier": "0"}}]
     - t: Three requests at once
       tag: streams
       d: The browser sends three HEADERS frames on streams 1, 3 and 5, for the page, the CSS and a script. It does not wait between them.
       f: {Streams: "1, 3, 5", Header compression: HPACK}
       p:
-        - [client, web, "HEADERS stream 1 GET /", req]
-        - [client, web, "HEADERS stream 3 GET /app.css", req]
-        - [client, web, "HEADERS stream 5 GET /app.js", req]
+        - [client, web, "HEADERS stream 1 GET /", req, {"fields": {"Length": "32", "Frame type": "0x1 HEADERS", "Frame flags": "0x5 END_STREAM, END_HEADERS", "Stream identifier": "1", "Contains": ":method GET, :path /, HPACK"}}]
+        - [client, web, "HEADERS stream 3 GET /app.css", req, {"fields": {"Length": "14", "Frame type": "0x1 HEADERS", "Frame flags": "0x5 END_STREAM, END_HEADERS", "Stream identifier": "3", "Contains": ":path /app.css, HPACK"}}]
+        - [client, web, "HEADERS stream 5 GET /app.js", req, {"fields": {"Length": "14", "Frame type": "0x1 HEADERS", "Frame flags": "0x5 END_STREAM, END_HEADERS", "Stream identifier": "5", "Contains": ":path /app.js, HPACK"}}]
     - t: Responses arrive interleaved
       tag: streams
       d: The server sends DATA frames for all three streams, mixed together. The browser puts each frame back into its stream by the stream id.
       p:
-        - [web, client, "HEADERS + DATA stream 3", res]
-        - [web, client, "DATA stream 1", res]
-        - [web, client, "DATA stream 5, END_STREAM", res]
+        - [web, client, "HEADERS + DATA stream 3", res, {"fields": {"Length": "4096", "Frame type": "0x0 DATA", "Frame flags": "0x0", "Stream identifier": "3", "Contains": "CSS bytes after a HEADERS frame"}}]
+        - [web, client, "DATA stream 1", res, {"fields": {"Length": "8192", "Frame type": "0x0 DATA", "Frame flags": "0x0", "Stream identifier": "1", "Contains": "HTML bytes"}}]
+        - [web, client, "DATA stream 5, END_STREAM", res, {"fields": {"Length": "2048", "Frame type": "0x0 DATA", "Frame flags": "0x1 END_STREAM", "Stream identifier": "5", "Contains": "last JavaScript bytes"}}]
       good: Streams that the client starts use odd numbers. Streams that the server starts use even numbers.
   quiz:
     - q: What is the main gain of HTTP/2 over HTTP/1.1?
@@ -163,19 +163,19 @@
       f: {Opcode: "0x1 text", Client mask: "yes", Server mask: "no"}
       p:
         - [client, srv, "text frame hello", data, {fields: {FIN: "1", Opcode: "1 text", Mask: "1", Payload: hello}}]
-        - [srv, client, "text frame new message", data]
+        - [srv, client, "text frame new message", data, {"fields": {"FIN": "1", "Opcode": "0x1 text", "Mask": "0 server frames are not masked", "Payload length": "27", "Payload": "{\"type\":\"msg\",\"text\":\"hi\"}"}}]
     - t: Keep alive
       tag: control
       d: The server sends a ping frame. The client answers with pong. Proxies do not close the idle connection.
       p:
-        - [srv, client, "ping", ctl]
-        - [client, srv, "pong", ctl]
+        - [srv, client, "ping", ctl, {"fields": {"FIN": "1", "Opcode": "0x9 ping", "Mask": "0", "Payload length": "0", "Payload": "empty"}}]
+        - [client, srv, "pong", ctl, {"fields": {"FIN": "1", "Opcode": "0xA pong", "Mask": "1 client frames are masked", "Payload length": "0", "Payload": "empty"}}]
     - t: Close
       tag: close
       d: One side sends a close frame with a status code, such as 1000 for normal closure. The other side answers with a close frame. Then TCP closes.
       p:
-        - [client, srv, "close 1000", ctl]
-        - [srv, client, "close 1000", ctl]
+        - [client, srv, "close 1000", ctl, {"fields": {"FIN": "1", "Opcode": "0x8 close", "Mask": "1 client frames are masked", "Payload length": "2", "Payload": "status code 1000 normal closure"}}]
+        - [srv, client, "close 1000", ctl, {"fields": {"FIN": "1", "Opcode": "0x8 close", "Mask": "0", "Payload length": "2", "Payload": "status code 1000 normal closure"}}]
   quiz:
     - type: fill
       q: "The server answers a WebSocket upgrade with status ____."
@@ -210,21 +210,21 @@
       d: The client opens a new HTTP/2 stream and sends HEADERS with the method path, the content type and a deadline in `grpc-timeout`.
       f: {":method": POST, ":path": /shop.Inventory/Reserve, content-type: application/grpc, grpc-timeout: 200m}
       p:
-        - [cli, srv, "HEADERS POST /shop.Inventory/Reserve", req]
+        - [cli, srv, "HEADERS POST /shop.Inventory/Reserve", req, {"fields": {"Length": "46", "Frame type": "0x1 HEADERS", "Frame flags": "0x4 END_HEADERS", "Stream identifier": "1", "Contains": ":path /shop.Inventory/Reserve, content-type application/grpc"}}]
     - t: The message
       tag: call
       d: A DATA frame carries the request. First a compression flag 0, then the length, then the protobuf bytes for sku and qty.
       f: {Compressed: "0", Length: "12 bytes", Message: "sku TSHIRT-M, qty 2"}
       p:
-        - [cli, srv, "DATA length-prefixed ReserveRequest", data]
+        - [cli, srv, "DATA length-prefixed ReserveRequest", data, {"fields": {"Compressed flag": "0", "Message length": "12", "Message": "ReserveRequest sku TSHIRT-M qty 2, protobuf"}}]
     - t: Reply and status
       tag: reply
       d: The server sends response HEADERS, a DATA frame with ReserveReply, and trailing HEADERS with `grpc-status 0`. The client code gets a normal return value.
       f: {grpc-status: "0 OK", Reply: "ok true, left 41"}
       p:
-        - [srv, cli, "HEADERS :status 200", res]
-        - [srv, cli, "DATA ReserveReply", res]
-        - [srv, cli, "Trailers grpc-status 0", res]
+        - [srv, cli, "HEADERS :status 200", res, {"fields": {"Length": "14", "Frame type": "0x1 HEADERS", "Frame flags": "0x4 END_HEADERS", "Stream identifier": "1", "Contains": ":status 200, content-type application/grpc"}}]
+        - [srv, cli, "DATA ReserveReply", res, {"fields": {"Compressed flag": "0", "Message length": "6", "Message": "ReserveReply ok true left 41, protobuf"}}]
+        - [srv, cli, "Trailers grpc-status 0", res, {"fields": {"Length": "20", "Frame type": "0x1 HEADERS", "Frame flags": "0x5 END_STREAM, END_HEADERS", "Stream identifier": "1", "Contains": "trailers grpc-status 0, grpc-message empty"}}]
       good: An HTTP status of 200 does not mean the call worked. Always read grpc-status in the trailers.
   quiz:
     - type: fill
@@ -263,9 +263,9 @@
       d: The client sends the full URL in the request line to the proxy. The proxy checks its rules, forwards the request and returns the answer.
       p:
         - [client, proxy, "GET http://news.example/ HTTP/1.1", req, {raw: "GET http://news.example/ HTTP/1.1\r\nHost: news.example\r\n\r\n"}]
-        - [proxy, web, "GET / HTTP/1.1", req]
-        - [web, proxy, "200 OK", res]
-        - [proxy, client, "200 OK", res]
+        - [proxy, web, "GET / HTTP/1.1", req, {"raw": "GET / HTTP/1.1\r\nHost: news.example\r\nVia: 1.1 proxy\r\nX-Forwarded-For: 10.10.0.21\r\n\r\n"}]
+        - [web, proxy, "200 OK", res, {"raw": "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 18200\r\n\r\n"}]
+        - [proxy, client, "200 OK", res, {"raw": "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nVia: 1.1 proxy\r\nContent-Length: 18200\r\n\r\n"}]
     - t: Ask for a tunnel
       tag: connect
       d: For HTTPS, the client sends CONNECT with the host and port.
@@ -275,14 +275,14 @@
       tag: connect
       d: The proxy opens TCP to the host and answers 200. From now on it only copies bytes.
       p:
-        - [proxy, web, "TCP SYN to 443", ctl]
-        - [proxy, client, "HTTP/1.1 200 Connection established", res]
+        - [proxy, web, "TCP SYN to 443", ctl, {"fields": {"Src port": "40210", "Dst port": "443", "Flags": "SYN", "Seq": "7000", "Window": "64240"}}]
+        - [proxy, client, "HTTP/1.1 200 Connection established", res, {"raw": "HTTP/1.1 200 Connection established\r\n\r\n"}]
     - t: TLS through the tunnel
       tag: tls
       d: The client does a normal TLS handshake with the real server through the tunnel. The proxy sees encrypted bytes only, plus the host name from CONNECT.
       p:
-        - [client, web, "ClientHello (through tunnel)", sec]
-        - [web, client, "ServerHello, Certificate (through tunnel)", sec]
+        - [client, web, "ClientHello (through tunnel)", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "512", "Handshake type": "0x01 ClientHello", "Server name": "news.example", "Note": "the proxy only copies these bytes"}}]
+        - [web, client, "ServerHello, Certificate (through tunnel)", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "122", "Handshake type": "0x02 ServerHello", "Note": "the proxy cannot read what follows"}}]
   quiz:
     - type: fill
       q: "To ask a proxy for an HTTPS tunnel, the client uses the method ____."
@@ -318,28 +318,28 @@
       d: The client says version 5 and lists the login methods it supports. Here, no login, and username with password.
       f: {VER: "5", Methods: "0x00 none, 0x02 user and password"}
       p:
-        - [client, socks, "VER 5, methods 00 02", ctl]
-        - [socks, client, "VER 5, method 02", ctl]
+        - [client, socks, "VER 5, methods 00 02", ctl, {"fields": {"VER": "5", "NMETHODS": "2", "Methods": "0x00 none, 0x02 user and password"}, "hex": "05 02 00 02"}]
+        - [socks, client, "VER 5, method 02", ctl, {"fields": {"VER": "5", "METHOD": "0x02 user and password"}, "hex": "05 02"}]
     - t: Login
       tag: auth
       d: The proxy chose username and password, from RFC 1929. The client sends them. They are not encrypted, so use SOCKS inside a trusted network or a tunnel.
       p:
-        - [client, socks, "user alice, password ****", sec]
-        - [socks, client, "status 0 success", sec]
+        - [client, socks, "user alice, password ****", sec, {"fields": {"VER": "0x01 auth version", "ULEN": "5", "UNAME": "alice", "PLEN": "8", "PASSWD": "sent in plain text inside the SOCKS link"}}]
+        - [socks, client, "status 0 success", sec, {"fields": {"VER": "0x01", "STATUS": "0x00 success"}}]
     - t: CONNECT request
       tag: connect
       d: The client asks the proxy to connect to a host name and port. The proxy can resolve the name itself, which hides DNS lookups from the local network.
       f: {CMD: "1 CONNECT", ATYP: "3 domain name", DST: "mail.example:993"}
       p:
-        - [client, socks, "CONNECT mail.example:993", req]
-        - [socks, srv, "TCP connect", ctl]
-        - [socks, client, "REP 0 succeeded", res]
+        - [client, socks, "CONNECT mail.example:993", req, {"fields": {"VER": "5", "CMD": "1 CONNECT", "RSV": "0", "ATYP": "3 domain name", "DST ADDR": "mail.example", "DST port": "993"}}]
+        - [socks, srv, "TCP connect", ctl, {"fields": {"Src port": "50600", "Dst port": "993", "Flags": "SYN", "Seq": "3300", "Window": "64240"}}]
+        - [socks, client, "REP 0 succeeded", res, {"fields": {"VER": "5", "REP": "0 succeeded", "RSV": "0", "ATYP": "1 IPv4", "BND ADDR": "198.51.100.8", "BND port": "50600"}}]
     - t: Relay
       tag: data
       d: The proxy now copies bytes in both directions. The app talks to the target as if directly.
       p:
-        - [client, srv, "app data (relayed)", data]
-        - [srv, client, "app data (relayed)", data]
+        - [client, srv, "app data (relayed)", data, {"fields": {"Payload": "TLS bytes for IMAP, copied as is", "Length": "517"}}]
+        - [srv, client, "app data (relayed)", data, {"fields": {"Payload": "TLS bytes from the mail server, copied as is", "Length": "1440"}}]
   quiz:
     - type: fill
       q: "The usual SOCKS port is ____."
@@ -375,29 +375,29 @@
       tag: tls
       d: The user connects to the proxy with HTTPS. The proxy holds the certificate and decrypts the request. This is **TLS offloading**.
       p:
-        - [user, rp, "ClientHello", sec]
-        - [rp, user, "ServerHello, Certificate", sec]
-        - [user, rp, "GET /products (encrypted)", req]
+        - [user, rp, "ClientHello", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "512", "Handshake type": "0x01 ClientHello", "Server name": "shop.example"}}]
+        - [rp, user, "ServerHello, Certificate", sec, {"fields": {"Content type": "0x16 handshake", "Version": "0x0303", "Length": "122", "Handshake type": "0x02 ServerHello", "Certificate": "CN shop.example, held by the proxy"}}]
+        - [user, rp, "GET /products (encrypted)", req, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "220", "Payload": "GET /products HTTP/1.1, encrypted"}}]
     - t: Pick a backend
       tag: route
       d: The proxy chooses app server A by its rule, here least connections. It adds `X-Forwarded-For` with the user IP, because A sees only the address of the proxy.
       f: {Rule: least connections, X-Forwarded-For: 198.51.100.23, X-Forwarded-Proto: https}
       p:
-        - [rp, a, "GET /products + X-Forwarded-For", req]
-        - [a, rp, "200 OK, Cache-Control max-age=60", res]
+        - [rp, a, "GET /products + X-Forwarded-For", req, {"raw": "GET /products HTTP/1.1\r\nHost: shop.example\r\nX-Forwarded-For: 198.51.100.23\r\nX-Forwarded-Proto: https\r\n\r\n"}]
+        - [a, rp, "200 OK, Cache-Control max-age=60", res, {"raw": "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: max-age=60\r\nContent-Length: 4096\r\n\r\n"}]
     - t: Cache and answer
       tag: cache
       d: The proxy can keep the response for 60 seconds. It sends the response to the user, encrypted again.
       p:
-        - [rp, cache, "store /products", data]
-        - [rp, user, "200 OK (encrypted)", res]
+        - [rp, cache, "store /products", data, {"fields": {"Cache key": "GET shop.example/products", "TTL": "60", "Size": "4096"}}]
+        - [rp, user, "200 OK (encrypted)", res, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "4180", "Payload": "HTTP/1.1 200 OK and the JSON body, encrypted"}}]
     - t: The next user gets the cached copy
       tag: cache
       d: A second user asks for the same page within 60 seconds. The proxy answers from its cache. The app servers do no work.
       p:
-        - [user, rp, "GET /products", req]
-        - [cache, rp, "hit /products", data]
-        - [rp, user, "200 OK from cache", res]
+        - [user, rp, "GET /products", req, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "220", "Payload": "GET /products HTTP/1.1, encrypted"}}]
+        - [cache, rp, "hit /products", data, {"fields": {"Cache key": "GET shop.example/products", "Age": "12", "Result": "hit"}}]
+        - [rp, user, "200 OK from cache", res, {"fields": {"Content type": "0x17 application data", "Version": "0x0303", "Length": "4180", "Payload": "HTTP/1.1 200 OK, Age 12, served from cache"}}]
   quiz:
     - q: Why does the backend need X-Forwarded-For?
       opts: ["To speed up TLS", "Because it only sees the IP of the proxy, not the IP of the user", "To cache"]

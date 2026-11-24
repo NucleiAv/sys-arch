@@ -166,3 +166,10 @@ refs:
   - "Netflix Tech Blog. [Optimized shot based encodes](https://netflixtechblog.com/optimized-shot-based-encodes-now-streaming-4b9464204830)."
   - "Apple. [HTTP Live Streaming](https://developer.apple.com/streaming/)."
   - "Alex Xu. System Design Interview volume 1, chapter 14, design YouTube."
+
+security: |
+  Video platforms deal with piracy and harmful content.
+
+  - Use signed, expiring URLs for video segments, and DRM for paid content.
+  - Scan uploads for malware and for known harmful content.
+  - Limit upload size and rate, and process uploads in sandboxed workers.

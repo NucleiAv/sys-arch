@@ -43,6 +43,37 @@ rounds:
       - type: open
         q: Describe the path of one code change from a laptop to production for a containerized web app on AWS, using what you learned in all four levels.
         a: "The developer commits on a branch and pushes to GitHub. A pull request runs GitHub Actions CI with lint and tests, and branch protection requires a review. On merge, a workflow builds a Docker image tagged with the commit hash and pushes it to Amazon ECR, using OIDC to get a short lived AWS role. Infrastructure, such as the VPC, EKS cluster and RDS database, is defined in Terraform and changed through reviewed plans. A GitOps tool such as Argo CD sees the new image tag in the config repository and rolls it out to Kubernetes as a canary, with readiness probes and metrics checks. If metrics go bad, it rolls back. The feature itself stays behind a flag until the team turns it on."
+
+  - title: Round 4. Spot it, fix it
+    items:
+      - q: Find the problem in this Terraform.
+        info: |
+          ```hcl
+          resource "aws_s3_bucket_public_access_block" "logs" {
+            bucket                  = aws_s3_bucket.logs.id
+            block_public_acls       = false
+            block_public_policy     = false
+          }
+          ```
+        opts: ["Public access is allowed on a logs bucket", "hcl files cannot set booleans", "bucket must be a string literal"]
+        a: 0
+        why: Set all four block settings to true. A scanner like Checkov would flag this in CI.
+      - q: The Terraform state file is stored in a public git repository. What is the risk?
+        opts: ["State can contain secrets and the full map of your infrastructure", "Git cannot store JSON", "Plans become slower"]
+        a: 0
+        why: Use a remote backend, such as encrypted S3 with locking, and restrict access.
+      - type: sort
+        q: Match each release practice to its benefit.
+        rows:
+          - ["Canary to 5 percent first", "Limits the damage of a bad release"]
+          - ["Signed images verified at deploy", "Blocks images that did not come from CI"]
+          - ["GitOps with reviewed commits", "Audit trail for every change"]
+        opts: ["Limits the damage of a bad release", "Blocks images that did not come from CI", "Audit trail for every change"]
+        why: Delivery practices are also security controls.
+      - type: open
+        q: A bad config change took the site down and rollback took 40 minutes. Give one fix for next time and one workaround if it happens again tomorrow.
+        a: "Fix. Ship config through the same pipeline as code, with canary rollout, automated health checks and one click rollback. Workaround tomorrow. Keep the last known good config tagged and a short runbook to re apply it, and use a feature flag to turn off the new behaviour."
+
 card: |
   - init, plan, review, apply.
   - Read for replace in every plan.

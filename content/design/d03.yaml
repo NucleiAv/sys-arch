@@ -169,3 +169,10 @@ refs:
   - "Raffi Krikorian. [Timelines at scale, Twitter](https://www.infoq.com/presentations/Twitter-Timeline-Scalability/)."
   - "Alex Xu. System Design Interview volume 1, chapter 11, design a news feed system."
   - "Meta Engineering. [Serving Facebook Multifeed](https://engineering.fb.com/2015/03/10/production-engineering/serving-facebook-multifeed-efficiency-performance-gains-through-redesign/)."
+
+security: |
+  News feeds face abuse at scale.
+
+  - Fake accounts and bots try to game ranking. Detect them with rate limits and behaviour signals.
+  - Respect privacy settings in the fan out. A post for friends must never reach the public feed or a cache keyed only by post id.
+  - Moderate content with a mix of automated filters and human review.

@@ -167,3 +167,10 @@ refs:
   - "Cloudflare. [Waiting Room](https://developers.cloudflare.com/waiting-room/about/)."
   - "Advent of System Design. [Day 9, ticket flash sale](https://www.devmaxx.dev/advent)."
   - "PostgreSQL. [Explicit locking](https://www.postgresql.org/docs/current/explicit-locking.html)."
+
+security: |
+  Flash sales attract bots.
+
+  - Use a waiting room, per account limits and bot detection.
+  - Require login and MFA for high value drops.
+  - Make purchase calls idempotent so retries do not double charge, and so bots cannot reserve the same item twice.

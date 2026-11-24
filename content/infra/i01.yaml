@@ -189,3 +189,11 @@ refs:
   - "Scott Chacon and Ben Straub. [Pro Git book, chapter 2, Git basics](https://git-scm.com/book/en/v2/Git-Basics-Getting-a-Git-Repository)."
   - "Git. [Reference manual](https://git-scm.com/docs)."
   - "GitHub. [Removing sensitive data from a repository](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)."
+
+security: |
+  Git remembers everything, including mistakes.
+
+  - **Never commit secrets.** Removing a key in a new commit does not remove it from history. Rotate any leaked key at once.
+  - Add a `.gitignore` for files like `.env` before your first commit.
+  - Use a pre commit secret scanner such as gitleaks.
+  - **Sign commits** with GPG or SSH keys so others can check who wrote them.

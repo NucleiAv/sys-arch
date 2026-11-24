@@ -163,3 +163,11 @@ refs:
   - "Dropbox Tech. [Rewriting the heart of our sync engine](https://dropbox.tech/infrastructure/rewriting-the-heart-of-our-sync-engine)."
   - "Dropbox Tech. [Streaming file synchronization](https://dropbox.tech/infrastructure/streaming-file-synchronization)."
   - "Alex Xu. System Design Interview volume 1, chapter 15, design Google Drive."
+
+security: |
+  File sync holds people's most private files.
+
+  - Encrypt files at rest and in transit. Consider client side encryption for sensitive users.
+  - Check sharing permissions on every download. Shared links should expire and allow revocation.
+  - Keep file versions so ransomware on one laptop does not destroy the cloud copy.
+  - Scan for malware so sync does not spread it to every device.

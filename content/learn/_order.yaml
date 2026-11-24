@@ -19,3 +19,7 @@ levels:
     t: Mastery
     d: Learn to run a system in many regions and to process very large amounts of data.
     items: [l21, l22, p5]
+  - n: 6
+    t: Secure architecture, risk and GRC
+    d: Learn to think like a security architect. Principles, crypto and access, requirements and standards, secure design, threat modeling, controls, risk, secure development and testing, security in the field, laws and GRC, and the architect's role. One product, a connected infant incubator, runs through every lesson.
+    items: [s01, s02, s03, s04, s05, s06, s07, s08, s09, s10, s11, p6]

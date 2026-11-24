@@ -168,3 +168,10 @@ refs:
   - "Alex Xu. System Design Interview volume 1, chapter 13, design a search autocomplete system."
   - "Wikipedia. [Trie](https://en.wikipedia.org/wiki/Trie)."
   - "Advent of System Design. [Day 10, search autocomplete](https://www.devmaxx.dev/advent)."
+
+security: |
+  Autocomplete can leak and can be gamed.
+
+  - Never suggest private data, like other users' search history.
+  - Filter harmful or offensive suggestions.
+  - Attackers may try to push a term by searching it many times. Limit the weight of repeated queries from one source.

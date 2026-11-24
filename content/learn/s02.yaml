@@ -1,0 +1,220 @@
+short: Crypto, identity and access
+title: Cryptography, authentication and access control
+time: about 60 minutes
+tags: [crypto, signatures, MFA, RBAC, ABAC]
+lede: Three tools do most of the work in security. Cryptography hides and protects data, authentication proves who someone is, and access control decides what they may do. Learn what each one gives you, and what it does not.
+
+idea: |
+  **Cryptography** turns readable data into unreadable data with a **key**. Only someone with the right key can turn it back. It also lets you **sign** data, so anyone can check that it came from you and was not changed.
+
+  **Authentication** answers "who are you?". You prove it with something you **know**, like a password, something you **have**, like a phone or a security key, or something you **are**, like a fingerprint. Using two of these is **multi factor authentication**, MFA.
+
+  **Access control** answers "what may you do?". After the system knows who you are, a rule decides if you may read this record or change that setting.
+
+  !eli5 A sealed letter in a locked box. The lock is encryption, only the key opens it. The wax seal with your ring is a signature, anyone can see it is yours and that nobody opened it. The guard who checks your ID at the door is authentication. The list that says which rooms you may enter is access control.
+
+scenes:
+  - title: A signed firmware update for the incubator
+    stats: [Step, Key used, Result]
+    nodes:
+      dev: {label: Build server, x: 0, y: 0, kind: box}
+      hsm: {label: Signing key in HSM, x: 2, y: 0, kind: def, tag: private key}
+      repo: {label: Update server, x: 4, y: 1, kind: raised}
+      inc: {label: Incubator, x: 6, y: 1, kind: def, tag: public key}
+      atk: {label: Attacker, x: 4, y: 3, kind: atk}
+    links: [[dev, hsm], [hsm, repo], [repo, inc], [atk, inc]]
+    steps:
+      - title: Hash the image
+        text: The build server makes the firmware image and computes its SHA-256 hash, a short fingerprint of every byte.
+        on: [dev]
+        stats: [Hash, none, fingerprint ready]
+      - title: Sign the hash
+        text: The hash goes to a hardware security module, an HSM. It signs the hash with the private key. The private key never leaves the HSM.
+        on: [dev, hsm]
+        flow: [[dev, hsm, ink]]
+        stats: [Sign, private key, signature made]
+      - title: Publish
+        text: The image and the signature go to the update server. The server does not need to be trusted, because the signature protects the image.
+        on: [hsm, repo]
+        flow: [[hsm, repo, def]]
+        stats: [Publish, none, image plus signature]
+      - title: Verify on the device
+        text: The incubator downloads the update, hashes it and checks the signature with the public key stored in its read only memory. It matches, so it installs.
+        on: [repo, inc]
+        flow: [[repo, inc, def]]
+        mark: {inc: ok}
+        stats: [Verify, public key, installed]
+      - title: A fake update is rejected
+        text: The attacker sends a changed image. Its hash is different, so the signature check fails. The incubator keeps the old version and logs the attempt.
+        on: [atk, inc]
+        flow: [[atk, inc, atk]]
+        mark: {inc: ok, atk: bad}
+        stats: [Reject, public key, attack stopped]
+
+terms:
+  - [Symmetric encryption, "One shared key locks and unlocks. Fast. AES is the standard."]
+  - [Asymmetric encryption, "A key pair. The public key can be shared, the private key is kept secret. RSA and elliptic curve keys."]
+  - [Hash, "A one way fingerprint of data. SHA-256. Same input, same hash. You cannot get the input back."]
+  - [MAC, "Message authentication code. A hash mixed with a shared secret key, like HMAC. Proves the message was not changed by someone without the key."]
+  - [Digital signature, "Made with a private key, checked with the public key. Proves who signed and that nothing changed."]
+  - [Certificate, "A file that binds a public key to a name, signed by a certificate authority."]
+  - [MFA, "Multi factor authentication. Two or more of know, have and are."]
+  - [RBAC, "Role based access control. Permissions come from roles like nurse or technician."]
+  - [ABAC, "Attribute based access control. Rules use attributes like ward, shift time and device type."]
+  - [HSM, "Hardware security module. A tamper resistant box that stores keys and signs inside itself."]
+
+how: |
+  ### What each crypto tool gives you
+
+  | Tool | Confidentiality | Integrity | Proves who | Example |
+  | --- | --- | --- | --- | --- |
+  | Symmetric encryption, AES-GCM | Yes | Yes, GCM adds a tag | Anyone with the shared key | Disk encryption, TLS data |
+  | Hash, SHA-256 | No | Only if the hash is kept safe | No | File fingerprints |
+  | MAC, HMAC-SHA256 | No | Yes | Anyone with the shared key | Webhook signatures |
+  | Digital signature, Ed25519 or ECDSA | No | Yes | The private key holder | Firmware and code signing |
+  | Key exchange, ECDHE | Sets up a shared key | No | No, needs certificates for that | The start of TLS |
+
+  ### Rules for using crypto
+
+  - **Never invent your own crypto.** Use well tested libraries and standard algorithms.
+  - **Protect the keys.** Crypto is only as strong as the key storage. Use an HSM or a cloud key service for signing keys.
+  - **Plan to change keys.** Keys leak and algorithms age. Design for **key rotation** and **crypto agility**, so you can switch algorithms later. Post quantum algorithms are a current example.
+  - **Do not use old algorithms.** MD5, SHA-1, DES and RC4 are broken for security use.
+
+  ### Authentication, from weak to strong
+
+  1. Shared password on every device. Very weak.
+  2. Personal passwords, stored as slow salted hashes like Argon2 or bcrypt.
+  3. Password plus a one time code from an app.
+  4. **Passkeys** or hardware security keys, using FIDO2. They resist phishing, because the key checks the website's name.
+
+  Machines also need identity. A device can hold a unique **certificate** made at the factory, and use **mutual TLS** to prove who it is.
+
+  ### Access control models
+
+  | Model | Who decides | Good for |
+  | --- | --- | --- |
+  | DAC, discretionary | The owner of the object shares it | Shared folders, documents |
+  | MAC, mandatory | The system, by labels like secret and top secret | Military, high assurance systems |
+  | RBAC, role based | Roles get permissions, people get roles | Most companies and hospitals |
+  | ABAC, attribute based | Rules over attributes of user, object and context | "Nurses on ward 3 during their shift" |
+  | ReBAC, relationship based | Links in a graph, like owner or member of team | Google Docs style sharing |
+
+  !warn **Authentication is not authorization.** Knowing who someone is does not say what they may do. Many breaches come from systems that check login but not permission.
+
+diagrams:
+  - type: flow
+    title: Every request, two questions
+    nodes: [["Request arrives", "box"], ["Who are you? Authenticate", "def"], ["What may you do? Authorize", "def"], ["Do it and log it", "raised"]]
+    edges: ["", "known user", "allowed"]
+    caption: If either check fails, deny the request and log it. Deny is the default.
+
+life:
+  - ["Pacemaker firmware update, 2017", "The US regulator and the maker announced a firmware update for about 465,000 pacemakers. Researchers had shown that the radio link could be misused to change settings or drain the battery. The update added authentication to the link. Patients had to visit a clinic to install it."]
+  - ["Stolen code signing keys", "Stuxnet carried drivers signed with private keys stolen from two real hardware companies. Windows trusted the drivers because the signatures were valid. Protecting signing keys in an HSM, and revoking them fast, is part of the design."]
+  - ["MFA fatigue", "Attackers who had a password sent push approval requests again and again until a tired employee pressed approve. Number matching and phishing resistant keys stop this."]
+
+tradeoffs:
+  - ["Symmetric keys", "Very fast, simple.", "Every party shares the secret. One leak breaks all."]
+  - ["Public key signatures", "Only one party holds the private key. Public key can be anywhere.", "Slower, needs key and certificate management."]
+  - ["RBAC", "Easy to understand and audit.", "Role explosion when rules get detailed."]
+  - ["ABAC", "Very fine rules, uses context like time and place.", "Harder to test and explain."]
+
+mistakes:
+  - Using encryption without integrity, so data can be changed without anyone noticing.
+  - Hard coding keys in firmware or source code.
+  - Using a hash like SHA-256 alone to store passwords. It is too fast to resist guessing.
+  - Treating a logged in user as allowed to do everything.
+  - No plan to rotate or revoke keys.
+
+security: |
+  This whole lesson is security. Keep one rule in your head. **Crypto moves the problem to the keys.** When you design, always answer three questions. Where is each key made? Where is it stored? How do we replace it?
+
+quiz:
+  - q: Which tool proves that a firmware file came from the maker and was not changed?
+    opts: ["AES encryption", "A digital signature", "A SHA-256 hash published next to the file on the same server"]
+    a: 1
+    why: A hash on the same server can be replaced along with the file. A signature needs the private key, which the attacker does not have.
+  - type: sort
+    q: Which factor type is each one?
+    rows:
+      - ["A PIN", "Something you know"]
+      - ["A hardware security key", "Something you have"]
+      - ["A fingerprint", "Something you are"]
+    opts: ["Something you know", "Something you have", "Something you are"]
+    why: MFA mixes factors of different types.
+  - type: fill
+    q: Permissions given to roles like nurse or technician is ____ based access control.
+    a: ["role", "rbac"]
+    why: RBAC gives permissions to roles and roles to people.
+  - q: Find the security bug. "Passwords are stored as SHA-256 of the password."
+    opts: ["SHA-256 is broken", "A fast hash with no salt makes guessing cheap", "Passwords should be encrypted with AES instead"]
+    a: 1
+    why: Use a slow, salted password hash like Argon2 or bcrypt. Encrypting passwords is also wrong, since a key leak reveals them all.
+  - q: Every incubator has the same AES key in its firmware to encrypt traffic. What is the main risk?
+    opts: ["AES is too slow for devices", "One device taken apart reveals the key for all devices", "The key is too long"]
+    a: 1
+    why: A shared secret on many devices is only as safe as the easiest device to open. Use a unique key or certificate per device.
+  - q: What is the benefit of keeping the signing key inside an HSM?
+    opts: ["Signing becomes faster", "The private key cannot be copied out, even by an admin", "It removes the need for a public key"]
+    a: 1
+    why: An HSM signs inside itself. Thieves can misuse access for a while, but they cannot take the key away.
+
+interview:
+  - q: How would you make sure only genuine firmware runs on a medical device?
+    keys:
+      - ["Sign firmware with a private key", [sign, signature]]
+      - ["Keep the signing key in an HSM or key service", [hsm, key service, kms, protect the key]]
+      - ["Verify on the device with a public key in read only memory, secure boot", [verify, secure boot, read only, rom, public key]]
+      - ["Rollback protection and key rotation or revocation", [rollback, version, rotat, revok]]
+    a: |
+      The build pipeline signs every firmware image with a private key that lives in an HSM, so nobody can copy it. The device stores the matching public key in read only memory and uses secure boot. The boot code checks the signature of each stage before it runs it, and the updater checks the signature before it installs. I add a version counter so an attacker cannot install an old, signed but vulnerable version. I also plan for key rotation, with a second key the device already trusts, in case the first key is ever exposed.
+    fb: Rollback protection and the plan for a lost key are the details that show real experience.
+  - q: What is the difference between authentication and authorization? Give a bug that comes from mixing them up.
+    keys:
+      - ["Authentication proves identity", [who, identity, prove]]
+      - ["Authorization decides permissions", [permission, allowed, may do, what]]
+      - ["Example of a missing authorization check, like IDOR", [idor, another user, ownership, someone else]]
+    a: |
+      Authentication proves who you are, for example with a password and a passkey. Authorization decides what you may do once the system knows who you are. A classic bug is an API that checks that the caller is logged in but not that they own the record. Changing an id in the URL then shows another patient's data. That is an insecure direct object reference.
+    fb: Name the bug class, IDOR or broken access control. It is the top item in the OWASP Top 10.
+
+desk:
+  title: Lock down the nurse station
+  lede: Choose the right crypto and access rules for the incubator system.
+  situation: |
+    Nurses use a web app to watch 30 incubators. Technicians fix devices. Doctors change care plans. The incubators send readings every second.
+  rounds:
+    - title: Round 1. Pick the tool
+      items:
+        - type: sort
+          q: Which tool fits each need?
+          rows:
+            - ["Readings must not be read on the network", "Encryption with TLS"]
+            - ["Prove a firmware file is genuine", "Digital signature"]
+            - ["Prove a webhook came from our server, both sides share a secret", "HMAC"]
+          opts: ["Encryption with TLS", "Digital signature", "HMAC"]
+          why: Each tool gives a different guarantee. Pick by what you must prove.
+        - q: Technicians may change calibration only on devices in their own hospital and only during a work order. Which model fits best?
+          opts: ["RBAC alone", "ABAC, with attributes for hospital and open work order", "DAC"]
+          a: 1
+          why: The rule depends on context, not only on the role.
+    - title: Round 2. Spot the problem
+      items:
+        - q: Nurses share one login at each station "to save time". Which problem does this cause first?
+          opts: ["No accountability. You cannot tell who changed a setting", "Slower logins", "More licences"]
+          a: 0
+          why: Shared accounts break non-repudiation and audit. A fast badge tap login is a better fix.
+        - type: open
+          q: The hospital's identity system is down. Nurses cannot log in to the station. What is a safe workaround, and what control limits its risk?
+          a: "A break glass account. A sealed, strong emergency login kept by the charge nurse. Using it triggers an alert, every action is logged, and the password is changed after each use. The device's local screen still shows readings and alarms without network login, so care is not blocked."
+  card: |
+    - Encrypt to hide. Sign to prove. MAC when both sides share a key.
+    - Crypto moves the problem to the keys.
+    - Passkeys beat passwords. Unique keys per device.
+    - Authentication is not authorization.
+
+refs:
+  - "NIST. [SP 800-63B, Digital Identity Guidelines, Authentication](https://pages.nist.gov/800-63-4/sp800-63b.html)."
+  - "NIST. [Attribute Based Access Control, SP 800-162](https://csrc.nist.gov/pubs/sp/800/162/upd2/final)."
+  - "OWASP. [Cryptographic Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cryptographic_Storage_Cheat_Sheet.html)."

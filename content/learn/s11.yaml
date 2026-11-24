@@ -1,0 +1,242 @@
+short: The security architect's role
+title: Beyond the life cycle, and the security architect's role
+time: about 55 minutes
+tags: [end of life, supply chain, roles, decision report]
+lede: Products outlive projects, standards change, and people decide what ships. Learn how outside forces shape security, how to retire a product safely, what a security architect does every day, and how to write a release decision report.
+
+idea: |
+  A product's life cycle has an end, but its risk often does not. Devices stay in hospitals years after the maker stops making them. Libraries stop getting fixes. New laws apply to old products. And the people who built it move on.
+
+  **External forces** keep changing the job.
+
+  - **Attackers** learn new tricks and target new sectors.
+  - **Regulators** write new laws, like the EU Cyber Resilience Act.
+  - **Standards** get new versions, like CVSS 4.0, NIST CSF 2.0 or PCI DSS 4.0.
+  - **Customers and insurers** ask harder questions before they buy or cover you.
+  - **Technology** shifts, like post quantum cryptography.
+
+  The security architect holds all of this together. They do not only design. They advise, explain risk to leaders, coach engineers, and at the end they help answer one question. **Is this product fit to release?**
+
+  !eli5 A lifeguard does not only watch the water. They check the pool before it opens, teach kids the rules, update the rules when new slides arrive, and close the pool when it is not safe. That is the security architect for a product.
+
+scenes:
+  - title: The release decision for the incubator
+    stats: [Step, Input, Status]
+    nodes:
+      req: {label: Requirements met, x: 0, y: 0, kind: def}
+      tm: {label: Threat model, x: 0, y: 2, kind: def}
+      test: {label: Test and pen test results, x: 0, y: 4, kind: raised}
+      risk: {label: Residual risk register, x: 3, y: 2, kind: raised}
+      rep: {label: Decision report, x: 6, y: 2, kind: def, tag: "fit for release?"}
+    links: [[req, risk], [tm, risk], [test, risk], [risk, rep]]
+    steps:
+      - title: Requirements coverage
+        text: 58 of 60 security requirements pass their tests. Two are partly met, both about log retention.
+        on: [req]
+        mark: {req: warn}
+        stats: [Requirements, "58 of 60", mostly done]
+      - title: Threat model status
+        text: All high threats have mitigations with passing tests. Two medium threats are accepted with owners.
+        on: [tm]
+        mark: {tm: ok}
+        stats: [Threats, all highs closed, good]
+      - title: Testing
+        text: The pen test found one high issue, a service port that skipped login. It is fixed and retested. Fuzzing found no crashes in 48 hours.
+        on: [test]
+        mark: {test: ok}
+        stats: [Tests, high fixed and retested, good]
+      - title: Residual risk
+        text: The register lists what is left, with scores, owners and review dates. Nothing high remains.
+        on: [req, tm, test, risk]
+        flow: [[req, risk, ink], [tm, risk, ink], [test, risk, ink]]
+        stats: [Residual risk, low and medium only, ready to decide]
+      - title: The recommendation
+        text: Fit for release with two conditions. Log retention fixed in the first update within 90 days, and the hospital guide updated with network setup steps. The product head signs.
+        on: [risk, rep]
+        flow: [[risk, rep, def]]
+        mark: {rep: ok}
+        stats: [Decision, report signed, release with conditions]
+
+terms:
+  - [End of life, "The maker stops selling a product."]
+  - [End of support, "The maker stops giving fixes. Security risk then grows each month."]
+  - [Supply chain risk, "Risk from suppliers, libraries, chips and services you depend on."]
+  - [Legacy system, "An old system still in use, often hard to patch or replace."]
+  - [Sanitization, "Removing data from media so it cannot be recovered. NIST SP 800-88 explains methods."]
+  - [Security champion, "An engineer in a product team who leads security habits there."]
+  - [RACI, "Responsible, accountable, consulted, informed. A chart of who does what."]
+  - [Decision report, "A document that sums up the security state of a product and recommends whether it is fit for release."]
+
+how: |
+  ### After the life cycle
+
+  - **Publish the support period.** Tell buyers how long you will ship security fixes. New EU rules expect a support period that matches how long people use the product.
+  - **Plan end of support.** Give customers notice, a last update, and advice for isolating devices they keep.
+  - **Decommission safely.** Wipe patient data and device keys, revoke device certificates, and follow a sanitization method.
+  - **Watch the supply chain.** Track suppliers' support dates. A chip or operating system that loses support can end your product's support too.
+  - **Keep standards current.** Review your requirements when a key standard gets a new version, and record what changed.
+
+  ### Ensuring the life cycle actually works
+
+  A process on paper is not enough. Measure it.
+
+  | Measure | Shows |
+  | --- | --- |
+  | Share of features with a threat model | Design coverage |
+  | Median days to fix high vulnerabilities | Patch speed |
+  | Share of devices on a supported version | Field exposure |
+  | Findings repeated from last year | Whether lessons stick |
+  | Time to answer a new CVE question | SBOM quality |
+
+  ### Roles around security
+
+  | Role | Main job |
+  | --- | --- |
+  | CISO | Leads the security program, reports risk to the board |
+  | Security architect | Designs secure systems, reviews architecture, owns the threat model approach |
+  | Product security engineer | Works inside product teams on code, tests and fixes |
+  | Security operations, SOC | Watches alerts and responds to incidents |
+  | GRC analyst | Policies, risk register, audits and evidence |
+  | Privacy officer or DPO | Personal data rules and privacy reviews |
+  | Product owner | Owns the product risk and signs acceptance |
+
+  ### Communication is half the job
+
+  - Speak in **business impact**, not in bug names. "A stranger can change a baby's temperature" beats "missing auth on port 8443".
+  - Bring **options with costs**, not only problems.
+  - **Write things down.** Decisions, risk acceptances and reasons.
+  - **Advocate** when pressure pushes against safety. Escalate through the agreed path, calmly, with facts.
+  - Keep up with change through advisories, conferences, standards bodies and peers. Security knowledge ages fast.
+
+  ### A decision report outline
+
+  1. Summary and recommendation, fit, fit with conditions, or not fit.
+  2. Product scope and version.
+  3. Security requirements and their test status.
+  4. Threat model summary and open threats.
+  5. Test results, SAST, SCA, fuzzing, pen test.
+  6. Residual risks with owners and dates.
+  7. Compliance status for the target markets.
+  8. Conditions, plan after release, and sign off.
+
+  !key The architect recommends. The risk owner decides. A good report makes the decision easy to make and easy to defend later.
+
+diagrams:
+  - type: split
+    title: What the decision report rests on
+    source: ["Fit for release?", "def"]
+    targets:
+      - ["Requirements and tests", "box", "what we promised and proved"]
+      - ["Threat model", "box", "what can go wrong and the answers"]
+      - ["Residual risk", "raised", "what is left and who owns it"]
+      - ["Compliance and support plan", "raised", "laws met, updates planned"]
+    caption: If any of these is missing, the honest answer is "not yet".
+
+life:
+  - ["Windows XP in hospitals", "Long after Microsoft ended support in 2014, many hospital machines and devices still ran Windows XP because the attached equipment needed it. In 2017 Microsoft even released an emergency patch for XP during the WannaCry outbreak. Planning end of support is a security task."]
+  - ["Therac-25", "In the 1980s a radiation therapy machine gave massive overdoses to several patients. Software race conditions and removed hardware interlocks were key causes, along with poor incident handling. It is a safety case, but its lessons about layers, testing and listening to reports apply to security too."]
+  - ["An architect who said not yet", "A security architect recommended against releasing a connected device because the update channel was unsigned. Leadership accepted a two month delay. A year later a competitor had a public recall for exactly that flaw."]
+
+tradeoffs:
+  - ["Long support periods", "Customers stay safe, trust grows.", "Cost of keeping old versions patched."]
+  - ["Fast release", "Market and revenue sooner.", "Higher residual risk and possible recalls."]
+  - ["Central security team", "Deep expertise, consistent rules.", "Bottleneck, far from the product code."]
+  - ["Security champions in teams", "Scales, close to the code.", "Uneven skill, needs support and time."]
+
+mistakes:
+  - No published support period.
+  - Retiring devices without wiping data or revoking keys.
+  - Reports full of jargon that leaders cannot act on.
+  - The architect deciding on risk acceptance instead of the owner.
+  - Assuming last year's standards and threats still apply.
+
+quiz:
+  - q: Who should sign the acceptance of residual risk for a product release?
+    opts: ["The product or business owner with authority over the product", "The newest engineer", "The pen test vendor"]
+    a: 0
+    why: The architect recommends, the owner decides.
+  - type: sort
+    q: Which role does each job belong to?
+    rows:
+      - ["Watches alerts at night", "SOC analyst"]
+      - ["Reviews a new architecture and its trust boundaries", "Security architect"]
+      - ["Keeps the risk register and prepares audits", "GRC analyst"]
+    opts: ["SOC analyst", "Security architect", "GRC analyst"]
+    why: Security is a team sport with clear roles.
+  - type: fill
+    q: Removing data from storage so it cannot be recovered is called media ____.
+    a: ["sanitization", "sanitisation"]
+    why: NIST SP 800-88 describes clear, purge and destroy.
+  - q: Spot the communication problem. "Finding F12. CWE-306 on TCP 8443, CVSS 9.1."
+    opts: ["Leaders cannot see the business or patient impact", "It is too short to be correct", "CVSS should never be shown"]
+    a: 0
+    why: Add the impact in plain words. "Anyone on the network can change heater settings without logging in."
+  - q: A chip vendor ends support for the Wi-Fi chip in your device. What is the best first step?
+    opts: ["Record it in the risk register and plan a mitigation or hardware change, and tell customers the support impact", "Ignore it, the chip still works", "Remove Wi-Fi from all devices by remote command"]
+    a: 0
+    why: Supply chain changes are risks that need owners and plans.
+  - q: Which decision is "fit with conditions"?
+    opts: ["Release now, with a named fix due in 90 days and an owner", "Do not release", "Release and never revisit"]
+    a: 0
+    why: Conditions must be specific, owned and dated.
+
+interview:
+  - q: What does a security architect do, beyond drawing secure designs?
+    keys:
+      - ["Advises and reviews designs and threat models", [review, threat model, design, advise]]
+      - ["Communicates risk to leadership in business terms", [communicat, leader, business, impact, executive, explain]]
+      - ["Sets standards, patterns, coaches engineers", [standard, pattern, coach, mentor, champion, guide]]
+      - ["Supports release decisions and risk acceptance", [release, decision, residual, accept, sign]]
+    a: |
+      The architect designs secure systems, but much of the job is influence. They review designs and threat models with teams, set reusable patterns and standards so the secure way is the easy way, and coach engineers and security champions. They translate technical risk into business and safety impact so leaders can decide, and they write those decisions down. Near release they pull together requirements, tests, threat model status and residual risk into a recommendation, while the risk owner makes the call. They also keep up with new threats, laws and standards and update the program.
+    fb: Saying "the owner decides, I recommend" shows you understand accountability.
+  - q: The business wants to release a product you think is not ready. What do you do?
+    keys:
+      - ["Explain the specific risks and their impact clearly", [impact, explain, specific, risk, clear]]
+      - ["Offer options such as conditions, mitigations or a smaller release", [option, condition, mitigat, compensat, phase, smaller, workaround]]
+      - ["Document the decision and the owner's acceptance", [document, record, writing, accept, sign]]
+      - ["Escalate through the right path if safety or law is at stake", [escalat, safety, legal, board, ciso]]
+    a: |
+      I make the risks concrete. What could happen, how likely, and to whom, in plain words. Then I offer options. Fix the top issue first and release a week later, release with a compensating control and a dated fix, or release a smaller feature set without the risky part. If the owner still wants to release, the acceptance goes in writing with a review date. If it is a patient safety or legal issue, I escalate through the agreed path, to the CISO or the safety board, calmly and with evidence. My goal is a good decision, not winning the argument.
+    fb: Options plus documentation plus escalation only for safety is the mature pattern.
+
+desk:
+  title: Write the release decision
+  lede: The incubator team asks for your recommendation for version 1.0.
+  situation: |
+    Status. All high threats mitigated and tested. Pen test high finding fixed. One medium risk open, device logs kept 30 days instead of the 1 year in the hospital contract. SBOM complete. Support period not yet published.
+  rounds:
+    - title: Round 1. Decide
+      items:
+        - q: What is your recommendation?
+          opts: ["Fit with conditions. Publish the support period before shipping and fix log retention within 90 days", "Not fit, start over", "Fit, no conditions needed"]
+          a: 0
+          why: Nothing high remains. The open items need owners and dates.
+        - type: sort
+          q: Which part of the report holds each item?
+          rows:
+            - ["Log retention gap, owner and date", "Residual risks"]
+            - ["Pen test summary and retest", "Test results"]
+            - ["Fit with two conditions", "Summary and recommendation"]
+          opts: ["Residual risks", "Test results", "Summary and recommendation"]
+          why: A clear structure makes the report fast to read.
+    - title: Round 2. Write and plan
+      items:
+        - type: open
+          q: Write the three sentence summary at the top of the report.
+          a: "Recommendation, fit for release with two conditions. All high security risks are fixed and tested, including the service port issue from the pen test, and the SBOM is complete. Conditions, publish a five year security support period before first shipment, and extend device log retention to one year in update 1.1 within 90 days, owned by the device software lead."
+        - q: Which measure best shows the life cycle keeps working after release?
+          opts: ["Share of devices running a supported, patched version", "Number of slides in the report", "Lines of code"]
+          a: 0
+          why: Field exposure is the risk you still own.
+  card: |
+    - Risk continues after the product stops selling.
+    - Publish support periods. Decommission safely.
+    - Speak in impact. Bring options. Write it down.
+    - Recommend, do not decide. Escalate safety calmly.
+    - Decision report. Requirements, threats, tests, residual risk, compliance.
+
+refs:
+  - "NIST. [SP 800-88 Rev. 1, Guidelines for Media Sanitization](https://csrc.nist.gov/pubs/sp/800/88/r1/final)."
+  - "Nancy Leveson. [An Investigation of the Therac-25 Accidents](https://web.stanford.edu/class/cs240/old/sp2014/readings/therac-25.pdf)."
+  - "OWASP. [Security Champions Guide](https://owasp.org/www-project-security-champions-guidebook/)."

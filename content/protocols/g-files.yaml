@@ -21,32 +21,32 @@
       d: The client connects to port 21. The server greets with 220. USER and PASS follow, in plain text.
       p:
         - [srv, cli, "220 FTP ready", ctl, {raw: "220 (vsFTPd 3.0.5)\r\n"}]
-        - [cli, srv, "USER asha", req]
-        - [srv, cli, "331 Please specify the password", ctl]
+        - [cli, srv, "USER asha", req, {"raw": "USER asha\r\n"}]
+        - [srv, cli, "331 Please specify the password", ctl, {"raw": "331 Please specify the password.\r\n"}]
         - [cli, srv, "PASS secret123 (plain text)", bad, {raw: "PASS secret123\r\n"}]
-        - [srv, cli, "230 Login successful", res]
+        - [srv, cli, "230 Login successful", res, {"raw": "230 Login successful.\r\n"}]
     - t: Passive mode
       tag: pasv
       d: The client sends PASV. The server answers with an address and two port numbers. 195 times 256 plus 80 is port 50000.
       f: {Reply: "227 (203,0,113,50,195,80)", Data port: "50000"}
       p:
-        - [cli, srv, "PASV", req]
-        - [srv, cli, "227 Entering Passive Mode (203,0,113,50,195,80)", res]
+        - [cli, srv, "PASV", req, {"raw": "PASV\r\n"}]
+        - [srv, cli, "227 Entering Passive Mode (203,0,113,50,195,80)", res, {"raw": "227 Entering Passive Mode (203,0,113,50,195,80).\r\n"}]
     - t: Download a file
       tag: data
       d: The client opens a second connection to port 50000, then sends RETR on the control line. The file flows on the data line.
       p:
-        - [cli, srv, "data connection to :50000", ctl]
-        - [cli, srv, "RETR report.pdf", req]
-        - [srv, cli, "150 Opening data connection", ctl]
-        - [srv, cli, "file bytes (data line)", data]
-        - [srv, cli, "226 Transfer complete", res]
+        - [cli, srv, "data connection to :50000", ctl, {"fields": {"Src port": "51800", "Dst port": "50000", "Flags": "SYN", "Seq": "8800", "Window": "64240"}}]
+        - [cli, srv, "RETR report.pdf", req, {"raw": "RETR report.pdf\r\n"}]
+        - [srv, cli, "150 Opening data connection", ctl, {"raw": "150 Opening BINARY mode data connection for report.pdf (482113 bytes).\r\n"}]
+        - [srv, cli, "file bytes (data line)", data, {"fields": {"Connection": "data, port 50000", "Bytes": "482113", "Content": "the PDF, not encrypted"}}]
+        - [srv, cli, "226 Transfer complete", res, {"raw": "226 Transfer complete.\r\n"}]
     - t: Quit
       tag: close
       d: The client says QUIT and the server answers 221.
       p:
-        - [cli, srv, "QUIT", req]
-        - [srv, cli, "221 Goodbye", res]
+        - [cli, srv, "QUIT", req, {"raw": "QUIT\r\n"}]
+        - [srv, cli, "221 Goodbye", res, {"raw": "221 Goodbye.\r\n"}]
   quiz:
     - type: num
       q: "A PASV reply ends with (...,19,137). What is the data port?"
@@ -83,31 +83,31 @@
       d: The client lists the SMB dialects it speaks. The server picks the highest common one, here 3.1.1, and says signing is required.
       f: {Dialects offered: "2.0.2, 2.1, 3.0, 3.0.2, 3.1.1", Chosen: "3.1.1"}
       p:
-        - [pc, fs, "NEGOTIATE dialects 2.0.2 to 3.1.1", req]
-        - [fs, pc, "NEGOTIATE response 3.1.1", res]
+        - [pc, fs, "NEGOTIATE dialects 2.0.2 to 3.1.1", req, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0000 NEGOTIATE", "MessageId": "0", "DialectCount": "5", "Dialects": "0x0202, 0x0210, 0x0300, 0x0302, 0x0311", "SecurityMode": "0x0001 signing enabled"}}]
+        - [fs, pc, "NEGOTIATE response 3.1.1", res, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0000 NEGOTIATE", "MessageId": "0", "Status": "0x00000000 STATUS_SUCCESS", "DialectRevision": "0x0311", "Contexts": "preauth integrity SHA-512, encryption AES-128-GCM"}}]
     - t: Session setup
       tag: auth
       d: The client logs in with SPNEGO. It gets a Kerberos ticket for `cifs/fs01` from the domain controller and sends it. NTLM is the fallback.
       p:
-        - [pc, dc, "TGS-REQ cifs/fs01", sec]
-        - [dc, pc, "service ticket", sec]
-        - [pc, fs, "SESSION_SETUP (Kerberos ticket)", sec]
-        - [fs, pc, "SESSION_SETUP success", res]
+        - [pc, dc, "TGS-REQ cifs/fs01", sec, {"fields": {"pvno": "5", "msg type": "12 TGS-REQ", "realm": "CORP.EXAMPLE", "sname": "cifs/fs01", "padata": "AP-REQ with the TGT"}}]
+        - [dc, pc, "service ticket", sec, {"fields": {"pvno": "5", "msg type": "13 TGS-REP", "realm": "CORP.EXAMPLE", "sname": "cifs/fs01", "ticket": "encrypted with the file server key"}}]
+        - [pc, fs, "SESSION_SETUP (Kerberos ticket)", sec, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0001 SESSION_SETUP", "MessageId": "1", "SecurityBuffer": "SPNEGO with the Kerberos AP-REQ"}}]
+        - [fs, pc, "SESSION_SETUP success", res, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0001 SESSION_SETUP", "MessageId": "1", "Status": "0x00000000 STATUS_SUCCESS", "SessionId": "0x0000400000000005", "SessionFlags": "encrypt data"}}]
     - t: Connect to the share
       tag: tree
       d: TREE_CONNECT opens the share `\\fs01\finance`. The server checks share permissions.
       p:
-        - [pc, fs, "TREE_CONNECT \\\\fs01\\finance", req]
-        - [fs, pc, "TREE_CONNECT response", res]
+        - [pc, fs, "TREE_CONNECT \\\\fs01\\finance", req, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0003 TREE_CONNECT", "MessageId": "2", "Path": "\\\\fs01\\finance"}}]
+        - [fs, pc, "TREE_CONNECT response", res, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0003 TREE_CONNECT", "MessageId": "2", "Status": "0x00000000 STATUS_SUCCESS", "TreeId": "0x00000001", "ShareType": "0x01 disk"}}]
     - t: Open, read and close
       tag: file
       d: CREATE opens `budget.xlsx` and returns a file id. READ gets the data. CLOSE releases it. With SMB 3 encryption on, all of this is encrypted.
       p:
-        - [pc, fs, "CREATE budget.xlsx", req]
-        - [fs, pc, "FileId 0x51", res]
-        - [pc, fs, "READ FileId 0x51", req]
-        - [fs, pc, "data", data]
-        - [pc, fs, "CLOSE", req]
+        - [pc, fs, "CREATE budget.xlsx", req, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0005 CREATE", "MessageId": "3", "Name": "budget.xlsx", "DesiredAccess": "0x00120089 read"}}]
+        - [fs, pc, "FileId 0x51", res, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0005 CREATE", "MessageId": "3", "Status": "0x00000000 STATUS_SUCCESS", "FileId": "0x51"}}]
+        - [pc, fs, "READ FileId 0x51", req, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0008 READ", "MessageId": "4", "FileId": "0x51", "Offset": "0", "Length": "65536"}}]
+        - [fs, pc, "data", data, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0008 READ", "MessageId": "4", "Status": "0x00000000 STATUS_SUCCESS", "DataLength": "48210"}}]
+        - [pc, fs, "CLOSE", req, {"fields": {"ProtocolId": "0xfe 'SMB'", "Command": "0x0006 CLOSE", "MessageId": "5", "FileId": "0x51"}}]
   quiz:
     - type: fill
       q: "Modern SMB runs on TCP port ____."
@@ -144,27 +144,27 @@
       tag: rpc
       d: "`mount 10.0.0.5:/exports/data /mnt` first asks rpcbind for the port of the mount service."
       p:
-        - [cli, rpc, "GETPORT mountd v3", req]
-        - [rpc, cli, "port 20048", res]
+        - [cli, rpc, "GETPORT mountd v3", req, {"fields": {"XID": "0x4c2e", "Message type": "0 call", "Program": "100000 portmapper", "Procedure": "3 GETPORT", "Asks for": "100005 mountd version 3, TCP"}}]
+        - [rpc, cli, "port 20048", res, {"fields": {"XID": "0x4c2e", "Message type": "1 reply", "Program": "100000 portmapper", "Procedure": "3 GETPORT", "Port": "20048"}}]
     - t: Mount and get a file handle
       tag: mount
       d: The client asks mountd to mount `/exports/data`. The server checks `/etc/exports` and returns a root file handle.
       p:
-        - [cli, srv, "MNT /exports/data", req]
-        - [srv, cli, "file handle 0x1a2b...", res]
+        - [cli, srv, "MNT /exports/data", req, {"fields": {"XID": "0x4c2f", "Message type": "0 call", "Program": "100005 mountd", "Procedure": "1 MNT", "Path": "/exports/data"}}]
+        - [srv, cli, "file handle 0x1a2b...", res, {"fields": {"XID": "0x4c2f", "Message type": "1 reply", "Program": "100005 mountd", "Procedure": "1 MNT", "Status": "0 OK", "File handle": "0x1a2b..."}}]
     - t: Find a file
       tag: nfs
       d: To open report.txt, the client sends LOOKUP with the folder handle and the name. It gets the file handle back.
       f: {Credentials: "AUTH_SYS uid 1000 gid 1000"}
       p:
-        - [cli, srv, "LOOKUP report.txt (uid 1000)", req]
-        - [srv, cli, "file handle 0x7c9e...", res]
+        - [cli, srv, "LOOKUP report.txt (uid 1000)", req, {"fields": {"XID": "0x4c30", "Message type": "0 call", "Program": "100003 nfs", "Procedure": "3 LOOKUP", "Credentials": "AUTH_SYS uid 1000 gid 1000", "Name": "report.txt"}}]
+        - [srv, cli, "file handle 0x7c9e...", res, {"fields": {"XID": "0x4c30", "Message type": "1 reply", "Program": "100003 nfs", "Procedure": "3 LOOKUP", "Status": "0 NFS3_OK", "File handle": "0x7c9e..."}}]
     - t: Read it
       tag: nfs
       d: READ requests with the file handle, an offset and a count bring the data.
       p:
-        - [cli, srv, "READ offset 0 count 65536", req]
-        - [srv, cli, "data", data]
+        - [cli, srv, "READ offset 0 count 65536", req, {"fields": {"XID": "0x4c31", "Message type": "0 call", "Program": "100003 nfs", "Procedure": "6 READ", "Offset": "0", "Count": "65536"}}]
+        - [srv, cli, "data", data, {"fields": {"XID": "0x4c31", "Message type": "1 reply", "Program": "100003 nfs", "Procedure": "6 READ", "Status": "0 NFS3_OK", "Count": "2810", "EOF": "1"}}]
   quiz:
     - type: fill
       q: "NFS runs on port ____."
@@ -201,30 +201,30 @@
       d: The client connects to port 873. Both sides send their protocol version.
       p:
         - [srv, cli, "@RSYNCD: 31.0", ctl, {raw: "@RSYNCD: 31.0\n"}]
-        - [cli, srv, "@RSYNCD: 31.0", ctl]
+        - [cli, srv, "@RSYNCD: 31.0", ctl, {"raw": "@RSYNCD: 31.0\n"}]
     - t: Pick a module and log in
       tag: auth
       d: The client names the module `backups`. The server sends a challenge. The client answers with a hash of the challenge and the password.
       p:
-        - [cli, srv, "backups", req]
-        - [srv, cli, "@RSYNCD: AUTHREQD challenge", sec]
-        - [cli, srv, "user + hashed response", sec]
-        - [srv, cli, "@RSYNCD: OK", res]
+        - [cli, srv, "backups", req, {"raw": "backups\n"}]
+        - [srv, cli, "@RSYNCD: AUTHREQD challenge", sec, {"raw": "@RSYNCD: AUTHREQD 6Xm2ZgYb1kP9qWfT\n"}]
+        - [cli, srv, "user + hashed response", sec, {"raw": "backup-bot 3vW0Kp2bLq8sYx1aZ9rT\n"}]
+        - [srv, cli, "@RSYNCD: OK", res, {"raw": "@RSYNCD: OK\n"}]
     - t: File list
       tag: list
       d: The sender sends the list of files with sizes and times. Unchanged files are skipped by default.
       p:
-        - [srv, cli, "file list", data]
+        - [srv, cli, "file list", data, {"fields": {"Entries": "3812 files", "Each": "name, size, modified time, mode"}}]
     - t: Block checksums
       tag: delta
       d: For a changed 1 GB file, the receiver sends checksums of the blocks it already has.
       p:
-        - [cli, srv, "block checksums (weak + strong)", ctl]
+        - [cli, srv, "block checksums (weak + strong)", ctl, {"fields": {"Block size": "700", "Weak checksum": "rolling, 4 bytes", "Strong checksum": "MD5, 2 to 16 bytes", "Blocks": "per changed file"}}]
     - t: Only the delta
       tag: delta
       d: The sender finds matching blocks and sends "use block 17" and the few new bytes. A small edit in a big file costs a small transfer.
       p:
-        - [srv, cli, "match refs + literal bytes", data]
+        - [srv, cli, "match refs + literal bytes", data, {"fields": {"Instructions": "copy block 4, copy block 5, literal 312 bytes, copy block 6", "Saved": "most of the file is not sent"}}]
   quiz:
     - q: Why is rsync fast for a big file with a small change?
       opts: ["It compresses everything", "It sends only blocks that do not match the old copy", "It uses UDP"]
@@ -260,14 +260,14 @@
       d: After TCP connects to port 23, the device and client agree options, such as echo and terminal type, with IAC commands.
       f: {IAC: "255", WILL: "251", DO: "253", ECHO: "option 1"}
       p:
-        - [dev, cli, "IAC WILL ECHO, IAC DO TERMINAL-TYPE", ctl]
-        - [cli, dev, "IAC DO ECHO, IAC WILL TERMINAL-TYPE", ctl]
+        - [dev, cli, "IAC WILL ECHO, IAC DO TERMINAL-TYPE", ctl, {"fields": {"IAC": "255", "WILL": "251", "Option": "1 ECHO", "IAC 2": "255", "DO": "253", "Option 2": "24 TERMINAL-TYPE"}, "hex": "ff fb 01 ff fd 18"}]
+        - [cli, dev, "IAC DO ECHO, IAC WILL TERMINAL-TYPE", ctl, {"fields": {"IAC": "255", "DO": "253", "Option": "1 ECHO", "IAC 2": "255", "WILL": "251", "Option 2": "24 TERMINAL-TYPE"}, "hex": "ff fd 01 ff fb 18"}]
     - t: Login prompt
       tag: login
       d: The device sends a login prompt. You type your username.
       p:
-        - [dev, cli, "login:", ctl]
-        - [cli, dev, "admin", req]
+        - [dev, cli, "login:", ctl, {"raw": "\r\nUser Access Verification\r\n\r\nlogin: "}]
+        - [cli, dev, "admin", req, {"raw": "admin\r\n"}]
     - t: Password in plain text
       tag: risk
       d: You type the password. It crosses the network as plain characters. The listener reads it.
@@ -278,8 +278,8 @@
       tag: risk
       d: Every command and every reply is readable and can even be changed in transit.
       p:
-        - [cli, dev, "show running-config", req]
-        - [dev, cli, "config with secrets", data]
+        - [cli, dev, "show running-config", req, {"raw": "show running-config\r\n"}]
+        - [dev, cli, "config with secrets", data, {"raw": "hostname core-sw1\r\nenable secret 5 $1$mERr$hx5rVt7rPNoS4wqbXKX7m0\r\nsnmp-server community public RO\r\n"}]
   quiz:
     - type: fill
       q: "Telnet uses TCP port ____."
@@ -313,19 +313,19 @@
       d: The monitoring server asks the router for its name with an SNMPv2c GetRequest on UDP 161.
       f: {Version: v2c, Community: "monitor-ro (plain text)", OID: "1.3.6.1.2.1.1.5.0 sysName"}
       p:
-        - [nms, rtr, "GetRequest 1.3.6.1.2.1.1.5.0", req]
-        - [rtr, nms, "Response sysName = core-rtr-1", res]
+        - [nms, rtr, "GetRequest 1.3.6.1.2.1.1.5.0", req, {"fields": {"Version": "1 v2c", "Community": "monitor-ro", "PDU type": "0xa0 GetRequest", "Request ID": "1011", "OID": "1.3.6.1.2.1.1.5.0 sysName"}}]
+        - [rtr, nms, "Response sysName = core-rtr-1", res, {"fields": {"Version": "1 v2c", "Community": "monitor-ro", "PDU type": "0xa2 Response", "Request ID": "1011", "Value": "core-rtr-1", "Error status": "0"}}]
     - t: Walk a table
       tag: walk
       d: GetBulk walks the interface table and gets traffic counters for every port in one go.
       p:
-        - [nms, rtr, "GetBulkRequest ifTable", req]
-        - [rtr, nms, "Response ifInOctets, ifOutOctets ...", res]
+        - [nms, rtr, "GetBulkRequest ifTable", req, {"fields": {"Version": "1 v2c", "Community": "monitor-ro", "PDU type": "0xa5 GetBulkRequest", "Request ID": "1012", "Non repeaters": "0", "Max repetitions": "10", "OID": "1.3.6.1.2.1.2.2 ifTable"}}]
+        - [rtr, nms, "Response ifInOctets, ifOutOctets ...", res, {"fields": {"Version": "1 v2c", "Community": "monitor-ro", "PDU type": "0xa2 Response", "Request ID": "1012", "Values": "ifInOctets.1 9284012, ifOutOctets.1 1182733, and more"}}]
     - t: A trap
       tag: trap
       d: A link goes down. The router does not wait to be asked. It sends a trap to the monitoring server on UDP 162.
       p:
-        - [rtr, nms, "Trap linkDown ifIndex 3", bad]
+        - [rtr, nms, "Trap linkDown ifIndex 3", bad, {"fields": {"Version": "1 v2c", "Community": "monitor-ro", "PDU type": "0xa7 SNMPv2-Trap", "Request ID": "77", "snmpTrapOID": "1.3.6.1.6.3.1.1.5.3 linkDown", "ifIndex": "3"}}]
     - t: The weak spot
       tag: risk
       d: The community string travels in plain text. Default strings such as "public" and "private" are well known. Use SNMPv3 with authentication and privacy, and read only access.
@@ -377,19 +377,19 @@
       tag: write
       d: The operator lowers the pump speed. The server writes 1200 to register 1 with function code 06. The PLC echoes the request to confirm.
       p:
-        - [scada, plc, "FC 06 write register 1 = 1200", req]
-        - [plc, scada, "FC 06 echo", res]
+        - [scada, plc, "FC 06 write register 1 = 1200", req, {"fields": {"Transaction ID": "1", "Protocol ID": "0", "Length": "6", "Unit ID": "1", "Function code": "6 write single register", "Register address": "1", "Value": "1200"}, "hex": "00 01 00 00 00 06 01 06 00 01 04 b0"}]
+        - [plc, scada, "FC 06 echo", res, {"fields": {"Transaction ID": "2", "Protocol ID": "0", "Length": "6", "Unit ID": "1", "Function code": "6 write single register", "Register address": "1", "Value": "1200"}}]
     - t: An exception
       tag: error
       d: A request for register 9000 does not exist. The PLC answers with function code 0x83 and exception code 02, illegal data address.
       p:
-        - [scada, plc, "FC 03 read from 9000", req]
-        - [plc, scada, "FC 0x83 exception 02", bad]
+        - [scada, plc, "FC 03 read from 9000", req, {"fields": {"Transaction ID": "3", "Protocol ID": "0", "Length": "6", "Unit ID": "1", "Function code": "3 read holding registers", "Start address": "9000", "Quantity": "2"}}]
+        - [plc, scada, "FC 0x83 exception 02", bad, {"fields": {"Transaction ID": "3", "Protocol ID": "0", "Length": "3", "Unit ID": "1", "Function code": "0x83 error for 3", "Exception code": "2 illegal data address"}}]
     - t: An unknown device tries to write
       tag: risk
       d: A laptop that should not be here sends a write. Modbus itself would accept it. The industrial firewall blocks it, because this source is not on the allow list.
       p:
-        - [x, fw, "FC 06 write (blocked)", bad]
+        - [x, fw, "FC 06 write (blocked)", bad, {"fields": {"Transaction ID": "9", "Protocol ID": "0", "Length": "6", "Unit ID": "1", "Function code": "6 write single register", "Register address": "1", "Value": "9999", "Src": "10.50.0.99 not on the allow list"}}]
       bad: [x]
   quiz:
     - type: fill

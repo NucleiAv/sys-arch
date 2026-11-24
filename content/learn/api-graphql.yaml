@@ -228,3 +228,12 @@ refs:
   - "GraphQL Foundation. [GraphQL specification](https://spec.graphql.org/)."
   - "GitHub Docs. [Rate limits and query limits for the GraphQL API](https://docs.github.com/en/graphql/overview/rate-limits-and-query-limits-for-the-graphql-api)."
   - "GraphQL. [DataLoader on GitHub](https://github.com/graphql/dataloader)."
+
+security: |
+  GraphQL gives clients a lot of power, so you must set limits.
+
+  - **Depth and cost limits.** A deeply nested query can ask for millions of objects. Limit depth, complexity and page size.
+  - **Field level authorization.** Every resolver checks if this user may see this field. One endpoint does not mean one check.
+  - **Introspection.** Turn it off in production for private APIs, or at least do not rely on hiding the schema.
+  - **Batching.** Many queries in one request can bypass rate limits. Count operations, not HTTP requests.
+  - **Persisted queries.** For your own apps, allow only queries you approved ahead of time.
