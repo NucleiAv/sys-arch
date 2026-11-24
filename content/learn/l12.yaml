@@ -1,0 +1,188 @@
+slug: l12
+num: "12"
+level: 3
+short: CAP and consistency
+title: CAP, PACELC and how fresh your data really is
+time: about 55 minutes
+tags: [CAP, consistency, eventual]
+lede: When machines cannot talk to each other, you must choose between giving an answer that may be old and giving no answer. Learn the famous rule and what it means in practice.
+
+idea: |
+  With data on many machines, networks will sometimes split them into groups that cannot talk. This is a **network partition**. It is not rare. Cables get cut, switches fail, cloud zones lose links.
+
+  During a partition, a machine that gets a request has two options. Answer with what it has, which might be out of date, or refuse until it can check with the others. That is the **CAP theorem**. During a **P**artition you must pick **C**onsistency, every read sees the latest write, or **A**vailability, every request gets an answer.
+
+  !eli5 Two shop branches share one stock list by phone. The phone line goes dead. A customer asks for the last blue jacket. Branch A can sell it and risk that branch B also sells it, available. Or it can say "please wait until the line is back", consistent. It cannot be both.
+
+scenes:
+  - title: A partition forces a choice
+    stats: [Mode, Answer to Bob, Risk]
+    nodes:
+      alice: {label: Alice, x: 0, y: 0, kind: box}
+      bob: {label: Bob, x: 0, y: 2, kind: box}
+      n1: {label: Node in Mumbai, x: 3, y: 0, kind: def}
+      n2: {label: Node in Delhi, x: 3, y: 2, kind: def}
+    links: [[alice, n1], [bob, n2], [n1, n2]]
+    steps:
+      - title: All is well
+        text: Alice buys the last seat. Mumbai records it and tells Delhi. Both agree, 0 seats left.
+        on: [alice, n1, n2]
+        flow: [[alice, n1, ink], [n1, n2, def]]
+        stats: [Normal, 0 seats, none]
+      - title: The link breaks
+        text: A partition. Mumbai and Delhi cannot talk. Alice buys another seat that was just returned in Mumbai. Delhi does not know.
+        on: [n1, n2]
+        flow: [[n1, n2, atk]]
+        mark: {n2: warn}
+        stats: [Partition, unknown, rising]
+      - title: Choose availability, AP
+        text: Delhi answers Bob with what it has, "1 seat left". Bob buys it. Two people now hold the same seat. Fix it later, with an apology or a merge.
+        on: [bob, n2]
+        flow: [[bob, n2, ink], [n2, bob, atk]]
+        mark: {n2: bad}
+        stats: [AP, 1 seat, double booking]
+      - title: Choose consistency, CP
+        text: Delhi refuses to sell until it can confirm with Mumbai. Bob sees "try again in a moment". Annoying, but never wrong.
+        on: [bob, n2]
+        flow: [[bob, n2, ink], [n2, bob, def]]
+        mark: {n2: ok}
+        stats: [CP, please wait, unhappy Bob]
+
+terms:
+  - [Partition, "A network break that splits machines into groups that cannot talk."]
+  - [Consistency in CAP, "Every read sees the most recent write, as if there were one copy. Also called linearizability."]
+  - [Availability in CAP, "Every request to a working node gets an answer, even if not the newest."]
+  - [Strong consistency, "Reads always return the latest write."]
+  - [Eventual consistency, "If writes stop, all copies become the same eventually. Until then reads may be stale."]
+  - [Read your writes, "You always see your own changes, even if others may see them later."]
+  - [Monotonic reads, "Once you have seen a value, you never see an older one."]
+  - [PACELC, "If Partition, choose A or C. Else, choose Latency or Consistency."]
+
+how: |
+  ### The part people forget, PACELC
+
+  Partitions are rare. Most of the time the network is fine, and you still face a choice. To be strongly consistent, a write must wait for other copies to confirm, which takes time. So **E**lse, when there is no partition, you trade **L**atency against **C**onsistency. That is PACELC.
+
+  | System style | During a partition | Normal times |
+  | --- | --- | --- |
+  | Cassandra, DynamoDB default | Stays available | Fast, eventually consistent |
+  | Single leader SQL with sync replicas | Refuses writes on the minority side | Consistent, slower writes |
+  | Spanner, CockroachDB | Consistent | Consistent, pays latency |
+
+  ### A ladder of consistency
+
+  From strongest to weakest. **Linearizable**, one copy illusion. **Sequential** and **causal**, everyone sees changes in an order that respects cause and effect, so a reply never shows before its question. **Read your writes** and **monotonic reads**, guarantees per user. **Eventual**, copies agree sometime.
+
+  ### Choosing per feature, not per company
+
+  | Feature | What it needs |
+  | --- | --- |
+  | Bank balance, ticket seat, unique username | Strong |
+  | Shopping cart, chat delivery | Read your writes, causal order |
+  | Like counts, view counts, follower counts | Eventual is fine |
+  | Search index, recommendations | Eventual, minutes is fine |
+
+  !key Saying "it depends on the feature" and then choosing per feature is the mature answer. One system can use strong consistency for payments and eventual for likes.
+
+diagrams:
+  - type: split
+    title: Match the guarantee to the feature
+    source: ["How bad is stale data?", "raised"]
+    targets:
+      - ["Strong", "def", "Money, seats, unique names. Wrong answers cost real money"]
+      - ["Per user guarantees", "box", "Carts, profiles, my own posts"]
+      - ["Eventual", "box", "Counts, feeds, search. A few seconds old is fine"]
+    caption: Pay the price of strong consistency only where wrong data really hurts.
+
+life:
+  - ["Amazon's shopping cart chose availability", "The Dynamo paper describes why Amazon kept carts always writable. If two copies disagree, the carts are merged, so an item might come back after you removed it. A slightly wrong cart is better than a cart that does not work during a sale."]
+  - ["Bank transfers choose consistency", "A bank would rather show 'service unavailable' than let two ATMs on two sides of a partition both pay out the same balance."]
+  - ["Google Spanner uses clocks to be consistent and global", "Spanner uses atomic clocks and GPS to know time tightly and gives strong consistency across continents, paying with a little extra latency on writes."]
+
+tradeoffs:
+  - ["Strong consistency", "Simple to reason about, never stale.", "Slower writes, may refuse requests during partitions."]
+  - ["Eventual consistency", "Fast and always available.", "Stale reads and conflicts the app must handle."]
+  - ["Per user guarantees", "Feels right to each user, cheap.", "Different users may briefly see different things."]
+
+mistakes:
+  - Saying "I pick CA". You cannot opt out of partitions in a distributed system.
+  - Using eventual consistency for things like money or inventory at checkout.
+  - Using strong consistency everywhere and paying latency for like counts.
+  - Thinking eventual means "maybe never". With healthy systems it is usually milliseconds to seconds.
+
+quiz:
+  - q: During a network partition, CAP says you must choose between which two?
+    opts: ["Speed and cost", "Consistency and availability", "Reads and writes"]
+    a: 1
+    why: Partitions happen, so the real choice is C or A while it lasts.
+  - type: fill
+    q: The model where copies become the same once writes stop is ____ consistency.
+    a: ["eventual"]
+    why: Eventual consistency allows stale reads for a while.
+  - q: Which feature can safely be eventually consistent?
+    opts: ["Seats left at the moment of booking", "Number of likes on a post", "Account balance during a transfer"]
+    a: 1
+    why: A like count a few seconds behind hurts nobody.
+  - type: fill
+    q: PACELC says that Else, when there is no partition, you trade latency against ____.
+    a: ["consistency"]
+    why: Even without failures, strong consistency costs waiting time.
+
+interview:
+  - q: Explain the CAP theorem and how it affects your design choices.
+    keys:
+      - ["Partitions happen, so the choice is between consistency and availability during one", [partition, network]]
+      - ["Define consistency as latest write and availability as always answering", [latest, always, answer, respond, recent]]
+      - ["Give examples of CP and AP choices", [bank, cart, payment, like, cassandra, dynamo, spanner, seat]]
+      - ["Mention PACELC, latency versus consistency in normal times", [pacelc, latency, normal]]
+      - ["Choose per feature", [per feature, each feature, depends, different parts]]
+    a: |
+      CAP says that when the network splits nodes apart, a node must either answer with possibly stale data, staying available, or refuse until it can confirm, staying consistent. You cannot avoid partitions, so the real choice is C or A while one lasts. PACELC adds that even with no partition, being consistent costs latency because writes wait for other copies. In practice I choose per feature. Payments, seat booking and usernames get strong consistency, and may show an error during a partition. Like counts, feeds and carts stay available and eventually consistent, and I make sure users at least read their own writes.
+    fb: Avoid saying "we chose CA". End with a per feature example, it shows you can apply the theory.
+  - q: What is eventual consistency and what problems does it cause users?
+    keys:
+      - ["Copies converge after writes stop, reads may be stale meanwhile", [converge, stale, eventually, same, later]]
+      - ["Users may not see their own updates", [own, my own, read your writes, disappear]]
+      - ["Users may see things go backwards or out of order", [backwards, order, older, jump, monotonic, causal]]
+      - ["Fixes like sticky reads, versions or causal order", [sticky, session, version, causal, same replica, token]]
+    a: |
+      It means replicas may disagree for a while, but will agree once updates stop flowing. Users feel it in three ways. They post and do not see their own post. They refresh and see an older value than before, because the second read hit a slower copy. Or they see a reply before the message it answers. Fixes are routing a user to the same replica or to the leader after a write, carrying a version token so a read waits for at least that version, and preserving causal order for related events.
+    fb: Naming the user visible symptoms, not just the definition, is what makes this answer strong.
+
+desk:
+  title: Consistency for a travel booking site
+  lede: A travel site runs in two regions. Decide which features need which guarantees.
+  situation: |
+    **Wayfare** books flights and hotels. It runs active in Europe and Asia. Features include seat booking, the "recently viewed" list, hotel reviews, loyalty points and price alerts.
+  rounds:
+    - title: Round 1. Pick a guarantee
+      items:
+        - type: sort
+          q: Which guarantee does each feature need?
+          rows:
+            - ["Booking the last seat on a flight", "Strong"]
+            - ["Spending loyalty points", "Strong"]
+            - ["Recently viewed hotels", "Read your writes"]
+            - ["Average review score", "Eventual"]
+            - ["Price alert emails", "Eventual"]
+          opts: ["Strong", "Read your writes", "Eventual"]
+          why: Things that cost money or cannot be shared need strong. Personal lists need each user to see their own changes. Aggregates and alerts can lag.
+    - title: Round 2. Partition
+      items:
+        - q: The link between Europe and Asia breaks. A user in Asia tries to book a seat owned by the Europe leader. What should happen in a CP design?
+          opts: ["Book it locally and fix later", "Show a temporary error or wait until the link returns", "Book it twice"]
+          a: 1
+          why: CP refuses rather than risk two people getting the same seat.
+        - type: open
+          q: Why not make everything strong to be safe?
+          a: "Strong consistency across regions means every write waits for a round trip between continents, often over 150 ms, and features fail during partitions. Reviews and recent views would become slow and fragile for no real benefit."
+  card: |
+    - Partitions happen, so pick C or A for each feature.
+    - PACELC, latency versus consistency every day.
+    - Money and seats strong, counts eventual.
+    - Always give users their own writes.
+
+refs:
+  - "Eric Brewer. [CAP twelve years later, how the rules have changed](https://www.infoq.com/articles/cap-twelve-years-later-how-the-rules-have-changed/)."
+  - "Daniel Abadi. [Consistency tradeoffs in modern distributed database design, PACELC](https://www.cs.umd.edu/~abadi/papers/abadi-pacelc.pdf)."
+  - "Jepsen. [Consistency models map](https://jepsen.io/consistency)."

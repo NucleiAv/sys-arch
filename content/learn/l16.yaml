@@ -1,0 +1,212 @@
+slug: l16
+num: "16"
+level: 3
+short: Consensus and distributed transactions
+title: Consensus, leader election and distributed transactions
+time: about 60 minutes
+tags: [Raft, 2PC, saga]
+lede: How do many machines agree on one answer when any of them can crash? And how do you change data in two services so both change or neither does? The deepest ideas in the course, in plain words.
+
+idea: |
+  Some decisions must be made by exactly one machine, or agreed by all. Who is the database leader? Which value was written last? Did this payment happen? Getting machines to agree, even when some crash or messages get lost, is called **consensus**.
+
+  The popular way is **Raft**. Machines elect a **leader** by majority vote. The leader writes every decision to a log and only counts it as final once a **majority** has a copy. With 5 machines, any 3 make a majority, so the system keeps working with 2 dead.
+
+  A related problem is changing data in two places at once, like taking money in the payment service and creating the order in the order service. Either both happen or neither. That is a **distributed transaction**.
+
+  !eli5 Five friends choose a movie by majority. Even if two fall asleep, three can still decide, and when the sleepers wake up they are told the choice. Nobody can decide alone, so two different movies can never both be chosen.
+
+scenes:
+  - title: Raft, electing a leader and committing a write
+    stats: [Step, Leader, Votes or copies]
+    nodes:
+      a: {label: Node A, x: 2, y: 0, kind: def}
+      b: {label: Node B, x: 0, y: 2, kind: raised}
+      c: {label: Node C, x: 2, y: 2, kind: raised}
+      d: {label: Node D, x: 4, y: 2, kind: raised}
+      e: {label: Node E, x: 4, y: 0, kind: raised}
+    links: [[a, b], [a, c], [a, d], [a, e]]
+    steps:
+      - title: The old leader is silent
+        text: Followers expect a heartbeat every 100 ms or so. Node A's timer runs out first, so it becomes a candidate and asks for votes for term 5.
+        on: [a]
+        flow: [[a, b, pen], [a, c, pen], [a, d, pen], [a, e, pen]]
+        stats: [Election, none, asking]
+      - title: Majority votes yes
+        text: B, C and D vote for A. With its own vote that is 4 of 5, a majority. A is the leader for term 5. E was slow, but it does not matter.
+        on: [a, b, c, d]
+        flow: [[b, a, def], [c, a, def], [d, a, def]]
+        mark: {a: ok}
+        stats: [Elected, A, 4 of 5]
+      - title: A write arrives
+        text: A client asks the leader to set x to 7. A adds it to its log and sends it to every follower.
+        on: [a]
+        flow: [[a, b, ink], [a, c, ink], [a, d, ink], [a, e, ink]]
+        stats: [Replicate, A, 1 of 5]
+      - title: Committed by majority
+        text: Once 3 of 5 have it in their log, A marks it committed and tells the client OK. Even if two nodes die now, the value survives.
+        on: [a, b, c]
+        flow: [[b, a, def], [c, a, def]]
+        mark: {a: ok, b: ok, c: ok}
+        stats: [Committed, A, 3 of 5]
+      - title: The leader crashes
+        text: A dies. A new election starts. Only a node with the committed entry can win, because a majority has it. No committed data is ever lost.
+        on: [b, c, d]
+        mark: {a: bad}
+        stats: [New election, soon B, 3 of 4 alive]
+
+terms:
+  - [Consensus, "Many machines agreeing on one value or one order of events, even with failures."]
+  - [Raft, "A consensus method built to be easy to understand. Leader, terms, log, majority."]
+  - [Paxos, "An older consensus method, famous for being hard to understand."]
+  - [Quorum or majority, "More than half the nodes. With 5 nodes, 3."]
+  - [Term, "A numbered election period in Raft."]
+  - [Two phase commit, "A coordinator asks every participant to prepare, then tells all to commit or all to abort."]
+  - [Saga, "A chain of local transactions. If a later step fails, earlier steps are undone with compensating actions."]
+  - [Outbox pattern, "Save the data change and the event to send in one local transaction, then send the event from that table."]
+
+how: |
+  ### Where you meet consensus
+
+  You rarely write Raft yourself. You use tools built on it. **etcd** and **ZooKeeper** for configuration, locks and leader election. **Kubernetes** stores its state in etcd. **CockroachDB**, **TiDB** and **Kafka KRaft** use Raft inside. Your job is knowing when you need it, like "only one scheduler may run this job".
+
+  !key Clusters use odd numbers like 3 or 5. With 4 nodes the majority is 3, so you can still only lose 1, the same as with 3 nodes, but with more machines to pay for.
+
+  ### Two phase commit, 2PC
+
+  1. **Prepare.** The coordinator asks every participant, "can you commit?" Each locks its data and says yes or no.
+  2. **Commit.** If all said yes, the coordinator says "commit". If anyone said no, "abort".
+
+  It is correct, but slow, and if the coordinator dies after prepare, participants sit holding locks. It is used inside databases and some enterprise systems, rarely across microservices.
+
+  ### Sagas, the microservice way
+
+  Break the big transaction into local steps, each with an **undo** step.
+
+  | Step | Undo if a later step fails |
+  | --- | --- |
+  | Create order, status pending | Cancel order |
+  | Reserve stock | Release stock |
+  | Charge card | Refund card |
+  | Mark order confirmed | none needed |
+
+  Sagas give up isolation. Others may see the pending order in the middle. They can be **orchestrated**, one coordinator tells each service what to do, or **choreographed**, each service reacts to the previous one's events.
+
+  ### The outbox pattern
+
+  A common bug is "save to database, then publish event", where the app crashes in between and the event is lost. Instead, write the change and the event row into an **outbox** table in one local transaction. A separate process reads the outbox and publishes. Now both happen or neither.
+
+diagrams:
+  - type: flow
+    title: A saga for placing an order
+    lanes:
+      - label: happy path
+        labelkind: def
+        nodes: [["Create order", "def"], ["Reserve stock", "def"], ["Charge card", "def"], ["Confirm", "def"]]
+        edges: ["", "", ""]
+      - label: card declined, undo in reverse
+        labelkind: atk
+        nodes: [["Charge fails", "atk"], ["Release stock", "raised"], ["Cancel order", "raised"], ["Tell customer", "box"]]
+        edges: ["", "", ""]
+    caption: Each step has a matching undo. The saga runs the undos in reverse order when something fails.
+
+life:
+  - ["Kubernetes keeps its brain in etcd", "Every Kubernetes cluster stores what should be running in etcd, a Raft cluster usually of 3 or 5 nodes. If etcd loses its majority, the cluster can no longer make changes, though running apps keep running."]
+  - ["Uber's trip saga", "Booking a ride touches pricing, payments, driver matching and more. These services coordinate with workflows that retry and compensate, not one big transaction. Uber built and open sourced the workflow engine Cadence, later Temporal grew from it."]
+  - ["A lost order email", "A shop saved orders and then published an event to send email. When the process crashed between the two, customers got no confirmation. The outbox pattern fixed it."]
+
+tradeoffs:
+  - ["Consensus with Raft", "Strong agreement that survives failures.", "Every write needs a majority round trip, slower, small clusters only."]
+  - ["Two phase commit", "True atomic change across systems.", "Blocking on coordinator failure, locks held, slow."]
+  - ["Saga", "Scales across services, no global locks.", "No isolation, you must write and test undo steps."]
+  - ["Orchestrated saga", "One place shows the whole flow.", "The orchestrator is more to build and run."]
+  - ["Choreographed saga", "Services stay loosely coupled.", "Hard to see and debug the whole flow."]
+
+mistakes:
+  - Using an even number of consensus nodes.
+  - Spreading a 3 node Raft cluster so that one data center holds 2 nodes, then losing that data center.
+  - Using 2PC across many microservices.
+  - Saving to the database and publishing an event as two separate steps.
+  - Sagas without idempotent steps, since retries will happen.
+
+quiz:
+  - q: A Raft cluster has 5 nodes. How many can fail while it still accepts writes?
+    opts: ["1", "2", "4"]
+    a: 1
+    why: A majority is 3. With 2 down, 3 remain, so it still works.
+  - type: fill
+    q: In a saga, a step that undoes an earlier step is called a ____ action.
+    a: ["compensating", "compensation"]
+    why: Compensating actions, like a refund, undo earlier local transactions.
+  - type: fill
+    q: Writing the data change and the event into one local transaction, then publishing from a table, is the ____ pattern.
+    a: ["outbox", "transactional outbox"]
+    why: The outbox makes saving and publishing all or nothing.
+  - q: What is the main weakness of two phase commit?
+    opts: ["It is not atomic", "If the coordinator dies after prepare, participants wait holding locks", "It cannot handle two participants"]
+    a: 1
+    why: 2PC blocks when the coordinator fails at the wrong moment.
+  - type: num
+    q: How many nodes does a consensus cluster need to survive 3 failures?
+    a: 7
+    tol: 0
+    unit: nodes
+    why: To survive f failures you need 2f plus 1 nodes. 2 times 3 plus 1 is 7.
+
+interview:
+  - q: How would you make "place order" work across order, inventory and payment services?
+    keys:
+      - ["Explain why one database transaction is not possible across services", [separate database, each service, own database, cannot, distributed transaction]]
+      - ["Use a saga of local transactions", [saga]]
+      - ["Compensating actions like release stock and refund", [compensat, refund, release, undo, cancel]]
+      - ["Orchestration or choreography with events", [orchestrat, choreograph, event, workflow, temporal]]
+      - ["Idempotent steps and the outbox pattern for reliable events", [idempot, outbox, retry]]
+    a: |
+      Each service owns its database, so one ACID transaction across them is not possible, and 2PC would be slow and fragile. I would use a saga. An orchestrator, for example a workflow engine like Temporal, creates the order as pending, asks inventory to reserve stock, asks payments to charge, then confirms the order. If any step fails, it runs compensating steps in reverse, refund, release stock, cancel the order, and tells the customer. Every step is idempotent so retries are safe, and each service uses the outbox pattern so its database change and its event are never out of step. The trade-off is that the order is visible as pending in the middle, which is fine here.
+    fb: Naming the lack of isolation, the pending state, shows you understand what sagas give up.
+  - q: What is consensus and where would you use it in a design?
+    keys:
+      - ["Several nodes agree on a value or order despite failures", [agree, agreement, despite, failure, crash]]
+      - ["Majority or quorum based, like Raft or Paxos", [majority, quorum, raft, paxos]]
+      - ["Use cases like leader election, locks, config, metadata", [leader election, lock, config, metadata, coordination]]
+      - ["Use an existing tool like etcd or ZooKeeper, keep clusters small and odd", [etcd, zookeeper, consul, odd, small, 3, 5]]
+    a: |
+      Consensus is getting several machines to agree on a value or the order of events, even if some crash or messages are delayed. Algorithms like Raft and Paxos do it by majority, a decision is final once more than half the nodes have it, so two conflicting decisions can never both win. In designs I use it for leader election, for example only one active scheduler, distributed locks, cluster membership and critical metadata like which shard lives where. I do not build it. I use etcd, ZooKeeper or Consul, with 3 or 5 nodes spread across failure zones, and I keep big data out of it because every write needs a majority round trip.
+    fb: Saying you would use etcd or ZooKeeper rather than build it is the practical answer interviewers want.
+
+desk:
+  title: The double charging checkout
+  lede: An online store split into microservices and now sometimes charges customers for orders that never get created.
+  situation: |
+    **Nimbus Market** has order, stock and payment services, each with its own database. Checkout calls them one after another. When the stock service times out after the card was charged, the customer is charged but has no order.
+  rounds:
+    - title: Round 1. What is missing
+      items:
+        - q: What should happen when stock reservation fails after payment succeeded?
+          opts: ["Nothing, the customer can email support", "A compensating refund runs automatically", "Retry the charge"]
+          a: 1
+          why: A saga undoes completed steps when a later one fails.
+        - q: Which order of steps reduces refunds?
+          opts: ["Charge card, then reserve stock", "Reserve stock, then charge card", "Both at the same time"]
+          a: 1
+          why: Reserving first means you rarely charge for something you cannot sell, and releasing stock is cheaper than refunding.
+    - title: Round 2. Reliability
+      items:
+        - type: open
+          q: The order service saves the order and then publishes "order created". Sometimes the event is lost. Fix it.
+          a: "Use the outbox pattern. Save the order and an outbox row with the event in one local transaction. A relay process reads unsent outbox rows and publishes them, marking them sent. Consumers must be idempotent because the relay may publish twice."
+        - type: fill
+          q: Each saga step must be safe to repeat, which means ____.
+          a: ["idempotent"]
+          why: Retries will happen, and repeated steps must not double charge or double reserve.
+  card: |
+    - Majority decides. 2f plus 1 nodes survive f failures.
+    - Use etcd or ZooKeeper, do not build consensus.
+    - Sagas with compensations across services.
+    - Outbox for save and publish together.
+
+refs:
+  - "Diego Ongaro and John Ousterhout. [In search of an understandable consensus algorithm, Raft](https://raft.github.io/raft.pdf), plus the [visual guide](https://raft.github.io/)."
+  - "Microsoft. [Saga distributed transactions pattern](https://learn.microsoft.com/en-us/azure/architecture/reference-architectures/saga/saga)."
+  - "Chris Richardson. [Transactional outbox pattern](https://microservices.io/patterns/data/transactional-outbox.html)."
+  - "The Secret Lives of Data. [Raft animated](https://thesecretlivesofdata.com/raft/)."

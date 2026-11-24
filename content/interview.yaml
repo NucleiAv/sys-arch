@@ -1,0 +1,58 @@
+lede: Every question from every lesson and design in one place, plus questions about how you think. Write your answer, press Get feedback, and see which key points you hit, a model answer and what makes it great.
+
+intro: |
+  !tip Interviewers care less about the "right" design and more about how you get there. Ask questions first, say your numbers out loud, draw simple boxes, and name the trade-off every time you make a choice.
+
+framework: |
+  Use the same six steps for every design question. Spend your 45 minutes roughly like this.
+
+  | Step | What you do | Time |
+  | --- | --- | --- |
+  | 1. Requirements | Ask what it must do and how well. Agree on what is out of scope. | 5 min |
+  | 2. Estimates | Users, requests per second, storage per year. Round hard. | 5 min |
+  | 3. API | The few calls the client makes. | 5 min |
+  | 4. Data model | The main tables or records and how you look them up. | 5 min |
+  | 5. High level design | Boxes and arrows for the main flows. | 10 min |
+  | 6. Deep dives | Scale the hottest part, handle failure, name trade-offs. | 15 min |
+
+  The full method with an example is in [design 00](design/d00.html).
+diagrams:
+  - type: flow
+    title: The answer method
+    nodes: [["Requirements", "def"], ["Estimates", "raised"], ["API and data", "box"], ["Big picture", "box"], ["Deep dives", "atk"]]
+    edges: ["", "", "", ""]
+    caption: Never skip straight to drawing. The first two steps decide what the drawing needs.
+
+general:
+  - q: Tell me about a system you designed or worked on. What would you change now?
+    keys:
+      - ["What the system did and how big it was, in numbers", [users, requests, "per second", data, million, thousand]]
+      - ["Your own part in it", [" i ", "my ", built, designed, owned, wrote]]
+      - ["A decision and the trade-off behind it", [chose, trade, because, instead]]
+      - ["A real problem or failure and what you learned", [problem, broke, failed, outage, slow, learned, issue]]
+      - ["A concrete change you would make now and why", [would, change, now, today, next, differently]]
+    a: |
+      I built the order service for a food delivery startup. About 50 thousand orders a day, peaks of 30 orders a second at lunch. I owned the API and the database design.
+
+      We chose one Postgres database with a read replica because the team was small and the data was very relational. It worked well. The problem came at lunch peaks, when the menu reads slowed down order writes. We added a Redis cache for menus, which fixed it.
+
+      Today I would put order events on a queue from day one. Notifications and the restaurant screen were called directly from the order code, so when the SMS provider was slow, checkouts were slow too. A queue would have kept checkout fast no matter what happened downstream.
+    fb: Use numbers, say "I" for your part, name one trade-off and one honest mistake. Interviewers trust people who can say what went wrong and what they learned.
+  - q: How do you decide when a design is good enough?
+    keys:
+      - ["It meets the stated requirements and numbers", [requirement, numbers, meets, sla, slo, target]]
+      - ["It is as simple as possible for now", [simple, simplest, complex, overengineer, "over-engineer"]]
+      - ["You know how it will grow and what breaks first", [grow, scale, bottleneck, breaks, next]]
+      - ["You have handled failure and the team can run it", [fail, failure, operate, team, monitor, run]]
+    a: |
+      A design is good enough when it meets the agreed requirements with some headroom, it is the simplest thing that does, and I know what will break first as it grows and roughly how I would fix it. It must also handle the failures we expect, like a server dying, and the team must be able to run and debug it. I do not build for 100 times the load on day one. I build for about 10 times, and I write down the next step.
+    fb: The phrase interviewers love is "simplest thing that meets the requirements, with a clear path to the next stage". It shows judgment, not just knowledge.
+  - q: Your design has a part you are not sure about. What do you say in the interview?
+    keys:
+      - ["Say it openly", [honest, unsure, "not sure", openly, admit, say]]
+      - ["Give your best guess and your reasoning", [guess, assume, reason, think]]
+      - ["Say how you would check or measure it", [test, measure, benchmark, check, prototype, verify]]
+      - ["Offer a fallback option", [fallback, otherwise, alternative, option, instead]]
+    a: |
+      I say it plainly. "I am not sure a single Redis node can handle 200 thousand writes a second. My guess is it is close to the limit. I would load test it early. If it cannot, I would shard the counters by key across several nodes." This shows I know where the risk is, I have a plan to check it, and I have a way out.
+    fb: Hiding doubt looks worse than naming it. Pair every doubt with a way to check it and a backup plan.

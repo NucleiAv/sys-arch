@@ -1,0 +1,190 @@
+slug: l07
+num: "07"
+level: 2
+short: Inside a database
+title: Inside a database, indexes and storage engines
+time: about 50 minutes
+tags: [index, B-tree, LSM, WAL]
+lede: Why does one query take 2 ms and another 20 seconds? Learn how databases find data with indexes, how they write it safely, and the two big designs for storing it.
+
+idea: |
+  Without help, a database finds a row by reading every row, one by one. That is a **full table scan**. Fine for 1,000 rows, terrible for 100 million.
+
+  An **index** is a sorted list that points to where each row lives, like the index at the back of a book. With an index on `email`, finding one user out of 100 million takes a few steps instead of 100 million.
+
+  But indexes are not free. Every insert or update must also update every index. More indexes mean faster reads and slower writes.
+
+  !eli5 Finding "photosynthesis" in a textbook by reading every page takes hours. The index at the back says page 142. But every time the book gets a new page, someone must update the index too.
+
+scenes:
+  - title: Finding one user, with and without an index
+    stats: [Method, Rows checked, Time]
+    nodes:
+      q: {label: Query by email, x: 0, y: 1, kind: box}
+      root: {label: Index root, x: 2, y: 1, kind: def, tag: "A to Z"}
+      mid: {label: Index page M to P, x: 4, y: 1, kind: def}
+      row: {label: The row, x: 6, y: 1, kind: raised, tag: on disk}
+      table: {label: Whole table, x: 4, y: 3, kind: atk, tag: 100 million rows}
+    links: [[q, root], [root, mid], [mid, row], [q, table]]
+    steps:
+      - title: No index, full scan
+        text: The database reads all 100 million rows looking for `maya@mail.com`. It takes many seconds and slows everyone else down.
+        on: [q, table]
+        flow: [[q, table, atk]]
+        mark: {table: bad}
+        stats: [Full scan, 100 million, 20 s]
+      - title: Index, start at the top
+        text: A B-tree index starts at the root, which says emails from M to P are on this page.
+        on: [q, root]
+        flow: [[q, root, def]]
+        stats: [B-tree, "1", under 1 ms]
+      - title: Walk down
+        text: Each page narrows it down. With hundreds of keys per page, even 100 million rows need only 3 or 4 steps.
+        on: [root, mid]
+        flow: [[root, mid, def]]
+        stats: [B-tree, "3", 1 ms]
+      - title: Fetch the row
+        text: The last page points to the row's location. Read it. Done.
+        on: [mid, row]
+        flow: [[mid, row, def]]
+        mark: {row: ok}
+        stats: [B-tree, "4", 2 ms]
+
+terms:
+  - [Index, "A sorted structure that points to rows, so lookups skip most of the table."]
+  - [B-tree, "The most common index. A wide, shallow tree of sorted pages. Great for lookups and ranges."]
+  - [Composite index, "An index on several columns, like `(user_id, created_at)`. Order matters."]
+  - [WAL, "Write-ahead log. The database writes every change to an append-only log first, so it can recover after a crash."]
+  - [LSM tree, "Log-structured merge tree. Writes go to memory and are flushed to sorted files, which are merged later. Very fast writes."]
+  - [Compaction, "Merging LSM files in the background to remove old versions and keep reads fast."]
+  - [Query plan, "The steps the database chooses to answer a query. `EXPLAIN` shows it."]
+
+how: |
+  ### Writing safely, the write-ahead log
+
+  When you save something, the database first appends a note to the **write-ahead log** on disk, "set balance of account 7 to 50". Appending is fast. Then it updates the real data pages later. If the power dies, it replays the log on restart. This is how databases keep the **durable** promise. Replicas, lesson 8, are fed from this same log.
+
+  ### Two ways to store data
+
+  | | B-tree engines | LSM tree engines |
+  | --- | --- | --- |
+  | Used by | PostgreSQL, MySQL InnoDB | Cassandra, RocksDB, ScyllaDB |
+  | Writes | Update pages in place, slower for floods | Append to memory and sorted files, very fast |
+  | Reads | Fast and steady | May check several files, helped by bloom filters |
+  | Background work | Little | Compaction uses disk and CPU |
+  | Best for | Mixed read and write apps | Write heavy apps like logs, metrics, chat |
+
+  ### Indexes, the practical rules
+
+  1. Index the columns you search and join on, like `user_id` and `email`.
+  2. For "my latest posts", index `(user_id, created_at)`. The first column filters, the second sorts.
+  3. A composite index on `(a, b)` helps queries on `a` and on `a and b`, but not on `b` alone.
+  4. Do not index everything. Each index costs disk and slows writes.
+  5. Use `EXPLAIN` to see if the database actually uses your index.
+
+  !key An **inverted index** is the special index search engines use. It maps each word to the list of documents that contain it. You will meet it in the autocomplete design.
+
+diagrams:
+  - type: flow
+    title: How an LSM tree takes a write
+    nodes: [["Write arrives", "box"], ["Append to log", "raised", "for crash safety"], ["Memory table", "def", "sorted in memory"], ["Flush to sorted file", "raised", "when full"], ["Compaction merges files", "box"]]
+    edges: ["", "", "", "later"]
+    caption: Every step is a fast append or a sequential write. That is why LSM engines take writes so well.
+
+life:
+  - ["A dashboard that took 40 seconds", "The query filtered orders by `shop_id` and sorted by date, with no index. Adding an index on `(shop_id, created_at)` made it take 30 ms."]
+  - ["Writes slowed down after a growth spurt", "A table had 14 indexes, many unused. Every insert updated all 14. Dropping 9 unused ones made inserts three times faster."]
+  - ["Choosing RocksDB for a metrics store", "A team stored a million metric points a second. A B-tree database could not keep up with the random writes. An LSM engine turned them into sequential writes and handled the load."]
+
+tradeoffs:
+  - ["More indexes", "Faster reads for more kinds of query.", "Slower writes and more disk."]
+  - ["Fewer indexes", "Fast writes, less disk.", "Some queries scan the table."]
+  - ["B-tree engine", "Steady, fast reads and ranges.", "Heavy random writes cost more."]
+  - ["LSM engine", "Very fast writes.", "Reads may touch several files. Compaction needs spare disk and CPU."]
+
+mistakes:
+  - Adding an index for every column just in case.
+  - Building a composite index in the wrong column order.
+  - Putting a function on an indexed column, like `LOWER(email)`, so the index cannot be used.
+  - Paging with huge offsets, which makes the database walk past many rows.
+  - Forgetting that an index on a column with only two values, like `is_active`, rarely helps.
+
+quiz:
+  - q: Your index is on `(country, city)`. Which query can use it well?
+    opts: ["WHERE city = 'Pune'", "WHERE country = 'IN' AND city = 'Pune'", "WHERE zip = '411001'"]
+    a: 1
+    why: A composite index works from the left. It helps country, and country plus city, but not city alone.
+  - type: fill
+    q: The log a database writes first, so it can recover after a crash, is the write-ahead ____.
+    a: ["log", "wal"]
+    why: The WAL is written before the data pages. On restart the database replays it.
+  - type: fill
+    q: Reading every row of a table to find a match is called a full table ____.
+    a: ["scan"]
+    why: Indexes exist to avoid full scans on big tables.
+  - q: A logging system writes 500 thousand events a second and rarely updates them. Which engine fits best?
+    opts: ["LSM tree", "B-tree", "No storage, keep it in memory only"]
+    a: 0
+    why: LSM trees turn many small writes into fast sequential ones.
+  - q: What is the cost of adding an index?
+    opts: ["Reads get slower", "Writes get slower and it uses more disk", "Nothing"]
+    a: 1
+    why: Every write must update the index too.
+
+interview:
+  - q: A query on a big table is slow. How do you find and fix the problem?
+    keys:
+      - ["Look at the query plan with EXPLAIN", [explain, plan, analyze]]
+      - ["Check for a full table scan or missing index", [scan, index, missing]]
+      - ["Add the right index, often composite in the right order", [composite, order, column, add an index, create index]]
+      - ["Check the query itself, like functions on columns, select star or big offsets", [function, offset, select, rewrite, limit, n+1]]
+      - ["Measure again and watch write cost", [measure, again, write, cost, monitor]]
+    a: |
+      First I run `EXPLAIN ANALYZE` to see the plan and where time goes. Most often it is a full table scan because there is no index on the filter column, or the index exists but cannot be used, for example because the query wraps the column in a function. I add an index matching the filter and sort, like `(shop_id, created_at)` for "orders for a shop by date". I also check the query itself, avoiding `SELECT *`, huge offsets and many small queries in a loop. Then I measure again, and I keep in mind that the new index adds cost to every write.
+    fb: Starting with "I would measure first with EXPLAIN" is the habit interviewers look for.
+  - q: Explain the difference between B-tree and LSM tree storage engines.
+    keys:
+      - ["B-tree updates sorted pages in place", [in place, page, update]]
+      - ["LSM writes to memory then flushes sorted files and merges them", [memory, flush, merge, compaction, sstable, memtable]]
+      - ["LSM is faster for writes, B-tree steadier for reads", [write, read, faster]]
+      - ["Examples like Postgres or MySQL versus Cassandra or RocksDB", [postgres, mysql, cassandra, rocksdb, scylla, leveldb]]
+    a: |
+      A B-tree keeps data in sorted pages on disk and updates them in place. Reads are fast and steady and range scans are great, but floods of random writes cost a lot of disk work. PostgreSQL and MySQL use B-trees. An LSM tree first writes to a log and an in memory sorted table. When it fills, it is flushed as a sorted file, and background compaction merges files. Writes are very fast because they are sequential, but a read may check several files, which bloom filters help with. Cassandra and RocksDB use LSM trees. So B-tree for balanced or read heavy work, LSM for write heavy work.
+    fb: Close with the one line rule, B-tree for read heavy, LSM for write heavy. It shows you can use the knowledge.
+
+desk:
+  title: Speed up a slow marketplace
+  lede: A second hand marketplace is slow. Use indexes and query plans to fix it.
+  situation: |
+    **ReLoop** has a `listings` table with 80 million rows. The most common query is "listings in my city, newest first". It takes 9 seconds. The table has indexes on `id` and `title` only.
+  rounds:
+    - title: Round 1. Pick the index
+      items:
+        - q: The query is `WHERE city = ? ORDER BY created_at DESC LIMIT 20`. Which index helps most?
+          opts: ["(created_at, city)", "(city, created_at)", "(title)"]
+          a: 1
+          why: Filter column first, sort column second. The database jumps to the city and reads the newest 20 in order.
+        - type: fill
+          q: To check whether the new index is used, run ____ on the query.
+          a: ["explain", "explain analyze"]
+          why: EXPLAIN shows the plan the database will use.
+    - title: Round 2. Side effects
+      items:
+        - q: After adding 6 more indexes "to be safe", new listings take 3 times longer to save. Why?
+          opts: ["The disk is full", "Every insert now updates every index", "Indexes slow down reads"]
+          a: 1
+          why: Indexes cost writes. Keep only the ones real queries use.
+        - type: open
+          q: Users type `WHERE LOWER(email) = ?`, but the index is on `email`. What is the issue and the fix?
+          a: "The function on the column stops the database from using the plain index. Either store emails already lowercased and query without LOWER, or create an index on LOWER(email), which Postgres supports as an expression index."
+  card: |
+    - EXPLAIN first.
+    - Filter column first, sort column second.
+    - Every index taxes writes.
+    - B-tree for reads, LSM for write floods.
+
+refs:
+  - "Use The Index, Luke. [A guide to database performance for developers](https://use-the-index-luke.com/)."
+  - "PostgreSQL. [Using EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html)."
+  - "Martin Kleppmann. Designing Data-Intensive Applications, chapter 3, storage and retrieval."
+  - "System Design Simulator. [B-tree and LSM tree simulators](https://systemdesignsimulator.org/)."

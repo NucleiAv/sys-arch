@@ -1,0 +1,170 @@
+slug: d08
+num: "08"
+short: Ride sharing
+title: Design a ride sharing app
+time: about 75 minutes
+tags: [geospatial, matching, realtime]
+lede: A rider taps "request" and within seconds a nearby driver is matched, both see each other moving on the map, and the trip is priced. Like Uber or Ola.
+
+ask: |
+  Riders request trips. The system finds nearby available drivers, offers the trip, tracks both on a live map, and handles the trip from pickup to payment.
+
+reqs:
+  func:
+    - Drivers send their location every few seconds while online.
+    - Riders see nearby cars and request a ride.
+    - Match a rider to a nearby driver who accepts.
+    - Live tracking during the trip, then fare and payment.
+  nonfunc:
+    - Matching in a few seconds.
+    - Never give one driver two trips at once.
+    - Location updates are many and short lived.
+    - Highly available in each city.
+  out:
+    - Pooling, scheduled rides, driver onboarding.
+
+estimate:
+  intro: |
+    5 million drivers online at peak worldwide, each sending location every 4 seconds. 20 million trips a day.
+  items:
+    - type: num
+      q: Location updates a second, in millions?
+      a: 1.25
+      tol: 0.1
+      unit: million
+      why: 5 million divided by 4 is 1.25 million updates a second. That is the hottest path in the system.
+    - type: num
+      q: Trip requests a second on average? 20 million a day.
+      a: 200
+      tol: 20
+      unit: per second
+      why: 20 million divided by 100 thousand is 200 a second, with peaks several times higher.
+  after: |
+    !key Location writes dwarf everything else, and only the latest location matters. Keep them in memory, not in a disk database row per update.
+
+api: |
+  ```
+  driver WebSocket   sends { lat, lng, heading, ts } every 4 s
+  POST /v1/rides     { pickup, dropoff }       -> ride_id, status searching
+  driver receives    { type: "offer", ride_id, pickup, expires_in: 15 }
+  POST /v1/rides/{id}/accept                   (driver)
+  rider WebSocket    receives driver location and status updates
+  ```
+
+data: |
+  | Store | Holds |
+  | --- | --- |
+  | driver location index, in memory | driver id, cell id, lat and lng, status, updated at |
+  | trips, SQL | trip id, rider, driver, status, times, fare |
+  | location history, write optimized store | sampled points for receipts and safety, kept cheaply |
+
+  ### Finding nearby drivers with cells
+
+  The map is cut into cells using a grid system like **geohash**, Google **S2** or Uber's **H3** hexagons. Each driver is stored in the cell they are in. To find drivers near a rider, look in the rider's cell and the cells around it. No scanning every driver in the city.
+
+scenes:
+  - title: Requesting and matching a ride
+    stats: [Step, Status]
+    nodes:
+      rider: {label: Rider, x: 0, y: 1, kind: box}
+      gw: {label: Ride service, x: 2, y: 1, kind: def}
+      geo: {label: Location index, x: 4, y: 0, kind: raised, tag: drivers by cell}
+      match: {label: Matcher, x: 4, y: 2, kind: def}
+      d1: {label: Driver Ravi, x: 6, y: 1, kind: box}
+      dr: {label: All drivers, x: 6, y: -1, kind: box, tag: location every 4 s}
+    links: [[rider, gw], [gw, match], [match, geo], [match, d1], [dr, geo]]
+    steps:
+      - title: Drivers report in
+        text: Every online driver sends a location every 4 seconds. Each update just overwrites the driver's entry in an in memory index sharded by city and cell.
+        on: [dr, geo]
+        flow: [[dr, geo, ink]]
+        stats: [Track, 1.25 million a second]
+      - title: Request a ride
+        text: The rider requests a trip from their pickup point. A trip row is created with status searching.
+        on: [rider, gw, match]
+        flow: [[rider, gw, ink], [gw, match, ink]]
+        stats: [Request, searching]
+      - title: Look nearby
+        text: The matcher finds the rider's cell and the ring of cells around it, and gets available drivers there. It ranks them by estimated time to pickup, not straight line distance.
+        on: [match, geo]
+        flow: [[match, geo, ink], [geo, match, def]]
+        stats: [Search, 8 candidates]
+      - title: Offer and lock
+        text: The best driver, Ravi, gets an offer for 15 seconds. The matcher marks him as offered in one atomic step, so no other rider can be offered him at the same time.
+        on: [match, d1]
+        flow: [[match, d1, pen]]
+        stats: [Offer, waiting for Ravi]
+      - title: Accepted
+        text: Ravi accepts. The trip is assigned. Rider and driver now see each other's location through their open connections. If Ravi had declined, the next driver would get the offer.
+        on: [rider, d1, gw]
+        flow: [[d1, match, def], [gw, rider, def]]
+        mark: {rider: ok, d1: ok}
+        stats: [Matched, driver on the way]
+
+hld: |
+  1. **Driver connection service** receives location updates over persistent connections.
+  2. **Location index** in memory, like Redis with geo commands or a custom service, sharded by city and cell, latest position only.
+  3. **Matcher** per city finds candidates, ranks by time to pickup, offers, and locks drivers atomically.
+  4. **Trip service** with a SQL database for trip state, a state machine from requested to completed.
+  5. **Pricing** reads supply and demand per area from a stream job to compute surge, see lesson 22.
+  6. **Payments** at the end, with idempotency keys, see design 10.
+
+diagrams:
+  - type: flow
+    title: The trip state machine
+    nodes: [["Requested", "box"], ["Driver offered", "raised"], ["Accepted", "def"], ["In progress", "def"], ["Completed and paid", "def"]]
+    edges: ["", "accept", "pickup", "dropoff"]
+    caption: Every change of state is a database transaction. Retries and duplicate taps cannot move a trip backwards or into two states.
+
+deep:
+  - ["Why cells", "Searching every driver for distance is too slow. Grid cells turn \"near me\" into \"in these 7 cells\", a direct lookup. Hexagons like H3 have neighbours at equal distances, which makes rings of cells even."]
+  - ["Hot path design", "1.25 million updates a second go to memory only. A sampled copy goes to a stream for history, safety and ETA models. A lost single update does not matter because the next one arrives in 4 seconds."]
+  - ["No double booking", "Mark a driver as offered or busy with an atomic compare and set, only if status is available. Offers time out so a driver who ignores them becomes available again."]
+  - ["Sharding by city", "Riders and drivers in Mumbai never match with those in Paris. Sharding everything by city keeps each region small and independent, and a problem in one city stays there."]
+  - ["Data centre failure", "Driver apps keep their trip state locally and resend it after a failover, so a trip in progress can be rebuilt even if the server lost recent updates."]
+
+tradeoffs:
+  - ["In memory location index", "Very fast, handles huge write volume.", "Lost on crash, but rebuilt in seconds from new updates."]
+  - ["Nearest by straight line", "Simple.", "A driver across a river may be 20 minutes away. Use road ETA."]
+  - ["Offer to one driver at a time", "Fair, no wasted drivers.", "Slower if drivers decline."]
+  - ["Offer to several at once", "Faster matches.", "Drivers get annoyed when others win."]
+
+task:
+  intro: |
+    Explain the design, focusing on location updates and safe matching.
+  items:
+    - q: Design the core of a ride sharing app. How are driver locations stored, how is a rider matched, and how do you stop one driver getting two rides?
+      keys:
+        - ["Frequent location updates over persistent connections", [websocket, connection, every 4, update, persistent]]
+        - ["In memory location index storing latest position only", [memory, redis, latest, overwrite, in-memory]]
+        - ["Geospatial cells like geohash, S2 or H3 to search nearby", [geohash, s2, h3, cell, grid, quadtree]]
+        - ["Rank by ETA and offer with a timeout", [eta, rank, offer, timeout, accept]]
+        - ["Atomic lock on the driver to prevent double booking", [atomic, lock, compare and set, cas, transaction, status available]]
+        - ["Shard by city and trip state machine in a database", [city, shard, state machine, trip table, sql]]
+      a: |
+        Drivers keep a persistent connection and send their location every 4 seconds, 1.25 million updates a second. Each update overwrites the driver's entry in an in memory index, sharded by city, organized by H3 cells. When a rider requests, the city's matcher finds the rider's cell and the ring around it, gets available drivers, and ranks them by road ETA. It offers the trip to the best driver for 15 seconds, after setting that driver's status from available to offered with an atomic compare and set, so no other matcher can offer them at the same time. On accept, the trip row moves to accepted in the trip database, and both apps get live updates. On decline or timeout, the driver is released and the next one is offered.
+      fb: Saying "compare and set from available to offered" is the precise answer to double booking.
+
+interview:
+  - q: How do you find the 10 nearest available drivers quickly?
+    keys:
+      - ["Divide the map into cells like geohash, quadtree, S2 or H3", [geohash, quadtree, s2, h3, cell, grid]]
+      - ["Look up the rider's cell and neighbouring cells", [neighbo, ring, surrounding, adjacent]]
+      - ["Expand the ring if too few drivers", [expand, wider, bigger ring, grow]]
+      - ["Rank by real ETA, not straight distance", [eta, road, route, time to]]
+    a: |
+      I index drivers by cell, using H3 hexagons or geohash. For a rider, I compute their cell and take drivers in it and the first ring of neighbours. If that gives fewer than 10 available drivers, I widen to the next ring. Then I rank the candidates by road ETA from a routing service, since straight line distance ignores rivers and one way streets.
+    fb: Mentioning ETA over straight distance shows product sense, not just data structures.
+  - q: What happens to location updates if the location service crashes?
+    keys:
+      - ["Locations are short lived so the index refills from new updates in seconds", [refill, rebuild, seconds, next update, short lived]]
+      - ["Replicas or a standby take over", [replica, standby, failover]]
+      - ["Trips in progress are safe in the trip database and apps", [trip, database, state, app keeps]]
+    a: |
+      It is fine to lose the index because every driver sends a new location within 4 seconds, so a fresh node refills almost immediately. A replica can take over even faster. Trip state is not in the index, it lives in the trip database and in the apps, so trips in progress continue. Matching might pause for a few seconds in that city, which is acceptable.
+    fb: Recognizing that some data is cheap to lose is a sign of good design judgment.
+
+refs:
+  - "Uber Engineering. [H3, Uber's hexagonal hierarchical spatial index](https://www.uber.com/blog/h3/)."
+  - "Uber Engineering. [How Uber serves over 40 million reads per second](https://www.uber.com/blog/how-uber-serves-over-40-million-reads-per-second-using-an-integrated-cache/)."
+  - "Redis. [Geospatial indexes](https://redis.io/docs/latest/develop/data-types/geospatial/)."

@@ -1,0 +1,169 @@
+slug: d09
+num: "09"
+short: Ticket flash sale
+title: Design a ticket flash sale
+time: about 70 minutes
+tags: [spikes, inventory, queues]
+lede: 50 thousand seats, 2 million fans, all clicking at 10:00:00. Sell every seat exactly once, stay up, and be fair.
+
+ask: |
+  A huge concert goes on sale at a fixed time. Demand is 40 times the supply and almost all of it arrives in the first minute. The system must not crash, must never sell the same seat twice, and should feel fair to fans.
+
+reqs:
+  func:
+    - Browse the event and see seats or sections.
+    - Hold seats for a few minutes while paying.
+    - Pay and get tickets.
+    - Release held seats if payment does not finish in time.
+  nonfunc:
+    - Never oversell. Strong consistency on inventory.
+    - Survive a 100 times traffic spike at a known time.
+    - Fair order for fans, block bots.
+  out:
+    - Resale market, dynamic pricing.
+
+estimate:
+  intro: |
+    2 million fans arrive within 2 minutes. Each refreshes or clicks about 5 times a minute.
+  items:
+    - type: num
+      q: Requests a second during the rush, in thousands? 2 million fans times 5 a minute, divided by 60.
+      a: 167
+      tol: 15
+      unit: thousand
+      why: 10 million requests a minute is about 167 thousand a second, almost all at once.
+    - type: num
+      q: How many fans for each seat? 2 million fans and 50 thousand seats.
+      a: 40
+      tol: 0
+      unit: fans per seat
+      why: 39 of every 40 fans will not get a ticket. The system should tell them fast and politely, not let them hammer the database.
+  after: |
+    !key Most requests must never touch the inventory database. A waiting room controls how many people reach the booking flow at once.
+
+api: |
+  ```
+  GET  /v1/events/{id}                  cached static page
+  POST /v1/queue/{event_id}/join        -> queue token, position
+  GET  /v1/queue/{event_id}/status      -> position, or an access token when it is your turn
+  POST /v1/events/{id}/holds            { section, qty } with access token -> hold_id, expires_at
+  POST /v1/holds/{hold_id}/purchase     { payment, idempotency_key }
+  ```
+
+data: |
+  | Store | Holds |
+  | --- | --- |
+  | seats, SQL | seat id, event id, status available, held or sold, hold expiry, version |
+  | holds | hold id, user, seats, expires at |
+  | orders | order id, user, seats, payment status |
+  | queue, Redis | sorted set of queue tokens by join time |
+
+scenes:
+  - title: 10:00, the sale opens
+    stats: [Step, Reaching the database]
+    nodes:
+      fans: {label: 2 million fans, x: 0, y: 1, kind: box}
+      cdn: {label: CDN, x: 2, y: 0, kind: raised, tag: static pages}
+      wr: {label: Waiting room, x: 2, y: 2, kind: def, tag: virtual queue}
+      book: {label: Booking service, x: 4, y: 2, kind: def}
+      db: {label: Seat inventory, x: 6, y: 2, kind: raised, tag: strong}
+      pay: {label: Payments, x: 6, y: 0, kind: raised}
+    links: [[fans, cdn], [fans, wr], [wr, book], [book, db], [book, pay]]
+    steps:
+      - title: Static pages from the CDN
+        text: The event page is pre rendered and served by the CDN. The rush of page loads never reaches your servers.
+        on: [fans, cdn]
+        flow: [[fans, cdn, ink], [cdn, fans, def]]
+        stats: [Browse, none]
+      - title: Join the waiting room
+        text: Everyone who arrives before 10:00 gets a random position, so refreshing early does not help. After 10:00, arrival order. Bots are filtered with checks and limits.
+        on: [fans, wr]
+        flow: [[fans, wr, ink]]
+        stats: [Queue, none]
+      - title: Let people in at a safe rate
+        text: The waiting room lets in, say, 2,000 people a minute, the rate the booking flow handles comfortably. Everyone else sees their place in line.
+        on: [wr, book]
+        flow: [[wr, book, def]]
+        stats: [Admit, 2 thousand a minute]
+      - title: Hold seats safely
+        text: The booking service runs `UPDATE seats SET status = held WHERE id = ? AND status = available`. If 0 rows change, someone else got it. Two fans can never hold the same seat.
+        on: [book, db]
+        flow: [[book, db, def]]
+        mark: {db: ok}
+        stats: [Hold, about 33 a second]
+      - title: Pay or release
+        text: The fan has 8 minutes to pay. On success the seats become sold. On timeout a job releases them back to available for the next people in line.
+        on: [book, pay]
+        flow: [[book, pay, def]]
+        stats: [Pay, about 33 a second]
+
+hld: |
+  1. **CDN** serves the event page and seat map images. Seat availability is shown as rough sections, updated every few seconds, not live per seat.
+  2. **Waiting room** with a queue in Redis issues signed access tokens at a controlled rate.
+  3. **Booking service** holds seats with conditional updates or row locks in a SQL database.
+  4. **Hold expiry** job releases unpaid holds.
+  5. **Payments** with idempotency keys, see design 10.
+  6. **Pre scaling**. Since the time is known, scale servers and caches up before 10:00.
+
+diagrams:
+  - type: layers
+    title: How the rush is filtered before the database
+    attack: 167 thousand requests a second
+    layers:
+      - ["CDN for pages", "Absorbs page loads", "partial"]
+      - ["Bot checks and rate limits", "Drops scripts and abusers", "partial"]
+      - ["Waiting room", "Admits a safe number per minute", "stop"]
+      - ["Seat inventory database", "Sees only tens of holds a second", "pass"]
+    caption: Each layer shrinks the flood. The database sees a trickle.
+
+deep:
+  - ["Never oversell", "Use a conditional update, only change a seat if it is still available, or a row lock in a transaction. Optimistic version numbers also work. Never check then write in two separate steps."]
+  - ["General admission tickets", "With no seat numbers, keep a counter of tickets left. Decrement atomically, `UPDATE ... SET left = left - 2 WHERE left >= 2`, or use a Redis counter as a fast gate followed by the database as truth."]
+  - ["Fairness", "Randomize everyone who arrived before the start, then first come after. Limit tickets per account and card. Bot detection at the edge."]
+  - ["Hot rows", "Every request touching one counter row creates lock contention. Split inventory by section, so each section is its own row and requests spread out."]
+  - ["Honest status", "Tell people quickly when it is sold out. Thousands of fans refreshing a sold out page is load you can avoid with a cached sold out page."]
+
+tradeoffs:
+  - ["Waiting room", "Protects the system, fair.", "Fans wait, the experience must be clear and honest."]
+  - ["Pessimistic row locks", "Simple correctness.", "Contention on hot rows."]
+  - ["Optimistic versions", "No locks held.", "Many retries when contention is high."]
+  - ["Redis as a fast gate", "Very high throughput.", "Must reconcile with the database, the database stays the truth."]
+
+task:
+  intro: |
+    Explain how you survive the spike and why you never sell a seat twice.
+  items:
+    - q: Design the ticket sale for 2 million fans and 50 thousand seats opening at 10:00.
+      keys:
+        - ["CDN and pre scaling for the known spike", [cdn, pre scal, prescal, static, scale up before]]
+        - ["Virtual waiting room admitting users at a safe rate", [waiting room, virtual queue, queue, admit]]
+        - ["Atomic seat holds with conditional update or locks", [conditional, atomic, lock, where status, compare, transaction]]
+        - ["Hold with expiry and release", [hold, expir, release, timeout, reserve]]
+        - ["Idempotent payment", [idempot, payment, pay]]
+        - ["Fairness and bot protection", [fair, bot, captcha, limit per, random]]
+      a: |
+        Since the time is known, I pre scale and serve event pages from the CDN. Fans join a waiting room built on Redis. Arrivals before 10:00 get a random place, later ones join in order, with bot checks and a per account limit. The waiting room admits about 2,000 people a minute with signed access tokens. Admitted fans hold seats with a conditional update in the SQL inventory, only if the seat is still available, so two people can never hold the same seat. Holds last 8 minutes. Payment uses an idempotency key, and success marks seats sold. A job releases expired holds back to the pool. When everything is sold, the sold out page is cached so the remaining fans do not keep hitting the backend.
+      fb: Say both halves, the waiting room protects the system and the conditional update protects correctness.
+
+interview:
+  - q: Two fans click the same seat at the same millisecond. Walk through what happens.
+    keys:
+      - ["Both requests try to update the same seat row", [both, same row, same seat, update]]
+      - ["Conditional update or lock lets only one succeed", [conditional, where, lock, only one, one row]]
+      - ["The loser sees zero rows changed and gets a clear message", [zero rows, 0 rows, fail, message, someone else, pick another]]
+    a: |
+      Both send a hold request. Each runs `UPDATE seats SET status = 'held', holder = me WHERE id = 42 AND status = 'available'`. The database applies them one after another on that row. The first changes 1 row and wins. The second finds the status is now held, changes 0 rows, and the service tells that fan "this seat was just taken" and suggests nearby seats.
+    fb: Showing the actual conditional update makes the answer concrete and convincing.
+  - q: Why not just add more servers to handle 167 thousand requests a second?
+    keys:
+      - ["The bottleneck is the inventory, which is small and must be strongly consistent", [inventory, consistent, bottleneck, database, rows]]
+      - ["More servers just push more contention onto the same rows", [contention, same rows, lock, more servers]]
+      - ["Most requests cannot succeed anyway, so admit only what can", [cannot succeed, only 50, sold out, admit, waiting room]]
+    a: |
+      Servers are not the limit. There are only 50 thousand seats in one consistent inventory, and every booking attempt competes for the same rows. More servers would just send more conflicting writes to those rows, making locks and retries worse. Since 39 of 40 fans cannot get a ticket anyway, it is better to admit people at the rate the inventory can handle and give everyone else a clear place in line.
+    fb: Recognizing that the bottleneck is shared state, not compute, is the key insight.
+
+refs:
+  - "Cloudflare. [Waiting Room](https://developers.cloudflare.com/waiting-room/about/)."
+  - "Advent of System Design. [Day 9, ticket flash sale](https://www.devmaxx.dev/advent)."
+  - "PostgreSQL. [Explicit locking](https://www.postgresql.org/docs/current/explicit-locking.html)."

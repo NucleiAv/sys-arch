@@ -1,0 +1,193 @@
+slug: l21
+num: "21"
+level: 5
+short: Multi-region and disaster recovery
+title: Multi-region systems and disaster recovery
+time: about 55 minutes
+tags: [regions, RPO, RTO, failover]
+lede: Whole data centers fail. Learn how systems survive losing a region, how to serve users worldwide, and how to plan recovery with two simple numbers.
+
+idea: |
+  Cloud providers group data centers into **availability zones**, separate buildings with their own power, and zones into **regions**, like Mumbai or Frankfurt. Running in several zones protects you from a building failing. Running in several **regions** protects you from a whole area going down, and puts servers close to users around the world.
+
+  But regions are far apart. Copying data between them takes 50 to 200 ms. That makes every decision harder, especially about writes.
+
+  Two numbers drive the plan. **RPO**, recovery point objective, is how much data you can afford to lose, like "the last 5 minutes". **RTO**, recovery time objective, is how long you can be down, like "30 minutes".
+
+  !eli5 A shop with branches in two cities can keep selling if one city has a blackout. But if both branches share one stock list, every sale needs a long phone call to the other city to update it.
+
+scenes:
+  - title: Active passive failover between regions
+    stats: [Phase, Serving users, Data lost]
+    nodes:
+      users: {label: Users, x: 0, y: 1, kind: box}
+      dns: {label: Global DNS, x: 2, y: 1, kind: raised, tag: health checked}
+      r1: {label: Region Mumbai, x: 4, y: 0, kind: def, tag: active}
+      r2: {label: Region Singapore, x: 4, y: 2, kind: raised, tag: standby}
+      db1: {label: Leader DB, x: 6, y: 0, kind: def}
+      db2: {label: Replica DB, x: 6, y: 2, kind: raised}
+    links: [[users, dns], [dns, r1], [dns, r2], [r1, db1], [r2, db2], [db1, db2]]
+    steps:
+      - title: Normal day
+        text: All traffic goes to Mumbai. The database streams changes to a replica in Singapore, a few hundred ms behind.
+        on: [dns, r1, db1]
+        flow: [[users, dns, ink], [dns, r1, ink], [r1, db1, ink], [db1, db2, pen]]
+        stats: [Normal, Mumbai, none]
+      - title: Mumbai goes dark
+        text: A regional outage. Health checks from many places fail.
+        on: [r1]
+        flow: [[dns, r1, atk]]
+        mark: {r1: bad, db1: bad}
+        stats: [Outage, nobody, "?"]
+      - title: Promote and redirect
+        text: The Singapore replica is promoted to leader. DNS points users to Singapore. Servers there scale up from their small standby size.
+        on: [dns, r2, db2]
+        flow: [[dns, r2, def], [r2, db2, def]]
+        mark: {db2: ok}
+        stats: [Failover, Singapore, last 2 s of writes]
+      - title: Measure against the plan
+        text: Down for 12 minutes, so RTO was met if it was 30. Lost the last 2 seconds of writes, so RPO was met if it was 1 minute. These numbers were known before the outage because the team practiced.
+        on: [users, dns, r2]
+        flow: [[users, dns, ink], [dns, r2, def]]
+        mark: {r2: ok}
+        stats: [Recovered, Singapore, within RPO]
+
+terms:
+  - [Region, "A geographic area with several data centers, like eu-west or ap-south."]
+  - [Availability zone, "One or more data centers in a region with separate power and network."]
+  - [RPO, "Recovery point objective. The most data loss you accept, measured in time."]
+  - [RTO, "Recovery time objective. The longest outage you accept."]
+  - [Active passive, "One region serves, another waits ready to take over."]
+  - [Active active, "Several regions serve users at the same time."]
+  - [Geo routing, "Sending each user to the nearest healthy region."]
+  - [Data residency, "Laws requiring some data to stay in a country or region."]
+
+how: |
+  ### The ladder of recovery options
+
+  | Strategy | What runs in region 2 | RTO | Cost |
+  | --- | --- | --- | --- |
+  | Backup and restore | Only backups | hours to a day | lowest |
+  | Pilot light | Database replica, no servers | tens of minutes | low |
+  | Warm standby | Small copy of everything | minutes | medium |
+  | Active active | Full copy serving traffic | near zero | highest |
+
+  ### Active active and the write problem
+
+  Reads are easy everywhere. Writes are the hard part. You have four options.
+
+  - **Single writer region**. All writes go to one home region, reads served locally. Simple, but far away users have slower writes.
+  - **Home region per user**. Each user's data lives and is written in their nearest region. Works well, needs routing.
+  - **Multi leader with conflict resolution**. Any region writes, conflicts merged, lesson 8.
+  - **Globally consistent databases** like Spanner or CockroachDB. Strong consistency, every write pays cross region latency.
+
+  ### Practice or it does not work
+
+  A failover plan nobody has tested will fail. Run **game days** where you actually fail over. Check that backups really restore. Watch for hidden dependencies, like a login service that only runs in the failed region.
+
+  !key Many outages in a second region come from things that are global, like DNS, a config push or a certificate, which break every region at once. Roll out changes one region at a time.
+
+diagrams:
+  - type: split
+    title: Choosing a recovery strategy from RPO and RTO
+    source: ["How long can you be down?", "raised"]
+    targets:
+      - ["A day is fine", "box", "Backup and restore"]
+      - ["Under an hour", "box", "Pilot light"]
+      - ["A few minutes", "def", "Warm standby"]
+      - ["Near zero", "def", "Active active"]
+    caption: Each step down the list costs more money and more engineering. Match it to the business need, per system.
+
+life:
+  - ["AWS us-east-1 outages", "Several big outages in one AWS region have taken down well known apps that ran in only that region, while companies with tested multi region setups kept running."]
+  - ["Netflix region evacuation", "Netflix practices moving all traffic out of a whole AWS region in minutes, so a regional outage becomes a non event for viewers."]
+  - ["A backup that would not restore", "A company had nightly backups for years. During a real incident they found the restore took 3 days and some backups were empty. Test restores regularly."]
+
+tradeoffs:
+  - ["Single region, multi zone", "Simple, cheap, handles most failures.", "A regional outage takes you down."]
+  - ["Active passive", "Survives region loss, simpler writes.", "Standby costs money, failover takes minutes and some data loss."]
+  - ["Active active", "Low latency worldwide, near zero downtime.", "Hard write conflicts, highest cost and complexity."]
+  - ["Async cross region replication", "Fast writes.", "Some data loss on failover, RPO above zero."]
+  - ["Sync cross region replication", "No data loss.", "Every write waits for another region."]
+
+mistakes:
+  - Calling backups a disaster recovery plan without ever testing a restore.
+  - A hidden single region dependency, like auth or secrets.
+  - Pushing a config change to every region at the same time.
+  - Using active active for everything when a few minutes of downtime would be fine.
+  - Ignoring data residency laws when copying data abroad.
+
+quiz:
+  - q: The business can lose at most 5 minutes of orders in a disaster. Which number is that?
+    opts: ["RTO", "RPO", "SLA"]
+    a: 1
+    why: RPO is about data loss, measured as a time window.
+  - type: fill
+    q: How long the system may be down after a disaster is the ____.
+    a: ["RTO", "recovery time objective"]
+    why: RTO is time to recover. RPO is how much data you may lose.
+  - q: Which strategy keeps a database replica in region 2 but no running app servers?
+    opts: ["Active active", "Pilot light", "Backup only"]
+    a: 1
+    why: Pilot light keeps only the core data warm, and starts the rest when needed.
+  - type: fill
+    q: Several regions all serving users at the same time is called active ____.
+    a: ["active"]
+    why: Active active gives the lowest latency and downtime, and the hardest writes.
+
+interview:
+  - q: How would you make a service survive the loss of an entire cloud region?
+    keys:
+      - ["Run in a second region with data replicated there", [second region, another region, replicat, cross region]]
+      - ["Choose a strategy based on RPO and RTO", [rpo, rto, recovery]]
+      - ["Global traffic routing with health checks to fail over", [dns, global load, route, health check, geo, anycast]]
+      - ["Handle writes, single writer, home region or conflict resolution", [write, leader, home region, conflict, promote]]
+      - ["Practice failovers and remove hidden single region dependencies", [practice, game day, test, drill, dependenc]]
+    a: |
+      First I agree on RPO and RTO with the business, because they decide the cost. For a typical app, say RPO 1 minute and RTO 15 minutes, I would run warm standby. The database replicates asynchronously to a second region, a scaled down copy of the services runs there, and global DNS or a global load balancer with health checks can send all traffic to it. On failover, the replica is promoted and the standby autoscales. If near zero downtime were needed, I would go active active with each user's data homed in one region. Either way, I remove hidden dependencies like an auth service in one region, roll out changes region by region, and practice the failover with regular game days.
+    fb: Starting from RPO and RTO and ending with "practice it" is what makes this answer complete.
+  - q: What makes active active across regions hard?
+    keys:
+      - ["Writes in two places can conflict", [conflict, both write, same record, two regions]]
+      - ["Cross region latency makes strong consistency slow", [latency, slow, consisten, round trip, distance]]
+      - ["Ways to handle it, home region per user, CRDTs, global databases", [home region, partition by user, crdt, spanner, cockroach, last write]]
+      - ["Cost and operational complexity", [cost, complex, operat]]
+    a: |
+      Reads are easy. Writes are hard, because two regions can change the same record at the same time, and syncing them strongly means every write waits 100 ms or more for the other region. So you choose. Give each user a home region and route their writes there, merge conflicts with rules or CRDTs, or use a globally consistent database and accept slower writes. On top of that it doubles infrastructure and makes deploys, testing and debugging harder.
+    fb: Saying "reads are easy, writes are hard" in the first sentence frames the whole answer.
+
+desk:
+  title: Disaster plan for a payments startup
+  lede: A payments startup in one region must pass a bank partner's resilience review. Build its plan.
+  situation: |
+    **Paywise** runs in one region with three zones. The bank partner requires RPO of zero for completed payments, RTO under 30 minutes for the payment API, and RTO under 1 day for the reporting dashboard.
+  rounds:
+    - title: Round 1. Pick strategies
+      items:
+        - type: sort
+          q: Pick a strategy for each system.
+          rows:
+            - ["Payment API", "Warm standby in a second region"]
+            - ["Payment records database", "Synchronous replication to a second region"]
+            - ["Reporting dashboard", "Backup and restore"]
+          opts: ["Warm standby in a second region", "Synchronous replication to a second region", "Backup and restore"]
+          why: Zero data loss needs synchronous copies. 30 minutes needs a warm standby. A day allows a simple restore.
+        - q: What is the cost of synchronous cross region replication for payments?
+          opts: ["None", "Every payment write waits for the other region, adding tens of ms", "Payments are lost"]
+          a: 1
+          why: You pay latency for zero RPO.
+    - title: Round 2. Prove it
+      items:
+        - type: open
+          q: The bank asks how you know the plan works. What do you answer?
+          a: "We run a failover game day every quarter, moving real traffic to the second region and measuring actual RTO and RPO. We restore backups to a test environment every month and check the data. Results and fixes are written up and shared."
+  card: |
+    - RPO is data, RTO is time.
+    - Backup, pilot light, warm standby, active active.
+    - Reads anywhere, writes are the hard part.
+    - Test failovers and restores for real.
+
+refs:
+  - "AWS. [Disaster recovery options in the cloud](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)."
+  - "Google Cloud. [Disaster recovery planning guide](https://cloud.google.com/architecture/dr-scenarios-planning-guide)."
+  - "Netflix. [Active active for multi-regional resiliency](https://netflixtechblog.com/active-active-for-multi-regional-resiliency-c47719f6685b)."

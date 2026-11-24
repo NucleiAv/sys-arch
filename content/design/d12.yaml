@@ -1,0 +1,172 @@
+slug: d12
+num: "12"
+short: Game leaderboard
+title: Design a real time game leaderboard
+time: about 50 minutes
+tags: [sorted sets, ranking, sharding]
+lede: Millions of players finish matches every minute. Show the top 100 and each player's own rank, updated instantly.
+
+ask: |
+  A mobile game gives points after each match. Players want to see the global top 100, their own rank among millions, and the players just above and below them. The board resets every month.
+
+reqs:
+  func:
+    - Add points to a player after each match.
+    - Show the top 100.
+    - Show any player's rank and the 5 players around them.
+    - Monthly boards, with history kept.
+  nonfunc:
+    - Updates visible within a second.
+    - Rank queries in under 50 ms.
+    - Scores must not be faked.
+  out:
+    - Friends leaderboards, prizes, anti cheat in depth.
+
+estimate:
+  intro: |
+    50 million monthly players, 5 million daily, 10 matches each per day.
+  items:
+    - type: num
+      q: Score updates a second on average? 50 million matches a day.
+      a: 500
+      tol: 50
+      unit: per second
+      why: 50 million divided by 100 thousand is 500 updates a second, peaks maybe 2,500.
+    - type: num
+      q: Memory for 50 million players at about 50 bytes each, in GB?
+      a: 2.5
+      tol: 0.3
+      unit: GB
+      why: 50 million times 50 bytes is 2.5 GB. It fits in memory on one machine.
+  after: |
+    !key A few GB and a few thousand writes a second fit on one in memory sorted set. Start simple. Shard only when you must.
+
+api: |
+  ```
+  POST /v1/matches/{id}/result     server to server, signed { player_id, points }
+  GET  /v1/leaderboard?month=2026-11&top=100
+  GET  /v1/leaderboard/me?around=5
+  ```
+
+  Scores are reported by the **game server**, never by the player's phone, or players could send any score they like.
+
+data: |
+  ### Why a SQL query is too slow
+
+  "What is my rank?" in SQL means counting every player with a higher score, `SELECT COUNT(*) WHERE score > mine`. With 50 million rows, done thousands of times a second, that is far too slow, even with an index.
+
+  ### The sorted set
+
+  Redis has a **sorted set**, members kept in score order using a skip list. Adding a score, getting the top N and getting any member's rank all take about log N steps, a few microseconds.
+
+  | Operation | Redis command |
+  | --- | --- |
+  | Add points | `ZINCRBY board:2026-11 50 player42` |
+  | Top 100 | `ZREVRANGE board:2026-11 0 99 WITHSCORES` |
+  | My rank | `ZREVRANK board:2026-11 player42` |
+
+  A SQL table keeps the durable record of every match result. The sorted set can be rebuilt from it.
+
+scenes:
+  - title: A match ends and ranks update
+    stats: [Step, Player 42 rank]
+    nodes:
+      game: {label: Game server, x: 0, y: 1, kind: def}
+      svc: {label: Leaderboard service, x: 2, y: 1, kind: def}
+      db: {label: Match results DB, x: 4, y: 0, kind: raised, tag: durable}
+      z: {label: Sorted set, x: 4, y: 2, kind: raised, tag: in memory}
+      app: {label: Player app, x: 6, y: 1, kind: box}
+    links: [[game, svc], [svc, db], [svc, z], [app, svc]]
+    steps:
+      - title: Report the result
+        text: The game server, not the phone, sends a signed result, player 42 earned 50 points.
+        on: [game, svc]
+        flow: [[game, svc, ink]]
+        stats: [Report, "1,204,330"]
+      - title: Save it durably
+        text: The result is written to the database, with the match id as a unique key so the same match cannot count twice.
+        on: [svc, db]
+        flow: [[svc, db, def]]
+        stats: [Persist, "1,204,330"]
+      - title: Bump the score
+        text: ZINCRBY adds 50 to player 42 in the sorted set. The order updates in microseconds.
+        on: [svc, z]
+        flow: [[svc, z, def]]
+        stats: [Update, "1,198,010"]
+      - title: Ask for my rank
+        text: The app asks for rank and neighbours. ZREVRANK gives the rank, and a small range gives the 5 above and below. Under a millisecond.
+        on: [app, svc, z]
+        flow: [[app, svc, ink], [svc, z, ink], [z, svc, def], [svc, app, def]]
+        mark: {app: ok}
+        stats: [Read, "1,198,010"]
+
+hld: |
+  1. **Game servers** report results with a signature.
+  2. **Leaderboard service** validates, writes results to SQL, then updates the Redis sorted set.
+  3. **Redis** with a replica for failover, one sorted set per month, like `board:2026-11`.
+  4. **Top 100 cache**, refreshed every second, because everyone asks for the same top list.
+  5. At month end, the sorted set is snapshotted to storage as history and a new key starts.
+
+diagrams:
+  - type: flow
+    title: Write path and read path
+    lanes:
+      - label: write
+        nodes: [["Game server", "def"], ["Validate", "box"], ["SQL result row", "raised"], ["ZINCRBY", "raised"]]
+        edges: ["signed", "", "then"]
+      - label: read
+        labelkind: def
+        nodes: [["Player app", "box"], ["Service", "def"], ["ZREVRANK and range", "raised"]]
+        edges: ["", ""]
+    caption: SQL is the truth for history, the sorted set is the fast index for ranks.
+
+deep:
+  - ["Scaling past one node", "If players reach hundreds of millions, shard the sorted set by score range, so each shard knows how many players are in the shards above it. Your rank is that count plus your rank inside your shard. Sharding by player id would make global rank hard."]
+  - ["Approximate ranks", "For players far down, show \"top 12 percent\" instead of an exact number, computed from a histogram of scores. Cheaper and just as useful."]
+  - ["Ties", "Two players with equal scores. Break ties by who got there first, by encoding time into the score, like score times a big number minus the timestamp."]
+  - ["Cheating", "Only accept scores from game servers, sign them, check that points per match are possible, and flag outliers for review."]
+  - ["Recovery", "If Redis loses data, rebuild the sorted set by replaying this month's match results from SQL."]
+
+tradeoffs:
+  - ["SQL only", "Simple, durable.", "Rank queries are too slow at scale."]
+  - ["Redis sorted set", "Microsecond rank and top N.", "Memory bound, needs a durable copy."]
+  - ["Shard by score range", "Global rank still easy.", "Players move between shards as scores grow."]
+  - ["Approximate ranks", "Cheap at any size.", "Not exact for most players."]
+
+task:
+  intro: |
+    Explain the design in your own words.
+  items:
+    - q: Design a leaderboard that shows the top 100 and any player's exact rank among 50 million players in real time.
+      keys:
+        - ["Explain why a SQL count query is too slow", [count, sql, slow, scan]]
+        - ["Redis sorted set with ZINCRBY, ZREVRANK and ZREVRANGE", [sorted set, zset, zincrby, zrevrank, zrevrange, skip list]]
+        - ["Durable store of match results as the truth, rebuild on failure", [durable, sql, database, rebuild, replay, truth]]
+        - ["Scores only from trusted game servers", [game server, server side, signed, cheat, trust]]
+        - ["Monthly keys, top 100 cache, and a sharding plan", [month, key, cache, shard, score range]]
+      a: |
+        Computing a rank in SQL means counting everyone above you, which is far too slow for 50 million players. So the game server reports each signed match result. The leaderboard service writes it to SQL with the match id as a unique key, for history and safety, then runs ZINCRBY on a Redis sorted set for the current month. Top 100 is ZREVRANGE 0 to 99, cached for a second since everyone asks for it. A player's rank is ZREVRANK, and their neighbours come from a range around that rank. 50 million players use about 2.5 GB, which fits in one Redis node with a replica. If Redis is lost, the set is rebuilt from SQL. If we ever outgrow one node, I would shard by score range so global ranks remain easy to compute.
+      fb: Explaining why SQL is slow before picking Redis shows you chose the tool for a reason.
+
+interview:
+  - q: How would you handle ties on the leaderboard?
+    keys:
+      - ["Define a tie breaker like earliest to reach the score", [earliest, first, time, tie breaker, tiebreak]]
+      - ["Encode the tie breaker into the sorted score", [encode, composite, combine, multiply, decimal, fraction]]
+      - ["Or keep equal ranks and show shared positions", [shared, same rank, equal, joint]]
+    a: |
+      First agree on the rule with the product team. A common one is that whoever reached the score first ranks higher. I encode it in the sorted set score, for example score times 10 to the 10 plus (a big constant minus the timestamp in seconds), so higher scores win and, for equal scores, the earlier time wins. Another option is to show shared ranks, both players are 5th, which only changes the display.
+    fb: Asking the product question first, then giving an encoding trick, is the ideal shape.
+  - q: How would you add a friends leaderboard?
+    keys:
+      - ["Friends lists are small, so fetch scores for those friends", [small, friends list, fetch, few hundred]]
+      - ["Read scores in a batch and sort in the app or service", [batch, zmscore, mget, sort, pipeline]]
+      - ["Cache per user if needed", [cache]]
+    a: |
+      A friends list is usually small, a few hundred at most. I fetch the friend ids, read all their scores from the sorted set in one batch command, and sort them in the service. That is fast enough without a separate sorted set per user. If friend lists get large or the page is very popular, I cache each user's friends board for a few seconds.
+    fb: Noticing that the data is small and does not need a fancy structure is good judgment.
+
+refs:
+  - "Redis. [Sorted sets](https://redis.io/docs/latest/develop/data-types/sorted-sets/)."
+  - "Alex Xu. System Design Interview volume 2, chapter 10, real time gaming leaderboard."
+  - "Advent of System Design. [Day 19, game leaderboard](https://www.devmaxx.dev/advent)."

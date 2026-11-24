@@ -1,0 +1,191 @@
+slug: l20
+num: "20"
+level: 4
+short: Monolith or microservices
+title: Monoliths, microservices and API gateways
+time: about 50 minutes
+tags: [architecture, gateway, service mesh]
+lede: Should your app be one program or many small ones talking over the network? The honest answer depends on your team more than your traffic. Learn the trade and the tools around it.
+
+idea: |
+  A **monolith** is one program that does everything, deployed as one unit. A **microservices** architecture splits the app into many small services, each owning one business area and its own data, talking over the network.
+
+  Microservices let many teams work and deploy on their own, and let each part scale and fail separately. But they turn simple function calls into network calls that can be slow or fail, and they need much more tooling to run.
+
+  !eli5 A monolith is one big kitchen where all cooks share space. Easy to talk, but they bump into each other when the team grows. Microservices are a food court. Each stall runs on its own and can change its menu any time, but now you need a map, signs, and a way to pay at every stall.
+
+scenes:
+  - title: One request through a microservice app
+    stats: [Hop, Network calls so far]
+    nodes:
+      app: {label: Mobile app, x: 0, y: 1, kind: box}
+      gw: {label: API gateway, x: 2, y: 1, kind: raised, tag: one front door}
+      user: {label: User service, x: 4, y: 0, kind: def}
+      cat: {label: Catalog service, x: 4, y: 2, kind: def}
+      ord: {label: Order service, x: 6, y: 1, kind: def}
+      bus: {label: Event bus, x: 6, y: 3, kind: raised}
+    links: [[app, gw], [gw, user], [gw, cat], [gw, ord], [ord, bus]]
+    steps:
+      - title: One front door
+        text: The app calls only the gateway. It checks the token, applies rate limits and routes the call.
+        on: [app, gw]
+        flow: [[app, gw, ink]]
+        stats: [gateway, "1"]
+      - title: Gather data
+        text: For the home screen the gateway calls the user and catalog services in parallel and merges the answers. This is the **backend for frontend** idea.
+        on: [gw, user, cat]
+        flow: [[gw, user, ink], [gw, cat, ink], [user, gw, def], [cat, gw, def]]
+        stats: [fan out, "3"]
+      - title: Place an order
+        text: The order service owns orders and its own database. Nobody else touches that database.
+        on: [gw, ord]
+        flow: [[gw, ord, ink]]
+        stats: [order, "4"]
+      - title: Tell others with events
+        text: Instead of calling five services, the order service publishes "order placed". Services that care subscribe. Loose coupling.
+        on: [ord, bus]
+        flow: [[ord, bus, def]]
+        mark: {bus: ok}
+        stats: [event, "5"]
+
+terms:
+  - [Monolith, "One deployable program containing all features."]
+  - [Modular monolith, "One program, but with strict internal modules and boundaries. A great middle ground."]
+  - [Microservice, "A small service that owns one business capability and its data, deployed on its own."]
+  - [API gateway, "The single entry point that handles routing, auth, rate limits and sometimes merging responses."]
+  - [Backend for frontend, "A gateway layer tailored to one client, like mobile or web."]
+  - [Service discovery, "How services find each other's current addresses."]
+  - [Service mesh, "A layer of small proxies beside each service that handle mTLS, retries and metrics. Istio, Linkerd."]
+  - [Bounded context, "A clear business area with its own words and data, a good boundary for a service."]
+  - [Strangler fig, "Slowly replacing parts of an old system by routing feature after feature to new code."]
+
+how: |
+  ### Monolith versus microservices
+
+  | | Monolith | Microservices |
+  | --- | --- | --- |
+  | Start up | Fast and simple | Slow, needs platform work |
+  | Deploys | All or nothing | Each service on its own |
+  | Teams | Great for one or a few teams | Great for many teams |
+  | Calls between parts | In memory, fast, reliable | Network, slower, can fail |
+  | Data | One database, joins easy | Each service owns its data, joins hard |
+  | Debugging | One process | Needs tracing across services |
+  | Scaling | Whole app together | Each part separately |
+
+  ### Where to draw the lines
+
+  Split by **business capability**, not by technical layer. Good, orders, payments, catalog. Bad, a database service, a validation service. Each service should own its data. If two services must change together for every feature, they should probably be one.
+
+  ### The supporting tools
+
+  - **API gateway** for one front door.
+  - **Service discovery**, often built into Kubernetes DNS.
+  - **Event bus** or stream for loose coupling, lesson 13.
+  - **Distributed tracing**, lesson 18.
+  - **Service mesh** when you have many services and want mTLS, retries and metrics without code in every service.
+
+  ### Moving from a monolith
+
+  Do not rewrite everything at once. Use the **strangler fig** approach. Put a gateway in front, carve out one area with clear boundaries, route its traffic to the new service, and repeat.
+
+  !key Start with a well structured monolith. Split out a service when there is a real reason, a team that needs to move on its own, a part with very different scale, or a part with different reliability or security needs.
+
+diagrams:
+  - type: flow
+    title: The strangler fig migration
+    nodes: [["All traffic to monolith", "box"], ["Gateway in front", "raised"], ["Route search to new service", "def"], ["Route orders to new service", "def"], ["Monolith shrinks away", "box"]]
+    edges: ["", "", "", ""]
+    caption: Each step is small, reversible and delivers value. No big bang rewrite.
+
+life:
+  - ["Amazon's two pizza teams", "Amazon split its monolith into services owned by small teams so each team could build and deploy on its own. The motivation was team speed, more than traffic."]
+  - ["Shopify's modular monolith", "Shopify kept one huge Ruby on Rails application but enforced strict module boundaries inside it. They got many of the benefits of separation without network calls between parts."]
+  - ["Prime Video went back", "An Amazon Prime Video monitoring tool was rebuilt from serverless microservices into a single process and cut its cost by about 90 percent, because the parts passed huge amounts of data between them."]
+
+tradeoffs:
+  - ["Monolith", "Simple to build, test, deploy and debug.", "Teams step on each other as the code and team grow."]
+  - ["Modular monolith", "Clear boundaries, still one deploy.", "Needs discipline to keep modules apart."]
+  - ["Microservices", "Independent teams, deploys and scaling.", "Network failures, data consistency, heavy tooling."]
+  - ["Service mesh", "Security and resilience without code changes.", "Another complex layer to run."]
+
+mistakes:
+  - Starting a new product with dozens of microservices and a tiny team.
+  - Splitting by technical layer instead of business area.
+  - Sharing one database between many services, which couples them tightly.
+  - Long chains of synchronous calls, where any failure breaks the request.
+  - Microservices without tracing, so nobody can debug anything.
+
+quiz:
+  - q: A five person startup building its first product. Best starting architecture?
+    opts: ["Thirty microservices", "A well structured monolith", "One service per database table"]
+    a: 1
+    why: Microservices solve team scaling problems the startup does not have yet.
+  - type: fill
+    q: Slowly replacing an old system by moving features to new code one at a time is the strangler ____ pattern.
+    a: ["fig"]
+    why: Named after a vine that grows around a tree until it replaces it.
+  - q: What is the best way to draw service boundaries?
+    opts: ["One service per technical layer", "By business capability, each owning its data", "One service per developer"]
+    a: 1
+    why: Business boundaries change together and keep services loosely coupled.
+  - type: fill
+    q: The single entry point that routes, authenticates and rate limits calls into microservices is the API ____.
+    a: ["gateway"]
+    why: A gateway gives clients one front door.
+
+interview:
+  - q: When would you move from a monolith to microservices?
+    keys:
+      - ["Team and organization reasons, many teams blocking each other", [team, organization, blocking, independent, deploy]]
+      - ["Different scaling or reliability needs for parts", [scale, scaling, reliab, different needs]]
+      - ["Costs like network calls, data consistency and tooling", [network, consisten, tooling, complex, latency, debug]]
+      - ["Migrate step by step, strangler fig, start with clear boundaries", [strangler, incremental, step by step, one at a time, boundar]]
+    a: |
+      When the monolith starts to slow the organization down. Many teams waiting on each other to deploy, a codebase so big that changes are risky, or parts with very different needs, like a search engine that needs very different scaling from billing. I would not move just for traffic, since a monolith can scale out behind a load balancer. Microservices bring network failures, harder data consistency, and the need for tracing, CI per service and a platform team. So I would first make the monolith modular, then carve out one service with a clear business boundary using the strangler fig pattern, and repeat only where it pays off.
+    fb: Saying the main driver is organizational, not technical, is the insight interviewers listen for.
+  - q: What does an API gateway do, and what are its risks?
+    keys:
+      - ["Single entry point and routing", [entry, routing, route, front door, single]]
+      - ["Auth, rate limiting, TLS and other cross cutting work", [auth, rate limit, tls, logging, cross cutting]]
+      - ["Can aggregate calls or serve a specific client", [aggregat, combine, backend for frontend, bff, merge]]
+      - ["Risks, single point of failure, bottleneck, too much business logic", [single point, bottleneck, business logic, too much, latency]]
+    a: |
+      It is the one front door for clients. It routes each call to the right service, checks tokens, applies rate limits, ends TLS, logs requests and can merge several service calls into one response for a given client, the backend for frontend idea. The risks are that it is a single point of failure and a possible bottleneck, so it must run redundantly and scale out, and that teams start putting business logic in it, which turns it into a new monolith. Keep it thin.
+    fb: Warning against business logic in the gateway shows experience.
+
+desk:
+  title: Should the ride app split up?
+  lede: A ride sharing startup is debating whether to break up its monolith. Help them decide.
+  situation: |
+    **Zipride** has one Python monolith and 40 engineers in 6 teams. Deploys happen once a week because every team must test together. The surge pricing code needs 10 times more CPU on Friday nights. Payments must pass a strict audit.
+  rounds:
+    - title: Round 1. Reasons
+      items:
+        - type: sort
+          q: Is each a good reason to split out a service?
+          rows:
+            - ["6 teams waiting on one weekly deploy", "Good reason"]
+            - ["Surge pricing needs very different scaling", "Good reason"]
+            - ["Payments need strict audit and isolation", "Good reason"]
+            - ["Microservices are fashionable", "Not a reason"]
+          opts: ["Good reason", "Not a reason"]
+          why: Team independence, different scaling and different security needs are real drivers. Fashion is not.
+    - title: Round 2. Plan
+      items:
+        - q: Which should they carve out first?
+          opts: ["Everything at once", "One area with clear boundaries and a strong reason, like pricing or payments", "The login page"]
+          a: 1
+          why: Start where the payoff is biggest and the boundary is clearest.
+        - type: open
+          q: What must they have in place before running many services?
+          a: "A CI and deploy pipeline per service, centralized logging, distributed tracing, metrics and alerting, service discovery, and a clear rule that each service owns its own data."
+  card: |
+    - Start with a modular monolith.
+    - Split for teams, scale or security needs.
+    - Business boundaries, own your data.
+    - Strangler fig, one piece at a time.
+
+refs:
+  - "Martin Fowler. [Microservices](https://martinfowler.com/articles/microservices.html) and [MonolithFirst](https://martinfowler.com/bliki/MonolithFirst.html)."
+  - "Shopify Engineering. [Deconstructing the monolith](https://shopify.engineering/deconstructing-monolith-designing-software-maximizes-developer-productivity)."
+  - "Chris Richardson. [Pattern, API gateway](https://microservices.io/patterns/apigateway.html)."

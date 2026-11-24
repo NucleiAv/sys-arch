@@ -1,0 +1,193 @@
+slug: l11
+num: "11"
+level: 2
+short: CDN and object storage
+title: CDNs and object storage, big files done right
+time: about 40 minutes
+tags: [CDN, S3, blobs, presigned URLs]
+lede: Photos, videos and app files are big and read all over the world. Store them in object storage and serve them from a CDN near every user.
+
+idea: |
+  Databases are built for small records, not 50 MB videos. Big files, also called **blobs**, go into **object storage** like Amazon S3, Google Cloud Storage or Azure Blob. It is cheap, almost never loses data and holds unlimited files. The database keeps only a small record that points to the file.
+
+  A **CDN**, content delivery network, is a set of servers in hundreds of cities. It keeps copies of your files close to users. A user in Chennai gets the image from a server in Chennai, not from your origin in Virginia.
+
+  !eli5 Object storage is a giant safe warehouse. A CDN is a corner shop in every town that keeps the popular items in stock, so nobody has to drive to the warehouse.
+
+scenes:
+  - title: Uploading and viewing a photo
+    stats: [Step, Who does the work]
+    nodes:
+      phone: {label: Phone, x: 0, y: 1, kind: box}
+      api: {label: API server, x: 2, y: 0, kind: def}
+      s3: {label: Object storage, x: 4, y: 1, kind: raised, tag: origin}
+      cdn: {label: CDN edge, x: 2, y: 2, kind: def, tag: near the user}
+      db: {label: Database, x: 4, y: -1, kind: raised}
+    links: [[phone, api], [phone, s3], [phone, cdn], [cdn, s3], [api, db]]
+    steps:
+      - title: Ask for permission
+        text: The phone asks the API "I want to upload a photo". The API checks the user and returns a **presigned URL**, a short lived link that allows one upload.
+        on: [phone, api]
+        flow: [[phone, api, ink], [api, phone, def]]
+        stats: [Get upload link, API server]
+      - title: Upload straight to storage
+        text: The phone sends the 3 MB photo directly to object storage using that link. The API servers never carry the heavy bytes.
+        on: [phone, s3]
+        flow: [[phone, s3, def]]
+        stats: [Upload, Object storage]
+      - title: Save the pointer
+        text: The API saves a small row, photo id, owner, storage key and size, in the database.
+        on: [api, db]
+        flow: [[api, db, ink]]
+        stats: [Save metadata, Database]
+      - title: A friend views it, first time
+        text: The CDN edge near the friend does not have it yet. It fetches it once from the origin and keeps a copy.
+        on: [cdn, s3]
+        flow: [[phone, cdn, ink], [cdn, s3, ink], [s3, cdn, ink]]
+        mark: {cdn: warn}
+        stats: [CDN miss, Origin once]
+      - title: Everyone else views it
+        text: Every later viewer in that area gets it from the edge in a few ms. The origin sits idle.
+        on: [phone, cdn]
+        flow: [[cdn, phone, def]]
+        mark: {cdn: ok}
+        stats: [CDN hit, Edge only]
+
+terms:
+  - [Object storage, "Stores files, called objects, by key in buckets. Cheap, durable, huge. S3 is the best known."]
+  - [Bucket, "A container of objects with its own access rules."]
+  - [Presigned URL, "A link with a signature and an expiry that allows one upload or download without your server in the middle."]
+  - [CDN, "Servers around the world that cache and serve your content near users."]
+  - [Edge, "A CDN server in a city near users. Also called a point of presence."]
+  - [Origin, "Where the CDN fetches the real file from, like your bucket or web server."]
+  - [Cache busting, "Putting a version in the file name, like `app.3f9a.js`, so a new version gets a new URL."]
+  - [Durability, "How unlikely it is to lose data. S3 is designed for eleven nines, 99.999999999 percent."]
+
+how: |
+  ### Why not keep files on the app server or in the database?
+
+  App servers come and go, so local files vanish. Databases get huge, slow and costly to back up with blobs inside. Object storage is built for exactly this, and the database just keeps a pointer.
+
+  ### Push or pull CDN
+
+  - **Pull CDN.** The edge fetches from the origin on the first request, then caches. Zero setup, the usual choice.
+  - **Push CDN.** You upload files to the CDN ahead of time. Good for big releases like a game patch everyone downloads at once.
+
+  ### Getting updates out
+
+  Cached files may live at the edge for days. To change a file, either **purge** it from the CDN, or better, give the new version a new name with **cache busting**, `logo.v2.png`. The HTML points to the new name and old copies simply stop being used.
+
+  ### Storage classes
+
+  Object storage has tiers. **Hot** for files read often, **infrequent access** for older files, **archive** for files almost never read, at a fraction of the price but slow to fetch. Lifecycle rules move files down automatically, for example after 90 days.
+
+  !key CDNs are not just for images. They also absorb attacks, end TLS near users, and can cache API responses that are the same for everyone.
+
+diagrams:
+  - type: flow
+    title: Big files never pass through your app servers
+    lanes:
+      - label: upload
+        nodes: [["Phone", "box"], ["API gives presigned URL", "def"], ["Phone uploads to bucket", "raised"]]
+        edges: ["asks", "uses link"]
+      - label: download
+        labelkind: def
+        nodes: [["Viewer", "box"], ["CDN edge", "def"], ["Bucket, only on a miss", "raised"]]
+        edges: ["", "miss"]
+    caption: Your servers only hand out permission and save pointers. Storage and the CDN move the heavy bytes.
+
+life:
+  - ["Netflix puts servers inside internet providers", "Netflix built its own CDN, Open Connect, with boxes placed inside internet providers' networks. Most video bytes travel only a short distance, which saves money and makes streams start fast."]
+  - ["An app server disk fills with uploads", "A small startup saved user videos to the app server. The disk filled, the server crashed, and a replacement server had none of the files. Moving uploads to S3 with presigned URLs fixed both problems."]
+  - ["A logo that would not update", "A company changed its logo but kept the file name `logo.png`. Users saw the old one for a week because the CDN cached it for 7 days. With versioned names, the switch is instant."]
+
+tradeoffs:
+  - ["Pull CDN", "No setup, caches what is actually used.", "First request in each area is slow."]
+  - ["Push CDN", "Ready before the rush.", "You manage uploads and storage on the CDN."]
+  - ["Long CDN TTL", "Very high hit ratio, cheap.", "Hard to update unless you version names."]
+  - ["Direct upload with presigned URL", "Servers stay light, scales easily.", "Upload checks must happen after the fact, like scanning files."]
+  - ["Archive storage", "Very cheap.", "Slow and costly to read back."]
+
+mistakes:
+  - Streaming large uploads through your app servers.
+  - Storing images as blobs inside the main database.
+  - Making a bucket public by mistake. Many data leaks start here.
+  - Caching personal or logged in pages on a CDN with the wrong cache rules.
+  - Overwriting files with the same name and fighting the CDN cache.
+
+quiz:
+  - q: Where should a photo sharing app keep the actual photo files?
+    opts: ["In a database table", "In object storage, with a pointer in the database", "On the app server disk"]
+    a: 1
+    why: Object storage is built for big files. The database keeps the small record.
+  - type: fill
+    q: A short lived signed link that lets a client upload straight to storage is a ____ URL.
+    a: ["presigned", "pre-signed", "signed"]
+    why: Presigned URLs keep heavy bytes off your servers while staying safe.
+  - type: fill
+    q: The server the CDN fetches the real file from is called the ____.
+    a: ["origin"]
+    why: The origin is the source. Edges cache copies of it.
+  - q: You changed `app.js` but users still run the old one for days. Best fix going forward?
+    opts: ["Tell users to clear their cache", "Put a version or hash in the file name for each release", "Turn off the CDN"]
+    a: 1
+    why: Cache busting gives every release a new URL, so stale copies are simply never asked for again.
+
+interview:
+  - q: Design how users upload and view profile pictures for an app with 100 million users.
+    keys:
+      - ["Presigned URL so the client uploads directly to object storage", [presigned, signed url, direct, s3, bucket, object storage]]
+      - ["Store only metadata and the key in the database", [metadata, database, pointer, key, row]]
+      - ["Serve through a CDN", [cdn, edge]]
+      - ["Make resized versions or thumbnails", [resize, thumbnail, sizes, process, worker]]
+      - ["Versioned names or cache control for updates, and private access", [version, cache, private, public, permission, purge]]
+    a: |
+      The client asks the API for an upload link. The API checks the user and returns a presigned URL for a key like `avatars/u123/v7.jpg`. The client uploads directly to object storage. An event from the bucket triggers a worker that checks the image, strips location data and makes a few sizes, like 64, 256 and 1024 pixels. The database stores the user's current avatar key and version. Viewers load images through a CDN with a long cache time. When the user changes their picture, the version number in the key changes, so the CDN never serves the old one and no purge is needed.
+    fb: Small details like thumbnails, stripping location data and versioned keys show you have thought about the real product, not just the boxes.
+  - q: What is a CDN and when does it not help?
+    keys:
+      - ["Servers near users caching content from the origin", [edge, near, close, cache, origin]]
+      - ["Lowers latency and origin load", [latency, faster, load, offload]]
+      - ["Does not help much for personal, changing or uncacheable data", [personal, dynamic, per user, private, changing, unique]]
+      - ["Does not help for writes or rarely read long tail content", [write, long tail, rarely, once]]
+    a: |
+      A CDN is a network of edge servers in many cities that cache your content and serve it close to users. It cuts latency, takes most of the load off your origin and absorbs traffic spikes and attacks. It helps little for content that is different for every user or changes every second, like a bank balance, for writes, and for content that is rarely read, because each edge would fetch it once and never reuse it.
+    fb: Knowing the limits of a tool is a strong signal. Mention the long tail case, it surprises many people.
+
+desk:
+  title: Launch day for a game patch
+  lede: A game studio ships a 4 GB patch to 10 million players. Plan how files are stored and delivered.
+  situation: |
+    **Pixelforge** stores patches on two web servers in one data center. Last patch, downloads crawled for 12 hours and the servers crashed.
+  rounds:
+    - title: Round 1. Storage and delivery
+      items:
+        - q: Where should the patch file live?
+          opts: ["On the two web servers", "In object storage as the origin", "In the database"]
+          a: 1
+          why: Object storage is durable and scales without servers.
+        - q: The patch releases at 6 PM to everyone. Pull or push CDN?
+          opts: ["Pull, the first player in each city will wait", "Push or pre warm the CDN before 6 PM"]
+          a: 1
+          why: With a known rush, place the file at the edges ahead of time.
+        - type: num
+          q: 10 million players download 4 GB each. How many PB in total?
+          a: 40
+          tol: 2
+          unit: PB
+          why: 10 million times 4 GB is 40 million GB, which is 40 PB. No two web servers could ever do that, but a CDN spreads it over thousands of edges.
+    - title: Round 2. A hotfix
+      items:
+        - type: open
+          q: An hour after launch you find a bug and ship a fixed file. How do you make sure players get the new one?
+          a: "Publish it under a new versioned name, like patch-1.4.1.bin, and update the small manifest file that tells clients which patch to download. Give the manifest a very short cache time so clients see the change within a minute."
+  card: |
+    - Files in object storage, pointers in the database.
+    - Presigned URLs for uploads.
+    - CDN for downloads, pre warm for launches.
+    - Version file names, short TTL on manifests.
+
+refs:
+  - "AWS. [Uploading objects with presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html)."
+  - "Cloudflare. [What is a CDN?](https://www.cloudflare.com/learning/cdn/what-is-a-cdn/)"
+  - "Netflix. [Open Connect overview](https://openconnect.netflix.com/en/)."

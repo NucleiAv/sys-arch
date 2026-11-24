@@ -1,0 +1,181 @@
+slug: l05
+num: "05"
+level: 1
+short: Load balancers and proxies
+title: Load balancers and reverse proxies
+time: about 40 minutes
+tags: [load balancing, health checks, proxy]
+lede: A load balancer is the traffic police in front of your servers. It spreads requests, skips dead servers and hides your machines from the internet.
+
+idea: |
+  Once you have many servers, someone must decide which server gets each request. That is the **load balancer**. Users only ever see one address, the load balancer's. Behind it, servers can come and go.
+
+  A load balancer also checks on servers all the time with **health checks**. If a server stops answering, it gets no more traffic until it recovers.
+
+  !eli5 At a big bank, a greeter at the door sends each customer to a free counter. If a counter closes, the greeter stops sending people there. Customers never need to know which counters are open.
+
+scenes:
+  - title: Round robin, then a server dies
+    stats: [Request, Goes to, Healthy servers]
+    nodes:
+      user: {label: Users, x: 0, y: 1, kind: box}
+      lb: {label: Load balancer, x: 2, y: 1, kind: raised}
+      a: {label: Server A, x: 4, y: 0, kind: def}
+      b: {label: Server B, x: 4, y: 1, kind: def}
+      c: {label: Server C, x: 4, y: 2, kind: def}
+    links: [[user, lb], [lb, a], [lb, b], [lb, c]]
+    steps:
+      - title: Request 1
+        text: Round robin takes turns. The first request goes to A.
+        on: [lb, a]
+        flow: [[user, lb, ink], [lb, a, ink]]
+        stats: ["1", A, "3"]
+      - title: Request 2
+        text: The next goes to B.
+        on: [lb, b]
+        flow: [[user, lb, ink], [lb, b, ink]]
+        stats: ["2", B, "3"]
+      - title: Server C stops answering
+        text: The health check sends `GET /health` to C every few seconds. Three checks fail in a row. C is marked unhealthy.
+        on: [lb, c]
+        flow: [[lb, c, atk]]
+        mark: {c: bad}
+        stats: [Health check, C fails, "2"]
+      - title: Traffic skips C
+        text: New requests only go to A and B. Users see nothing wrong. When C passes its checks again, it rejoins.
+        on: [lb, a, b]
+        flow: [[user, lb, ink], [lb, a, def], [lb, b, def]]
+        mark: {c: bad, a: ok, b: ok}
+        stats: ["3 and 4", A and B, "2"]
+
+terms:
+  - [Load balancer, "Spreads requests over many servers and skips unhealthy ones."]
+  - [Health check, "A small request the load balancer sends to each server to see if it is alive and ready."]
+  - [Reverse proxy, "A server that takes requests on behalf of your servers. It can add TLS, caching, compression and limits. Nginx is a common one."]
+  - [Layer 4, "Balancing by IP and port only. Very fast, does not read the request."]
+  - [Layer 7, "Balancing by reading the HTTP request, so it can route `/api` and `/images` to different servers."]
+  - [TLS termination, "The load balancer decrypts HTTPS so servers behind it do not have to."]
+  - [Connection draining, "Letting a server finish its current requests before it is removed."]
+
+how: |
+  ### How it picks a server
+
+  | Method | How it works | Good for |
+  | --- | --- | --- |
+  | Round robin | Take turns | Servers and requests that are all alike |
+  | Weighted round robin | Bigger servers get more turns | Mixed server sizes |
+  | Least connections | Pick the server with the fewest open requests | Requests that take very different times |
+  | IP or key hash | Same user always goes to the same server | Caches per server, sticky needs |
+
+  ### Layer 4 or layer 7
+
+  A **layer 4** balancer only sees addresses and ports. It is very fast and handles any kind of traffic. A **layer 7** balancer reads the HTTP request. It can send `/video` to video servers, check cookies, and retry on another server. Most web apps use layer 7.
+
+  ### Who balances the balancer?
+
+  A single load balancer is a single point of failure. Real setups run at least two, sharing a floating address, or use a managed cloud load balancer that is redundant by design. DNS can also spread users across several load balancers or regions.
+
+  !key A deeper health check is not always better. If `/health` also checks the database, a database hiccup marks every server unhealthy at once and the whole site goes down. Check what the server itself controls.
+
+diagrams:
+  - type: flow
+    title: A typical web setup
+    nodes: [["Users", "box"], ["DNS", "raised"], ["Load balancer pair", "def", "TLS ends here"], ["App servers", "def"], ["Database", "raised"]]
+    edges: ["", "", "HTTP", ""]
+    caption: The load balancer is the only public door. App servers live in a private network.
+
+life:
+  - ["A deploy takes the site down for a minute", "The team restarted all servers at once. With connection draining and rolling deploys, servers are removed one at a time, finish their work, update, pass a health check and rejoin. Users notice nothing."]
+  - ["One slow server drags everyone down", "Round robin kept sending a fair share to a server with a failing disk. Every third request was slow. Least connections, plus taking the server out when its latency was high, fixed it."]
+  - ["A health check that killed a site", "A health endpoint checked the database. When the database had a 10 second hiccup, every server failed its check and the load balancer removed all of them. The site was down long after the database recovered."]
+
+tradeoffs:
+  - ["Round robin", "Simple and fair for equal requests.", "Ignores how busy each server really is."]
+  - ["Least connections", "Adapts to slow requests and slow servers.", "Needs to track connections, slightly more work."]
+  - ["Layer 4", "Very fast, any protocol.", "Cannot route by URL or header."]
+  - ["Layer 7", "Smart routing, retries, TLS termination.", "More work per request, a little slower."]
+  - ["Managed cloud balancer", "Redundant and scales by itself.", "Less control, costs money per request."]
+
+mistakes:
+  - Running only one load balancer.
+  - Making health checks depend on shared parts like the database.
+  - Restarting every server at the same time during a deploy.
+  - Forgetting that WebSocket connections stay open for a long time, so new servers get little traffic until clients reconnect.
+
+quiz:
+  - q: Requests to your app take anywhere from 5 ms to 5 seconds. Which method spreads load best?
+    opts: ["Round robin", "Least connections", "Random"]
+    a: 1
+    why: Least connections notices servers busy with long requests and sends new work elsewhere.
+  - type: fill
+    q: The small request a load balancer sends to see if a server is alive is a ____ check.
+    a: ["health"]
+    why: Health checks are how the load balancer learns which servers to skip.
+  - q: You want `/api/*` to go to API servers and `/static/*` to file servers. What do you need?
+    opts: ["A layer 4 load balancer", "A layer 7 load balancer", "More DNS records"]
+    a: 1
+    why: Only layer 7 reads the URL path.
+  - type: fill
+    q: Letting a server finish its current requests before removing it is called connection ____.
+    a: ["draining"]
+    why: Draining avoids cutting users off in the middle of a request.
+
+interview:
+  - q: How does a load balancer know which servers to send traffic to, and what goes wrong with health checks?
+    keys:
+      - ["Health checks hit an endpoint on a schedule", [health, check, endpoint, interval, ping]]
+      - ["Unhealthy after several failures, healthy again after passes", [threshold, fail, several, consecutive, rejoin, recover]]
+      - ["Deep checks on shared dependencies can remove every server at once", [database, dependency, shared, all servers, cascade, every]]
+      - ["Shallow check plus separate monitoring of dependencies", [shallow, liveness, readiness, monitor, separate]]
+    a: |
+      It sends a small request, like `GET /health`, to each server every few seconds. After a few failures in a row it marks the server unhealthy and stops sending traffic. After a few passes it brings it back. The common trap is a deep health check that also tests the database or another shared service. If that shared service blips, every server fails together and the load balancer removes them all, turning a small problem into a full outage. So I keep the check about the server itself, maybe a readiness check that it finished starting, and I monitor shared dependencies separately.
+    fb: Naming the "deep health check takes down everything" trap is what makes this answer stand out.
+  - q: What is the difference between a load balancer and a reverse proxy?
+    keys:
+      - ["A reverse proxy sits in front of servers and forwards requests for them", [front, forward, behalf, proxy]]
+      - ["A load balancer spreads load over many servers", [spread, many, distribute, several]]
+      - ["A reverse proxy can add TLS, caching, compression or limits", [tls, cach, compress, limit, security]]
+      - ["Often the same tool does both, like Nginx or Envoy", [nginx, envoy, haproxy, same, both]]
+    a: |
+      A reverse proxy is any server that takes requests on behalf of your servers. It can end TLS, cache answers, compress responses, block bad traffic and hide your servers. A load balancer is a job, spreading requests across many servers and skipping unhealthy ones. Most reverse proxies, like Nginx, Envoy or HAProxy, also load balance, so in practice one box often does both. You can have a reverse proxy in front of a single server, and then it is not balancing anything.
+    fb: The clean way to say it is "a load balancer is one job a reverse proxy can do".
+
+desk:
+  title: Black Friday at the electronics store
+  lede: An online store expects five times normal traffic. Check its load balancing before the big day.
+  situation: |
+    **VoltMart** runs one load balancer in front of 8 app servers using round robin. Its health check calls `/health`, which runs a query on the main database. Deploys restart all servers together.
+  rounds:
+    - title: Round 1. Find the risks
+      items:
+        - type: sort
+          q: Match each risk to its fix.
+          rows:
+            - ["One load balancer", "Run a redundant pair or a managed balancer"]
+            - ["Health check queries the database", "Check only the server itself"]
+            - ["Deploys restart everything", "Rolling deploys with draining"]
+            - ["Checkout requests are much slower than browsing", "Least connections"]
+          opts: ["Run a redundant pair or a managed balancer", "Check only the server itself", "Rolling deploys with draining", "Least connections"]
+          why: Each fix removes a way that one small problem becomes a full outage.
+        - q: During the sale the database slows for 15 seconds. With the current health check, what happens?
+          opts: ["Nothing", "All 8 servers fail their checks and the site goes fully down", "Only checkout is slow"]
+          a: 1
+          why: Every check depends on the same database, so they all fail together.
+    - title: Round 2. Plan capacity
+      items:
+        - type: num
+          q: Each server handles 500 requests a second. Peak is 10,000 a second. How many servers at least, with no spare?
+          a: 20
+          tol: 0
+          unit: servers
+          why: 10,000 divided by 500 is 20. Add spares, around 25, so one or two can fail.
+  card: |
+    - Two load balancers, never one.
+    - Shallow health checks.
+    - Least connections for uneven requests.
+    - Rolling deploys with draining.
+
+refs:
+  - "NGINX. [What is load balancing?](https://www.nginx.com/resources/glossary/load-balancing/)"
+  - "AWS Builders' Library. [Implementing health checks](https://aws.amazon.com/builders-library/implementing-health-checks/)."
+  - "Cloudflare. [What is a reverse proxy?](https://www.cloudflare.com/learning/cdn/glossary/reverse-proxy/)"

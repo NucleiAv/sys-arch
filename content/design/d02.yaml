@@ -1,0 +1,187 @@
+slug: d02
+num: "02"
+short: Chat app
+title: Design a chat app
+time: about 75 minutes
+tags: [realtime, WebSocket, delivery]
+lede: Two people or a group send messages that arrive instantly, in order, are never lost, and show sent, delivered and read ticks. Like WhatsApp or Messenger.
+
+ask: |
+  Users send text messages one to one and in groups. Messages should arrive in under a second when the other person is online, wait safely when they are offline, and show ticks for delivered and read. Users have several devices.
+
+reqs:
+  func:
+    - One to one and group chats, groups up to 500 people.
+    - Online and last seen status.
+    - Sent, delivered and read receipts.
+    - Message history on every device.
+    - Push notifications when offline.
+  nonfunc:
+    - Delivery under 500 ms when both are online.
+    - Never lose a message once the sender sees one tick.
+    - Messages in a chat appear in the same order for everyone.
+    - Highly available, chat is used all day.
+  out:
+    - Voice and video calls, end to end encryption details, media editing.
+
+estimate:
+  intro: |
+    500 million daily users, each sending 40 messages a day. Messages average 100 bytes plus metadata, call it 200 bytes.
+  items:
+    - type: num
+      q: Messages a day, in billions?
+      a: 20
+      tol: 1
+      unit: billion
+      why: 500 million times 40 is 20 billion messages a day.
+    - type: num
+      q: Average messages a second, in thousands? Use 100 thousand seconds a day.
+      a: 200
+      tol: 20
+      unit: thousand
+      why: 20 billion divided by 100 thousand is 200 thousand a second. Peak maybe 500 thousand.
+    - type: num
+      q: Storage a day in TB at 200 bytes a message?
+      a: 4
+      tol: 0.5
+      unit: TB
+      why: 20 billion times 200 bytes is 4 TB a day, about 1.5 PB a year before copies.
+  after: |
+    !key Hundreds of thousands of writes a second and petabytes of data point to a wide column store partitioned by chat. And hundreds of millions of open connections point to a dedicated connection layer.
+
+api: |
+  ```
+  WebSocket wss://chat.example.com/ws   (one per device, kept open)
+    client sends  { "type":"send", "chat_id":"c9", "client_msg_id":"uuid", "text":"hi" }
+    server sends  { "type":"ack", "client_msg_id":"uuid", "msg_id":"18273", "ts":... }
+    server sends  { "type":"message", "chat_id":"c9", "msg_id":"18274", "from":"u2", "text":"hey" }
+    client sends  { "type":"read", "chat_id":"c9", "up_to":"18274" }
+
+  GET /v1/chats/{chat_id}/messages?before=18274&limit=50   (history, REST)
+  ```
+
+data: |
+  | Table | Key | Fields |
+  | --- | --- | --- |
+  | messages | partition `chat_id`, sort `msg_id` | sender, text, created_at |
+  | chat_members | partition `chat_id` | user ids, roles |
+  | user_chats | partition `user_id` | chat ids, last read msg id |
+  | sessions | `user_id` to connection server | in Redis, short TTL |
+
+  Messages are written once and read by chat in time order. A wide column store like Cassandra or ScyllaDB fits well. Discord and many chat apps use exactly this shape.
+
+scenes:
+  - title: Alice sends Bob a message
+    stats: [Step, Ticks Alice sees]
+    nodes:
+      alice: {label: Alice phone, x: 0, y: 0, kind: box}
+      cs1: {label: Connection server 1, x: 2, y: 0, kind: def}
+      chat: {label: Chat service, x: 4, y: 1, kind: def}
+      db: {label: Message store, x: 6, y: 1, kind: raised}
+      reg: {label: Presence registry, x: 4, y: 3, kind: raised, tag: who is where}
+      cs2: {label: Connection server 7, x: 2, y: 2, kind: def}
+      bob: {label: Bob phone, x: 0, y: 2, kind: box}
+      push: {label: Push service, x: 6, y: 3, kind: raised}
+    links: [[alice, cs1], [cs1, chat], [chat, db], [chat, reg], [chat, cs2], [cs2, bob], [chat, push]]
+    steps:
+      - title: Alice sends
+        text: Her phone sends the message over its open WebSocket with a client message id, so a retry cannot create a duplicate.
+        on: [alice, cs1]
+        flow: [[alice, cs1, ink], [cs1, chat, ink]]
+        stats: [Send, clock icon]
+      - title: Store first
+        text: The chat service gives it a message id that orders it within the chat and writes it to the message store, replicated.
+        on: [chat, db]
+        flow: [[chat, db, def]]
+        stats: [Persist, clock icon]
+      - title: One tick
+        text: Only after the write succeeds does the server ack. Alice sees one tick. The message is now safe even if every server restarts.
+        on: [alice, cs1, chat]
+        flow: [[chat, cs1, def], [cs1, alice, def]]
+        mark: {alice: ok}
+        stats: [Ack, one tick]
+      - title: Find Bob
+        text: The presence registry says Bob's phone is connected to connection server 7. The chat service forwards the message there.
+        on: [chat, reg, cs2]
+        flow: [[chat, reg, ink], [chat, cs2, ink]]
+        stats: [Route, one tick]
+      - title: Delivered
+        text: Bob's phone receives it and acks. Alice gets a delivered event. Two ticks.
+        on: [cs2, bob]
+        flow: [[cs2, bob, def], [bob, cs2, def]]
+        mark: {bob: ok}
+        stats: [Deliver, two ticks]
+      - title: If Bob is offline
+        text: No connection in the registry. The message waits in the store, and the push service wakes Bob's phone. When the app opens, it syncs everything after its last seen message id.
+        on: [chat, push]
+        flow: [[chat, push, pen]]
+        mark: {bob: warn}
+        stats: [Offline, one tick until Bob opens]
+
+hld: |
+  1. **Connection servers** hold millions of WebSocket connections each. They are thin, they just move bytes.
+  2. A **presence registry** in Redis maps each online device to its connection server.
+  3. The **chat service** assigns ids, writes to the store, fans out to members' connection servers, and triggers push notifications.
+  4. A **message store** partitioned by `chat_id` keeps history.
+  5. Devices **sync** on reconnect by asking for messages after the last id they have.
+
+diagrams:
+  - type: flow
+    title: The send path
+    nodes: [["Sender device", "box"], ["Connection server", "def"], ["Chat service", "def"], ["Message store", "raised"], ["Receivers' connection servers", "def"]]
+    edges: ["WebSocket", "", "write first", "fan out"]
+    caption: Persist before you acknowledge. Deliver after you persist. That order is what makes "never lose a message" true.
+
+deep:
+  - ["Ordering", "Give each message a per chat increasing id, from the chat's partition leader or a Snowflake style id, lesson 15. Clients sort by it. Order across different chats does not matter."]
+  - ["Exactly once feel", "Delivery is at least once. The client message id lets the server drop duplicates on retry, and the receiver drops ids it already has."]
+  - ["Groups", "For a 500 member group, the chat service looks up members and fans out to each member's connection server. For huge broadcast channels, switch to members pulling recent messages instead of pushing to everyone."]
+  - ["Multiple devices", "Each device is its own connection and keeps its own last synced id. Read receipts are stored per user, so reading on the laptop clears the phone."]
+  - ["Presence at scale", "Clients send a heartbeat every 30 seconds. Presence is updated in Redis with a TTL, and friends get updates lazily, when they open a chat, rather than a flood of online and offline events."]
+  - ["Connection server failure", "If one dies, its phones reconnect to another within seconds and sync from their last id. No message is lost because the store is the truth."]
+
+tradeoffs:
+  - ["WebSocket", "Instant two way delivery.", "Millions of open connections to manage."]
+  - ["Push notifications for offline", "Battery friendly.", "Depends on Apple and Google, can be delayed."]
+  - ["Fan out on write for groups", "Fast delivery to members.", "Huge groups multiply writes."]
+  - ["Wide column store", "Massive writes, fast reads by chat.", "No flexible queries, design keys carefully."]
+
+task:
+  intro: |
+    Explain the full design out loud. Focus on how you guarantee a message is never lost.
+  items:
+    - q: Explain how your chat app delivers a message from sender to receiver, and how it guarantees no message is lost even if servers crash.
+      keys:
+        - ["Persistent WebSocket connections through connection servers", [websocket, connection server, gateway, persistent]]
+        - ["Write to a durable store before acknowledging the sender", [store, persist, write, before, ack, durable]]
+        - ["Routing via a presence or session registry", [registry, presence, session, redis, lookup]]
+        - ["Offline handling with push and sync from last id", [offline, push, sync, last id, reconnect]]
+        - ["Ordering and duplicates with message ids", [order, id, duplicate, dedup, client message id, idempot]]
+      a: |
+        Each device keeps a WebSocket to a connection server. When Alice sends, the message goes with a client message id to the chat service, which assigns a per chat ordered id and writes it to a replicated message store partitioned by chat. Only then does it ack Alice, giving her one tick, so an acked message is always durable. The service looks up each recipient device in a Redis presence registry and forwards the message to that device's connection server. The device acks, which creates the delivered tick. Offline devices get a push notification and on reconnect ask for everything after their last id. Retries use the client message id, so duplicates are dropped. If a connection server crashes, devices reconnect elsewhere and sync, and nothing is lost because the store is the source of truth.
+      fb: The sentence "we persist before we ack" is the heart of the answer. Say it clearly.
+
+interview:
+  - q: How do you scale to 200 million concurrent WebSocket connections?
+    keys:
+      - ["Dedicated connection servers that hold connections and little logic", [connection server, gateway, edge, dedicated, thin]]
+      - ["Each server holds hundreds of thousands to millions of connections, do the math", [per server, million, thousand, servers]]
+      - ["Registry to find which server holds a user", [registry, redis, lookup, presence, routing]]
+      - ["Load balancing and reconnect handling with jitter", [load balanc, reconnect, jitter, backoff, drain]]
+    a: |
+      I separate connection servers from business logic. A well tuned server can hold around 500 thousand to 1 million mostly idle connections, so 200 million needs a few hundred servers plus spares. A layer 4 load balancer spreads new connections. Each server registers "user device is on me" in a Redis registry with a TTL, refreshed by heartbeats, so the chat service knows where to send. When a server is deployed or dies, clients reconnect with random backoff to avoid a reconnect storm, and drained servers close connections gradually.
+    fb: Doing the connections per server math and mentioning reconnect storms shows real world awareness.
+  - q: How would you implement read receipts in a group of 200 people?
+    keys:
+      - ["Store last read message id per user per chat, not per message", [last read, per user, up to, watermark, pointer]]
+      - ["Send read events through the same channel", [event, websocket, send, notify]]
+      - ["Batch or throttle updates to avoid floods", [batch, throttle, debounce, aggregate, limit]]
+      - ["Compute who read a message from the pointers when asked", [compute, when asked, on demand, compare, count]]
+    a: |
+      Instead of storing a row for every message and every reader, which would be 200 rows per message, I store one pointer per member, "user 7 has read chat 9 up to message 1832". When a user reads, the client sends one event with the newest id, debounced so scrolling does not send dozens. To show "read by 143", the server compares each member's pointer with the message id, on demand when the sender opens the info screen. Live updates of the tick are throttled to once every few seconds per chat.
+    fb: Storing a pointer per user instead of a receipt per message is the elegant idea interviewers hope to hear.
+
+refs:
+  - "Discord Engineering. [How Discord stores trillions of messages](https://discord.com/blog/how-discord-stores-trillions-of-messages)."
+  - "WhatsApp. [1 million is so 2011](https://blog.whatsapp.com/1-million-is-so-2011), on connections per server."
+  - "Slack Engineering. [Real-time messaging](https://slack.engineering/real-time-messaging/)."

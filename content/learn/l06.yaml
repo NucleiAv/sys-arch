@@ -1,0 +1,199 @@
+slug: l06
+num: "06"
+level: 2
+short: Choosing a database
+title: Choosing a database, SQL or NoSQL
+time: about 50 minutes
+tags: [SQL, NoSQL, ACID]
+lede: There is no best database, only the best fit for how your data is shaped and how you read it. Learn the families and a simple way to choose.
+
+idea: |
+  A **database** keeps data safe on disk and lets you find it again fast. There are two big families.
+
+  **SQL databases**, also called relational, like PostgreSQL and MySQL, keep data in tables with fixed columns. Tables link to each other, and you can ask almost any question with the SQL language. They are careful. A transfer of money either fully happens or does not happen at all.
+
+  **NoSQL databases** is a name for everything else. They give up some of SQL's features to be faster or easier to spread over many machines for one kind of access.
+
+  !eli5 A SQL database is a neat filing cabinet with labelled folders that cross reference each other. A key value NoSQL store is a wall of lockers. Give the locker number, get the box. Very fast, but you cannot ask "show me every locker with red shoes" unless you planned for it.
+
+scenes:
+  - title: Same app, two kinds of question
+    stats: [Question, Best fit]
+    nodes:
+      app: {label: Shop app, x: 0, y: 1, kind: box}
+      sql: {label: SQL database, x: 3, y: 0, kind: def, tag: tables and joins}
+      kv: {label: Key value store, x: 3, y: 2, kind: raised, tag: one key to one value}
+      doc: {label: Document store, x: 5, y: 1, kind: raised, tag: JSON documents}
+    links: [[app, sql], [app, kv], [app, doc]]
+    steps:
+      - title: Place an order
+        text: Take money, lower stock, create the order. All three must happen together or not at all. That is a **transaction**. SQL shines.
+        on: [app, sql]
+        flow: [[app, sql, def]]
+        stats: [Place an order, SQL]
+      - title: Find a session by id
+        text: Give me the cart for session `s_81`. One key, one value, millions of times a second. A key value store like Redis or DynamoDB.
+        on: [app, kv]
+        flow: [[app, kv, ink]]
+        stats: [Lookup by key, Key value]
+      - title: Show a product page
+        text: Every product has different fields. A phone has a screen size, a shirt has a fabric. A document store keeps each product as one flexible JSON document.
+        on: [app, doc]
+        flow: [[app, doc, ink]]
+        stats: [Flexible records, Document]
+      - title: Use more than one
+        text: Big systems mix them. This is called **polyglot persistence**. But every extra database is more work to run, so start with one and add only when there is a clear reason.
+        on: [sql, kv, doc]
+        stats: [Many needs, Mix with care]
+
+terms:
+  - [Table, "Rows and columns, like a spreadsheet with strict column types."]
+  - [Schema, "The shape of the data. Which tables, which columns, which types."]
+  - [Join, "Combining rows from two tables that share a key, like orders and users."]
+  - [Transaction, "A group of changes that all happen or none happen."]
+  - [ACID, "Atomic, consistent, isolated, durable. The promises a SQL transaction keeps."]
+  - [Key value store, "Look up a value by its key. Redis, DynamoDB."]
+  - [Document store, "Keeps JSON like documents with flexible fields. MongoDB."]
+  - [Wide column store, "Rows with many columns spread across machines, built for huge write volume. Cassandra, ScyllaDB."]
+  - [Graph database, "Stores things and the links between them. Good for friends of friends. Neo4j."]
+
+how: |
+  ### ACID in plain words
+
+  - **Atomic.** All or nothing. If step 3 fails, steps 1 and 2 are undone.
+  - **Consistent.** Rules always hold, like "stock is never below zero".
+  - **Isolated.** Two transactions at once do not see each other's half done work.
+  - **Durable.** Once it says "saved", it survives a crash.
+
+  ### The NoSQL families
+
+  | Family | Example | Great at | Weak at |
+  | --- | --- | --- | --- |
+  | Key value | Redis, DynamoDB | Super fast lookup by key | Questions about anything but the key |
+  | Document | MongoDB | Flexible records read as one piece | Joins across many documents |
+  | Wide column | Cassandra | Huge write volume over many machines | Ad hoc questions, strong consistency |
+  | Graph | Neo4j | Following links many steps deep | Simple bulk reads |
+  | Time series | InfluxDB, TimescaleDB | Metrics with timestamps | General use |
+  | Search | Elasticsearch | Full text search | Being the source of truth |
+
+  ### A simple way to choose
+
+  1. Is the data related and do you need transactions? Start with **SQL**. It is the right default for most apps.
+  2. Do you mostly fetch by one key at enormous scale? **Key value**.
+  3. Do you write a flood of events and read them by key and time? **Wide column** or time series.
+  4. Do you mostly walk relationships? **Graph**.
+  5. Do you need to search text? Add **search** next to your main database.
+
+  !key Modern SQL databases also store JSON and can be spread over machines, and many NoSQL databases now offer transactions. The lines are blurrier than they used to be. Choose by your access pattern, not by fashion.
+
+diagrams:
+  - type: split
+    title: Pick by how you read the data
+    source: ["How will you read it?", "raised"]
+    targets:
+      - ["SQL", "def", "Related data, transactions, flexible questions"]
+      - ["Key value", "box", "Fetch by one key, very fast"]
+      - ["Wide column", "box", "Floods of writes by key and time"]
+      - ["Graph", "box", "Many hops through relationships"]
+      - ["Search", "box", "Find words in text"]
+    caption: Start from the question you will ask most often. The database follows.
+
+life:
+  - ["A bank uses SQL for money", "Moving money from one account to another must never lose or create money, even if a server dies halfway. ACID transactions in a relational database make that simple."]
+  - ["Discord moved messages to a wide column store", "Billions of chat messages are written all the time and read by channel and time. Discord moved them from MongoDB to Cassandra and later to ScyllaDB because those spread huge write loads across many machines."]
+  - ["A product catalog with endless fields", "A marketplace sells phones, shoes and sofas. In one SQL table this meant hundreds of mostly empty columns. Storing each product as a JSON document, in MongoDB or in a Postgres JSON column, fit much better."]
+
+tradeoffs:
+  - ["SQL", "Transactions, joins, any question you can write, mature tools.", "Spreading writes over many machines is harder."]
+  - ["Key value", "Fastest lookups, easy to scale out.", "Only by key. No real queries."]
+  - ["Document", "Flexible fields, whole object in one read.", "Joins and cross document rules are weak."]
+  - ["Wide column", "Massive writes, always on, many machines.", "You must design tables around queries up front."]
+  - ["Graph", "Relationship questions are fast and natural.", "Narrow use, harder to scale."]
+
+mistakes:
+  - Choosing NoSQL because it sounds more scalable when the data is relational and small.
+  - Using a search engine like Elasticsearch as the only copy of important data.
+  - Adding a new database for every feature. Each one needs backups, upgrades and on call.
+  - Designing wide column tables without knowing the queries first.
+
+quiz:
+  - q: A wallet app moves money between users. Which database family fits best?
+    opts: ["Key value", "SQL with ACID transactions", "Graph"]
+    a: 1
+    why: Money needs all or nothing changes and strict rules. That is exactly what ACID gives.
+  - type: fill
+    q: In ACID, the letter A stands for ____, which means all or nothing.
+    a: ["atomic", "atomicity"]
+    why: Atomic means the whole transaction happens or none of it does.
+  - q: A social app needs "friends of friends who like jazz". Which family is built for that?
+    opts: ["Graph database", "Time series database", "Key value store"]
+    a: 0
+    why: Graph databases are built to walk relationships many steps deep.
+  - type: sort
+    q: Match each need to a database family.
+    rows:
+      - ["Sessions looked up by id, millions a second", "Key value"]
+      - ["Sensor readings every second from 1 million devices", "Wide column or time series"]
+      - ["Orders, users and payments with joins", "SQL"]
+      - ["Search product names and descriptions by words", "Search engine"]
+    opts: ["Key value", "Wide column or time series", "SQL", "Search engine"]
+    why: Match each to its main access pattern.
+
+interview:
+  - q: How do you choose between SQL and NoSQL for a new service?
+    keys:
+      - ["Start from the access patterns and queries", [access pattern, query, queries, read, how you]]
+      - ["SQL for related data, transactions and flexible queries", [transaction, acid, join, relational, related]]
+      - ["NoSQL for simple key access at huge scale or flexible schemas", [scale, key, flexible, schema, write, huge]]
+      - ["Consider consistency needs and team experience or operations", [consisten, team, operat, experience, run]]
+      - ["Default to SQL unless there is a clear reason", [default, start with, unless, usually]]
+    a: |
+      I start from the questions the service will ask most. If the data is related, like users, orders and payments, and I need transactions and the freedom to ask new questions later, I pick a relational database. It is my default because it is safe and flexible and it scales further than people think. I switch to NoSQL when there is a clear reason. A key value store when everything is fetched by one key at huge volume. A wide column store when I write floods of events and read them by key and time. A document store when records really have different shapes. I also think about consistency needs and what the team can run well at 3 AM.
+    fb: Saying "access patterns first" and "SQL is my default unless" shows mature thinking. Avoid "NoSQL scales, SQL does not".
+  - q: What does ACID mean, in simple words?
+    keys:
+      - ["Atomic, all or nothing", [atomic, all or nothing]]
+      - ["Consistent, rules always hold", [consisten, rule, valid, constraint]]
+      - ["Isolated, concurrent transactions do not see half done work", [isolat, concurren, same time, half]]
+      - ["Durable, saved data survives a crash", [durab, crash, survive, persist, disk]]
+    a: |
+      Atomic means a transaction fully happens or not at all. Consistent means the database rules, like no negative stock, always hold before and after. Isolated means transactions running at the same time do not see each other's half finished changes. Durable means once the database says it is committed, it survives a crash or power cut.
+    fb: Adding a tiny example, like a money transfer for atomic, makes the answer memorable.
+
+desk:
+  title: Pick the databases for a food delivery app
+  lede: A food delivery startup is choosing its storage. Match each part of the app to the right place.
+  situation: |
+    **Biteline** has restaurants, menus, customers, orders and payments. Riders send their GPS position every 4 seconds. Customers search for dishes by name.
+  rounds:
+    - title: Round 1. Match the data
+      items:
+        - type: sort
+          q: Where does each piece live?
+          rows:
+            - ["Orders and payments", "SQL"]
+            - ["Rider GPS positions every 4 seconds", "Key value or time series"]
+            - ["Search dishes by name", "Search engine"]
+            - ["Restaurant menus with many different fields", "Document or SQL with JSON"]
+          opts: ["SQL", "Key value or time series", "Search engine", "Document or SQL with JSON"]
+          why: Orders need transactions. GPS is a flood of small writes where only the latest matters most. Search needs a text index. Menus vary in shape.
+        - q: The team wants to keep only Elasticsearch and drop the SQL database to save money. Good idea?
+          opts: ["Yes, it can do everything", "No, search engines are not built to be the safe source of truth for orders and money"]
+          a: 1
+          why: Search indexes are built to be fast to search and can be rebuilt. Money needs a database with strong guarantees.
+    - title: Round 2. Keep it simple
+      items:
+        - type: open
+          q: The team has three engineers. What would you start with on day one?
+          a: "One PostgreSQL database for orders, payments, users and menus, using a JSON column for menu extras, and Redis for rider positions and sessions. Add a search engine only when Postgres full text search is not enough. Fewer systems means less to run."
+  card: |
+    - Pick by access pattern.
+    - SQL is the safe default.
+    - Key value for lookups by id at scale.
+    - Search engines are helpers, not the truth.
+
+refs:
+  - "Martin Kleppmann. Designing Data-Intensive Applications, chapter 2, data models and query languages."
+  - "MongoDB. [NoSQL explained](https://www.mongodb.com/resources/basics/databases/nosql-explained)."
+  - "Discord Engineering. [How Discord stores trillions of messages](https://discord.com/blog/how-discord-stores-trillions-of-messages)."
+  - "PostgreSQL. [JSON types](https://www.postgresql.org/docs/current/datatype-json.html)."

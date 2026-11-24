@@ -1,0 +1,168 @@
+slug: d06
+num: "06"
+short: Video streaming
+title: Design a video streaming platform
+time: about 75 minutes
+tags: [transcoding, adaptive bitrate, CDN]
+lede: Creators upload videos, and millions watch them on phones and TVs without buffering, even on slow networks. Like YouTube or Netflix.
+
+ask: |
+  Users upload videos. The platform prepares them for every screen and network speed, then streams them to viewers around the world. The video must start fast and keep playing smoothly when the network gets worse.
+
+reqs:
+  func:
+    - Upload videos up to a few GB.
+    - Watch on phone, web and TV, with quality that adapts to the network.
+    - Video page with title, views and thumbnails.
+  nonfunc:
+    - Playback starts in under 2 seconds.
+    - Little or no buffering.
+    - Uploads are never lost, processing can take minutes.
+    - Massive read bandwidth worldwide.
+  out:
+    - Comments, recommendations, live streaming, payments for creators.
+
+estimate:
+  intro: |
+    1 million uploads a day, average 10 minutes. 1 billion views a day, average 5 minutes watched at about 3 Mbps.
+  items:
+    - type: num
+      q: Upload storage a day in TB if a raw 10 minute video is 1 GB?
+      a: 1000
+      tol: 100
+      unit: TB
+      why: 1 million times 1 GB is 1 PB, which is 1,000 TB a day. Transcoded versions add more.
+    - type: num
+      q: Average streaming bandwidth in Tbps? 1 billion views times 300 seconds is 300 billion stream seconds a day, divided by 100 thousand seconds, times 3 Mbps.
+      a: 9
+      tol: 1
+      unit: Tbps
+      why: 300 billion divided by 100 thousand is 3 million streams at once on average. Times 3 Mbps is 9 million Mbps, which is 9 Tbps. Only a giant CDN can carry that.
+  after: |
+    !key The data volume is in the petabytes and the bandwidth in terabits. Storage is object storage, delivery is a CDN, and your servers mostly handle metadata.
+
+api: |
+  ```
+  POST /v1/videos                -> { video_id, upload_url }   presigned, resumable
+  POST /v1/videos/{id}/complete  -> starts processing
+  GET  /v1/videos/{id}           -> title, status, thumbnails, manifest_url
+  GET  {cdn}/videos/{id}/master.m3u8   -> list of quality levels
+  GET  {cdn}/videos/{id}/720p/seg_0042.ts  -> one 4 second piece
+  ```
+
+data: |
+  | Store | Holds |
+  | --- | --- |
+  | videos table, SQL | id, owner, title, status, durations, created_at |
+  | view counts | counters, updated in batches |
+  | object storage | raw upload, transcoded segments, thumbnails |
+  | CDN | cached segments and manifests near viewers |
+
+scenes:
+  - title: From upload to smooth playback
+    stats: [Step, What happens]
+    nodes:
+      creator: {label: Creator, x: 0, y: 0, kind: box}
+      raw: {label: Raw storage, x: 2, y: 0, kind: raised}
+      q: {label: Job queue, x: 4, y: 0, kind: raised}
+      tr: {label: Transcoders, x: 6, y: 0, kind: def, tag: many workers}
+      out: {label: Segments storage, x: 6, y: 2, kind: raised}
+      cdn: {label: CDN edge, x: 4, y: 2, kind: def}
+      viewer: {label: Viewer, x: 2, y: 2, kind: box}
+    links: [[creator, raw], [raw, q], [q, tr], [tr, out], [out, cdn], [cdn, viewer]]
+    steps:
+      - title: Upload in pieces
+        text: The app uploads straight to object storage in chunks with a presigned URL. If the network drops, it resumes from the last chunk.
+        on: [creator, raw]
+        flow: [[creator, raw, ink]]
+        stats: [Upload, resumable]
+      - title: Queue the work
+        text: Upload complete triggers a job. The video is split into short chunks so many workers can transcode it at the same time.
+        on: [raw, q]
+        flow: [[raw, q, ink]]
+        stats: [Split, chunks queued]
+      - title: Transcode
+        text: Workers turn each chunk into several qualities, 240p up to 4K, in modern codecs, plus thumbnails. A 10 minute video is ready in a few minutes.
+        on: [q, tr, out]
+        flow: [[q, tr, ink], [tr, out, def]]
+        stats: [Transcode, 6 qualities]
+      - title: Watch
+        text: The player downloads a manifest listing the qualities, then fetches 4 second segments from the nearest CDN edge.
+        on: [out, cdn, viewer]
+        flow: [[out, cdn, ink], [cdn, viewer, def]]
+        mark: {viewer: ok}
+        stats: [Play, starts at 480p]
+      - title: Network gets worse
+        text: The player measures download speed. When it drops, the next segment is fetched in 360p instead. No pause, just a softer picture. This is **adaptive bitrate**.
+        on: [cdn, viewer]
+        flow: [[cdn, viewer, pen]]
+        mark: {viewer: warn}
+        stats: [Adapt, drops to 360p]
+
+hld: |
+  1. **Upload service** hands out resumable presigned URLs and records video metadata.
+  2. **Processing pipeline** with a queue, chunked parallel transcoding, thumbnail and safety checks. It is a workflow, so each step retries on its own.
+  3. **Storage** in object storage for raw and processed files, with older and rarely watched videos moved to cheaper tiers.
+  4. **Delivery** through a CDN using HLS or DASH segments and manifests.
+  5. **Metadata and views** in a database with a cache, view counts aggregated in batches.
+
+diagrams:
+  - type: flow
+    title: The processing pipeline
+    nodes: [["Raw upload", "raised"], ["Split into chunks", "box"], ["Transcode in parallel", "def"], ["Package HLS and DASH", "def"], ["Publish to CDN origin", "raised"]]
+    edges: ["", "", "", ""]
+    caption: Splitting first is what turns a one hour job into a few minutes.
+
+deep:
+  - ["Adaptive bitrate", "Each video exists in several qualities, each cut into 2 to 6 second segments. The player picks the quality for each next segment based on measured speed and buffer level. Formats are HLS and MPEG-DASH."]
+  - ["Cost control", "Most views go to a small share of videos. Transcode new videos to a few qualities at first, add more if they get popular, and push rarely watched videos to cheaper storage."]
+  - ["Start time", "Start at a low quality to begin fast, prefetch the first segments when a user hovers, and keep the manifest cached at the edge."]
+  - ["View counts", "Do not write to the database on every view. Send view events to a stream and add them up every few seconds, see lesson 22."]
+  - ["Popular videos", "A new viral video gets requested from every edge at once. Use a mid tier cache, sometimes called origin shield, so edges fetch from it instead of all hitting origin storage."]
+
+tradeoffs:
+  - ["Transcode every quality up front", "Every video ready for every device.", "Huge compute and storage for videos nobody watches."]
+  - ["Transcode on demand for rare formats", "Cheaper.", "First viewer waits."]
+  - ["Short segments", "Faster quality switching.", "More requests and overhead."]
+  - ["Own CDN boxes inside ISPs", "Much cheaper at huge scale, faster.", "Huge upfront investment, only for giants."]
+
+task:
+  intro: |
+    Explain the upload path and the watch path separately.
+  items:
+    - q: Design a video platform. How does a video get from upload to a smooth stream on a phone with a weak network?
+      keys:
+        - ["Resumable direct upload to object storage", [presigned, resumable, chunk, object storage, s3, direct]]
+        - ["Async processing pipeline with a queue", [queue, async, pipeline, workflow, job]]
+        - ["Parallel transcoding into multiple qualities", [transcod, quality, resolution, bitrate, parallel]]
+        - ["Segments with HLS or DASH and a manifest", [hls, dash, segment, manifest, m3u8]]
+        - ["CDN delivery", [cdn, edge]]
+        - ["Adaptive bitrate in the player", [adaptive, abr, switch]]
+      a: |
+        Upload, the client gets a presigned, resumable URL and uploads chunks straight to object storage. On completion an event starts a processing workflow. The video is split into chunks, which many workers transcode in parallel into several qualities, from 240p to 4K, packaged as HLS and DASH segments of a few seconds with a manifest, plus thumbnails. The results go to object storage that acts as the CDN origin. Watching, the player fetches the manifest and segments from the nearest CDN edge. It measures throughput and buffer level, and picks the quality of each next segment, so on a weak network it smoothly drops to a lower quality instead of pausing. Metadata lives in a database with a cache, and view counts are aggregated from a stream.
+      fb: Explaining adaptive bitrate in one plain sentence is the moment interviewers check for. Practice it.
+
+interview:
+  - q: Why split videos into small segments instead of streaming one big file?
+    keys:
+      - ["Allows switching quality between segments", [switch, quality, adaptive]]
+      - ["Easy to cache on CDNs as normal files", [cache, cdn, http, file]]
+      - ["Enables seeking and parallel transcoding", [seek, jump, parallel, transcod]]
+      - ["Trade-off of more requests and overhead", [request, overhead, more files]]
+    a: |
+      Segments let the player change quality every few seconds, which is what makes adaptive bitrate possible. Each segment is a plain file over HTTP, so normal CDNs cache it like any image. Seeking is easy, jump to segment 300. And the pipeline can transcode segments in parallel. The cost is many more requests and small files, which is why segments are a few seconds, not a few hundred milliseconds.
+    fb: Linking segments to CDN caching is the insight that ties this design together.
+  - q: How do you keep costs under control for a huge library?
+    keys:
+      - ["Most views go to few videos, popularity is skewed", [popular, few, long tail, skew, small share]]
+      - ["Fewer encodings for unpopular videos, more on demand", [fewer, on demand, lazy, later, popular]]
+      - ["Storage tiers for old or rare videos", [tier, cold, archive, glacier, cheaper storage]]
+      - ["CDN and better codecs to cut bandwidth", [codec, av1, hevc, vp9, bandwidth, cdn]]
+    a: |
+      Popularity is very skewed, so I spend where viewers are. New uploads get a few common qualities, and popular ones get more qualities and better codecs like AV1, which cut bandwidth a lot. Videos that are rarely watched move to cheaper storage tiers, and very rare formats are made on demand. Bandwidth is the biggest bill, so a strong CDN deal or, at giant scale, an own CDN, matters most.
+    fb: Tie every cost idea to the skewed popularity. That is the real driver.
+
+refs:
+  - "Netflix Tech Blog. [Optimized shot based encodes](https://netflixtechblog.com/optimized-shot-based-encodes-now-streaming-4b9464204830)."
+  - "Apple. [HTTP Live Streaming](https://developer.apple.com/streaming/)."
+  - "Alex Xu. System Design Interview volume 1, chapter 14, design YouTube."

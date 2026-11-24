@@ -1,0 +1,186 @@
+slug: l04
+num: "04"
+level: 1
+short: Scaling servers
+title: Scaling up, scaling out and staying stateless
+time: about 40 minutes
+tags: [scaling, stateless, autoscaling]
+lede: When one server is too busy, you can buy a bigger one or add more. Adding more only works if servers forget everything between requests. Learn why.
+
+idea: |
+  **Scaling up**, or vertical scaling, means a bigger machine, more CPU, more memory. It needs no code change. But it has a ceiling, it gets very expensive near the top, and it is still one machine that can die.
+
+  **Scaling out**, or horizontal scaling, means more machines doing the same job. There is almost no ceiling, and if one dies the rest carry on. But it only works if any server can answer any request. That means servers must be **stateless**. They keep nothing about a user in their own memory. Sessions, carts and uploads live in a shared store instead.
+
+  !eli5 A busy shop can hire one super fast cashier, or open ten checkout lanes. Ten lanes only work if any cashier can serve any customer. If your shopping list was stored in the head of cashier 3, you would have to queue for cashier 3 forever.
+
+scenes:
+  - title: Why a stateful server breaks scaling out
+    stats: [Setup, What the user sees]
+    nodes:
+      user: {label: User, x: 0, y: 1, kind: box}
+      lb: {label: Load balancer, x: 2, y: 1, kind: raised}
+      s1: {label: Server 1, x: 4, y: 0, kind: def}
+      s2: {label: Server 2, x: 4, y: 2, kind: def}
+      redis: {label: Session store, x: 6, y: 1, kind: raised, tag: shared}
+    links: [[user, lb], [lb, s1], [lb, s2], [s1, redis], [s2, redis]]
+    steps:
+      - title: Log in on server 1
+        text: The user logs in. Server 1 keeps the login in its own memory.
+        show: [user, lb, s1, s2]
+        on: [user, s1]
+        flow: [[user, lb, ink], [lb, s1, ink]]
+        stats: [Stateful, Logged in]
+      - title: Next request lands on server 2
+        text: The load balancer sends the next click to server 2. It has never heard of this user. "Please log in again."
+        show: [user, lb, s1, s2]
+        on: [user, s2]
+        flow: [[user, lb, ink], [lb, s2, atk]]
+        mark: {s2: bad}
+        stats: [Stateful, Logged out by surprise]
+      - title: Move the state out
+        text: Now both servers keep sessions in one shared session store, like Redis. The servers themselves remember nothing.
+        on: [s1, s2, redis]
+        flow: [[s1, redis, def], [s2, redis, def]]
+        stats: [Stateless, Store holds sessions]
+      - title: Any server works
+        text: Any request can go to any server. Each one reads the session from the store. Add 50 more servers whenever you like.
+        on: [user, s2, redis]
+        flow: [[user, lb, ink], [lb, s2, ink], [s2, redis, def]]
+        mark: {s2: ok}
+        stats: [Stateless, Stays logged in]
+
+terms:
+  - [Vertical scaling, "Making one machine bigger."]
+  - [Horizontal scaling, "Adding more machines."]
+  - [Stateless, "The server keeps no user data between requests. Any copy can answer."]
+  - [Session, "What the system remembers about a logged in user between clicks."]
+  - [Autoscaling, "Adding or removing servers by itself based on load, like CPU above 70 percent."]
+  - [Sticky sessions, "The load balancer always sends a user to the same server. A shortcut with real downsides."]
+  - [JWT, "A signed token that carries who the user is. The server checks the signature instead of looking up a session."]
+
+how: |
+  ### Where state should live
+
+  | State | Where it goes |
+  | --- | --- |
+  | Login sessions | A shared store like Redis, or a signed token like a JWT |
+  | Shopping carts | Database or Redis |
+  | Uploaded files | Object storage like S3, never the server's disk |
+  | Jobs in progress | A queue |
+
+  ### Autoscaling
+
+  Cloud platforms watch a number, like CPU or requests per server, and add servers when it is high and remove them when it is low. New servers need a few minutes to start, so set the trigger early, around 60 to 70 percent, not 95.
+
+  !key Stateless servers are also what make deploys painless. You can replace servers one by one with a new version and nobody gets logged out.
+
+  ### When scaling up is the right answer
+
+  Scaling up is great early on and for databases, which are hard to split. A big database machine can carry a surprising amount. Many companies scale the database up for years while scaling the app servers out.
+
+diagrams:
+  - type: flow
+    title: Scale up versus scale out
+    lanes:
+      - label: scale up
+        nodes: [["Small server", "box"], ["Bigger server", "raised"], ["Biggest server, ceiling", "atk"]]
+        edges: ["upgrade", "upgrade"]
+      - label: scale out
+        labelkind: def
+        nodes: [["1 server", "def"], ["3 servers", "def"], ["30 servers", "def"]]
+        edges: ["add", "add"]
+    caption: Up hits a ceiling and keeps one point of failure. Out keeps going, if the servers are stateless.
+
+life:
+  - ["A school results site crashes every year", "Results day brings 100 times normal traffic for two hours. They kept buying a bigger server. Moving sessions to Redis and putting the app behind a load balancer with autoscaling let them run 2 servers all year and 40 for those two hours."]
+  - ["Users lose uploads", "An app saved profile photos to the local disk of whichever server got the upload. Later requests went to other servers and the photo was missing. Uploads must go to shared object storage."]
+  - ["Stack Overflow scaled up for years", "Famously, Stack Overflow ran a huge site on a small number of very powerful servers. Scaling up is a valid, simple choice when it fits the numbers."]
+
+tradeoffs:
+  - ["Scale up", "No code change, simple to run.", "Ceiling, high cost at the top, single point of failure."]
+  - ["Scale out", "No real ceiling, survives a server dying.", "Needs stateless servers, a load balancer and shared stores."]
+  - ["Sticky sessions", "Quick fix for a stateful app.", "Uneven load, and users lose their session when their server dies."]
+  - ["Shared session store", "Any server can answer.", "One more component to run, and an extra network hop."]
+  - ["JWT tokens", "No lookup on each request.", "Hard to log a user out before the token expires."]
+
+mistakes:
+  - Saving uploads or sessions on the app server's own disk or memory.
+  - Using sticky sessions as a permanent design.
+  - Autoscaling on a trigger so high that new servers arrive after the crash.
+  - Assuming the database scales out as easily as the app servers. It does not, see lessons 8 and 9.
+
+quiz:
+  - q: You add a second server and users start getting logged out at random. What is the most likely cause?
+    opts: ["The load balancer is broken", "Sessions are kept in each server's memory", "The database is full"]
+    a: 1
+    why: The second server does not know sessions created on the first. Move sessions to a shared store or a signed token.
+  - type: fill
+    q: A server that keeps no user data between requests is called ____.
+    a: ["stateless"]
+    why: Stateless servers are interchangeable, which is what makes scaling out work.
+  - type: fill
+    q: Adding more machines to share work is called ____ scaling.
+    a: ["horizontal"]
+    why: Horizontal means out, more machines. Vertical means up, a bigger machine.
+  - q: Which is the best place for user uploaded photos in a scaled out app?
+    opts: ["The app server's local disk", "Object storage shared by all servers", "Inside the session"]
+    a: 1
+    why: Object storage is shared, cheap and durable. Local disks vanish when a server is replaced.
+
+interview:
+  - q: What does it mean for a service to be stateless and why does it matter for scaling?
+    keys:
+      - ["No user or session data kept in the server between requests", [memory, session, keep, store, between]]
+      - ["State moves to a shared store, database or token", [redis, database, shared, token, jwt, external]]
+      - ["Any server can handle any request, so you can add servers freely", [any server, add, horizontal, scale out, more servers]]
+      - ["Also makes failures and deploys easy", [fail, die, deploy, replace, rolling]]
+    a: |
+      A stateless service keeps nothing about a user in its own memory or disk between requests. Anything that must be remembered, like sessions, carts or files, lives in a shared place like Redis, a database, object storage, or in a signed token the client sends each time. Because of that, every copy of the service is the same. A load balancer can send any request anywhere, you can add or remove copies at any time, and when one dies, nothing is lost. It also makes rolling deploys safe.
+    fb: Mention where the state goes instead. "Stateless" never means there is no state, only that it lives somewhere shared.
+  - q: When would you choose to scale up instead of out?
+    keys:
+      - ["Early stage or small load where simplicity wins", [early, small, simple, startup, start]]
+      - ["Databases and other stateful parts that are hard to split", [database, stateful, hard to split, sql]]
+      - ["Know the limits, ceiling, cost and single point of failure", [ceiling, limit, expensive, cost, single point]]
+    a: |
+      When the load fits comfortably on one bigger machine, scaling up is the simplest answer and needs no code change. It is very common for the database, because splitting a database is hard and a large machine with lots of memory can serve a lot of traffic. I would still add a standby copy for failover, because one machine is a single point of failure, and I would watch the cost curve, because the biggest machines are very expensive.
+    fb: Showing you would not split things too early is a sign of good judgment.
+
+desk:
+  title: The quiz app that keeps logging people out
+  lede: An online quiz app moved from one server to three and now complains are pouring in. Find and fix the state.
+  situation: |
+    **QuizNight** runs live pub quizzes. It just added a load balancer and two more servers. Now players get logged out, lose their score mid game, and uploaded team photos disappear.
+  rounds:
+    - title: Round 1. Find the state
+      items:
+        - type: sort
+          q: Where should each piece of state live now?
+          rows:
+            - ["Who is logged in", "Shared session store or token"]
+            - ["Each team's live score", "Shared fast store like Redis"]
+            - ["Team photos", "Object storage"]
+            - ["Final results history", "Database"]
+          opts: ["Shared session store or token", "Shared fast store like Redis", "Object storage", "Database"]
+          why: Every piece moves off the app servers into a shared place made for that kind of data.
+        - q: A teammate suggests sticky sessions so each player always hits the same server. What is the main risk?
+          opts: ["Nothing, it is the best fix", "If that server dies, its players lose their game, and load can be uneven", "It makes the site slower for everyone"]
+          a: 1
+          why: Sticky sessions hide the problem until a server dies or one server gets all the busy players.
+    - title: Round 2. Quiz night peak
+      items:
+        - q: Traffic jumps 10 times at 8 PM every Thursday. What is the best plan?
+          opts: ["Run peak servers all week", "Scheduled scaling before 8 PM plus autoscaling on CPU", "Buy one huge server"]
+          a: 1
+          why: You know when the peak comes, so scale ahead of it, and let autoscaling handle surprises.
+  card: |
+    - Out needs stateless.
+    - Sessions to Redis or tokens, files to object storage.
+    - Autoscale early, at 60 to 70 percent.
+    - Scale the database up first, split it later.
+
+refs:
+  - "The Twelve-Factor App. [Processes, execute the app as stateless processes](https://12factor.net/processes)."
+  - "AWS. [What is horizontal and vertical scaling](https://aws.amazon.com/compare/the-difference-between-horizontal-and-vertical-scaling/)."
+  - "Stack Exchange. [Stack Overflow, the architecture](https://nickcraver.com/blog/2016/02/17/stack-overflow-the-architecture-2016-edition/)."

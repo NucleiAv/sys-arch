@@ -1,0 +1,171 @@
+slug: d03
+num: "03"
+short: News feed
+title: Design a social news feed
+time: about 75 minutes
+tags: [fan out, ranking, celebrities]
+lede: When you open the app, you see recent posts from people you follow, fast. The famous question is whether to build feeds when posts are written or when feeds are read.
+
+ask: |
+  Users follow others and see a feed of their posts, newest or most relevant first. Think of the home timeline of X, Instagram or Facebook. The feed must load in a blink even though it mixes posts from hundreds of people.
+
+reqs:
+  func:
+    - Publish a post with text and images.
+    - See a home feed of posts from people you follow.
+    - Scroll back through older posts.
+  nonfunc:
+    - Feed loads in under 200 ms at p99.
+    - A new post appears in followers' feeds within a few seconds. Eventual consistency is fine.
+    - Very high availability for reading the feed.
+  out:
+    - Comments, likes, ads, the exact ranking model.
+
+estimate:
+  intro: |
+    300 million daily users. Each opens the feed 10 times a day. 1 in 10 users posts once a day. On average users follow 200 people.
+  items:
+    - type: num
+      q: Feed reads a second, in thousands? 3 billion reads a day divided by 100 thousand seconds.
+      a: 30
+      tol: 3
+      unit: thousand
+      why: 300 million times 10 is 3 billion a day, about 30 thousand a second, maybe 100 thousand at peak.
+    - type: num
+      q: Posts a second? 30 million posts a day.
+      a: 300
+      tol: 30
+      unit: per second
+      why: 30 million divided by 100 thousand is 300 posts a second.
+    - type: num
+      q: If each post is copied into the feed of 200 followers, how many feed writes a second, in thousands?
+      a: 60
+      tol: 6
+      unit: thousand
+      why: 300 posts times 200 followers is 60 thousand feed inserts a second. Heavy but doable, unless a celebrity posts.
+  after: |
+    !key Reads are 100 times more common than posts. So doing extra work at write time, to make reads cheap, is usually worth it. Except for celebrities.
+
+api: |
+  ```
+  POST /v1/posts            { "text": "...", "media_ids": [...] }
+  GET  /v1/feed?cursor=...&limit=20
+    reply { "posts": [...], "next_cursor": "..." }
+  POST /v1/users/{id}/follow
+  ```
+
+data: |
+  | Store | Key | Holds |
+  | --- | --- | --- |
+  | posts | post_id | author, text, media keys, created_at |
+  | follows | follower_id and followee_id | both directions, for "who do I follow" and "who follows me" |
+  | feed cache | user_id | a list of the newest 500 post ids, in Redis |
+  | media | object storage plus CDN | images |
+
+  Feeds store only post ids. The posts themselves are fetched in one batch, mostly from a post cache.
+
+scenes:
+  - title: Fan out on write, and the celebrity exception
+    stats: [Step, Feed writes]
+    nodes:
+      author: {label: Author, x: 0, y: 1, kind: box}
+      post: {label: Post service, x: 2, y: 1, kind: def}
+      q: {label: Fan out queue, x: 4, y: 1, kind: raised}
+      fw: {label: Fan out workers, x: 6, y: 1, kind: def}
+      feeds: {label: Feed cache, x: 6, y: 3, kind: raised, tag: one list per user}
+      reader: {label: Reader, x: 2, y: 3, kind: box}
+      celeb: {label: Celebrity posts, x: 4, y: 3, kind: atk, tag: pulled at read}
+    links: [[author, post], [post, q], [q, fw], [fw, feeds], [reader, feeds], [reader, celeb]]
+    steps:
+      - title: A normal user posts
+        text: The post is saved and a "new post" event goes on a queue. The author gets a quick OK.
+        on: [author, post, q]
+        flow: [[author, post, ink], [post, q, def]]
+        stats: [Publish, "0"]
+      - title: Fan out on write
+        text: Workers look up the author's 200 followers and push the post id onto each follower's feed list in the cache.
+        on: [q, fw, feeds]
+        flow: [[q, fw, ink], [fw, feeds, def]]
+        stats: [Fan out, "200"]
+      - title: Reading is cheap
+        text: A follower opens the app. Their feed is already built. Read 20 ids from their list, fetch those posts from cache. Done in milliseconds.
+        on: [reader, feeds]
+        flow: [[reader, feeds, def]]
+        mark: {reader: ok}
+        stats: [Read, "0"]
+      - title: A celebrity posts
+        text: A star with 80 million followers posts. Pushing into 80 million lists would take minutes and hammer the cache. So for celebrities, skip fan out.
+        on: [celeb]
+        mark: {celeb: warn}
+        stats: [Celebrity, skipped]
+      - title: Hybrid read
+        text: When a user opens the feed, merge their prebuilt list with recent posts pulled from the few celebrities they follow. Best of both.
+        on: [reader, feeds, celeb]
+        flow: [[reader, feeds, def], [reader, celeb, def]]
+        mark: {reader: ok}
+        stats: [Merge, small pull]
+
+hld: |
+  1. **Post service** writes posts and media pointers, then publishes an event.
+  2. **Fan out workers** push post ids into followers' feed lists in Redis, capped at about 500 entries.
+  3. Users above a follower threshold, say 100 thousand, are **celebrities** and are not fanned out.
+  4. **Feed service** reads the user's list, merges in recent celebrity posts, optionally ranks, then hydrates post ids into full posts from a post cache.
+  5. Inactive users are skipped during fan out and their feed is rebuilt on demand when they return.
+
+diagrams:
+  - type: flow
+    title: Reading a feed
+    nodes: [["App", "box"], ["Feed service", "def"], ["Feed list plus celebrity posts", "raised"], ["Rank", "def"], ["Hydrate posts from cache", "raised"]]
+    edges: ["", "", "", ""]
+    caption: Ids first, then full posts in one batch. Never one database query per post.
+
+deep:
+  - ["Push versus pull", "**Fan out on write**, push, makes reads instant but costs a lot for users with many followers. **Fan out on read**, pull, gathers posts at read time, cheap writes but slow reads for users who follow many people. Real systems use a **hybrid**, push for normal users, pull for celebrities."]
+  - ["Ranking", "Chronological is simple. Ranked feeds score candidate posts with signals like closeness to the author, post age and engagement, using a model. Ranking happens at read time over a few hundred candidates."]
+  - ["Pagination", "Use a cursor, the last post id or score seen, never offsets. New posts arriving at the top must not shift later pages."]
+  - ["Cache memory", "300 million users times 500 ids times 8 bytes is about 1.2 TB, spread over a Redis cluster. Skipping inactive users cuts it a lot."]
+  - ["Deleted and private posts", "At hydration, drop posts that were deleted or are no longer visible to this reader. Do not rely on cleaning every feed list."]
+
+tradeoffs:
+  - ["Fan out on write", "Very fast reads.", "Expensive writes, wasted work for inactive followers, celebrity problem."]
+  - ["Fan out on read", "Cheap writes, always fresh.", "Slow reads that query many authors."]
+  - ["Hybrid", "Fast reads and bounded writes.", "Two code paths to merge."]
+  - ["Ranked feed", "More engaging.", "Complex, needs a model and data pipeline."]
+
+task:
+  intro: |
+    Explain the design and especially how you deal with users who have millions of followers.
+  items:
+    - q: Design the home feed. How do posts get into feeds, how is a feed read, and what changes for celebrities?
+      keys:
+        - ["Fan out on write into precomputed feed lists", [fan out on write, fan-out on write, push, precomput, feed list, timeline cache]]
+        - ["Feed stored as post ids in a cache like Redis", [redis, cache, ids, list]]
+        - ["Celebrities handled with fan out on read, a hybrid", [celebrit, hybrid, pull, fan out on read, famous]]
+        - ["Hydrate posts in batch and paginate with cursors", [hydrat, batch, cursor, paginat]]
+        - ["Async fan out with a queue and workers", [queue, worker, async, kafka]]
+      a: |
+        Posting saves the post and puts an event on a queue. Workers fan the post id out to each follower's feed list in a Redis cluster, capped at 500 ids, skipping inactive users. Reading takes the next 20 ids from the user's list with a cursor, merges in recent posts from any celebrities they follow, which are pulled at read time instead of pushed, optionally ranks them, and hydrates full posts in one batch from a post cache. Celebrities are users with more than about 100 thousand followers, since pushing to millions of lists is too slow and costly. New posts show up in feeds within seconds, which meets the eventual consistency requirement.
+      fb: The hybrid push and pull model is the answer interviewers expect. Giving a follower threshold number makes it concrete.
+
+interview:
+  - q: Why not just query the database for "latest posts from everyone I follow" each time?
+    keys:
+      - ["It touches many authors' data, maybe across many shards", [many, shard, scatter, hundreds, follow 200]]
+      - ["Sorting and merging at read time is slow at high read volume", [slow, sort, merge, latency, expensive]]
+      - ["Reads far outnumber writes, so precomputing pays off", [read, write, ratio, precomput, more reads]]
+    a: |
+      With 200 followees, that query hits posts from 200 authors, likely spread over many shards, then sorts and merges them, for every one of 30 thousand feed loads a second. It would be slow and very expensive. Since feeds are read far more often than posts are written, it is cheaper to do the work once at write time and keep each feed ready.
+    fb: Tie your answer to the read to write ratio. That is the core reason.
+  - q: A user follows 5,000 people. Does your design still work?
+    keys:
+      - ["Their feed list is still capped and filled by fan out", [cap, capped, still, fan out, list]]
+      - ["Feed size and write load grow, but per reader cost stays low", [cost, load, same, low]]
+      - ["Possibly rank or limit sources, and consider pull for heavy followers", [rank, limit, pull, sample, top]]
+    a: |
+      Yes. Fan out happens per author, so following 5,000 people just means more ids land in this user's list, which is capped at 500. Reads cost the same as for anyone else. The list will churn quickly, so older posts drop off sooner, which ranking can soften by keeping the most relevant candidates. If such users were common, I could switch them to pull plus caching, but usually the cap is enough.
+    fb: Checking the design against an extreme user, both the many followers and the many followees case, is a great habit.
+
+refs:
+  - "Raffi Krikorian. [Timelines at scale, Twitter](https://www.infoq.com/presentations/Twitter-Timeline-Scalability/)."
+  - "Alex Xu. System Design Interview volume 1, chapter 11, design a news feed system."
+  - "Meta Engineering. [Serving Facebook Multifeed](https://engineering.fb.com/2015/03/10/production-engineering/serving-facebook-multifeed-efficiency-performance-gains-through-redesign/)."

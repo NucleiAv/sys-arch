@@ -1,0 +1,197 @@
+slug: l08
+num: "08"
+level: 2
+short: Replication
+title: Replication, keeping copies of your data
+time: about 50 minutes
+tags: [leader, follower, failover, lag]
+lede: Copies of your database protect you when a machine dies and let more machines answer reads. But copies can fall behind. Learn the main setups and their surprises.
+
+idea: |
+  **Replication** means keeping the same data on more than one machine. It does two jobs. If one machine dies, another has the data, so you stay up. And many copies can answer reads, so you can serve more users.
+
+  The most common setup is **leader and followers**. All writes go to one machine, the **leader**. It sends every change to the **followers**, also called replicas. Reads can go to any of them.
+
+  The catch is **replication lag**. A follower may be a little behind the leader, usually milliseconds, sometimes seconds. So a user might save something and then not see it.
+
+  !eli5 A teacher writes on the main board, and helpers copy it onto boards in other rooms. Students in any room can read. But a helper who copies slowly shows yesterday's sentence for a moment.
+
+scenes:
+  - title: Leader, followers and the read your writes surprise
+    stats: [Step, Leader has, Follower has]
+    nodes:
+      user: {label: User, x: 0, y: 1, kind: box}
+      app: {label: App, x: 2, y: 1, kind: def}
+      lead: {label: Leader, x: 4, y: 0, kind: def, tag: takes writes}
+      f1: {label: Follower 1, x: 6, y: 0, kind: raised, tag: reads}
+      f2: {label: Follower 2, x: 4, y: 2, kind: raised, tag: reads}
+    links: [[user, app], [app, lead], [lead, f1], [lead, f2], [app, f2]]
+    steps:
+      - title: The user changes their name
+        text: The write goes to the leader. The leader saves it and says OK.
+        on: [app, lead]
+        flow: [[user, app, ink], [app, lead, def]]
+        stats: [Write, Sam to Samira, Sam]
+      - title: The leader streams the change
+        text: The change travels to the followers from the leader's log. It usually takes a few milliseconds, but under load it can take seconds.
+        on: [lead, f1, f2]
+        flow: [[lead, f1, ink], [lead, f2, ink]]
+        stats: [Replicating, Samira, on its way]
+      - title: The user refreshes too soon
+        text: The read goes to follower 2, which has not got the change yet. The user sees their old name and thinks the save failed.
+        on: [app, f2]
+        flow: [[user, app, ink], [app, f2, atk]]
+        mark: {f2: warn}
+        stats: [Stale read, Samira, Sam]
+      - title: Read your own writes
+        text: Fix it by sending a user's reads to the leader for a short time after they write, or by waiting until the follower has caught up to that write.
+        on: [app, lead]
+        flow: [[user, app, ink], [app, lead, def]]
+        mark: {lead: ok}
+        stats: [Fixed, Samira, Samira soon]
+      - title: The leader dies
+        text: Followers notice the missing heartbeat. One is promoted to be the new leader. This is **failover**. Writes that the dead leader never sent on can be lost if replication was asynchronous.
+        on: [f1]
+        mark: {lead: bad, f1: ok}
+        stats: [Failover, gone, Follower 1 leads]
+
+terms:
+  - [Replica, "A copy of the database on another machine."]
+  - [Leader, "The one copy that accepts writes. Also called primary."]
+  - [Follower, "A copy that receives changes from the leader. Also called secondary or read replica."]
+  - [Replication lag, "How far behind a follower is."]
+  - [Synchronous replication, "The leader waits for a follower to confirm before saying OK. Safer, slower."]
+  - [Asynchronous replication, "The leader says OK at once and sends changes later. Faster, can lose recent writes on failover."]
+  - [Failover, "Promoting a follower when the leader dies."]
+  - [Split brain, "Two machines both think they are the leader and both take writes. Very bad."]
+  - [Quorum, "A majority. With 3 copies, writing to 2 and reading from 2 means a read always sees the latest write."]
+
+how: |
+  ### Three setups
+
+  | Setup | How writes work | Good for | Hard part |
+  | --- | --- | --- | --- |
+  | Single leader | One leader takes all writes | Most apps, simple | Leader is a write bottleneck and failover needs care |
+  | Multi leader | Several leaders, often one per region | Writes from many regions, offline apps | Two leaders can change the same thing, conflicts |
+  | Leaderless | Write to several copies, read from several | Always on, Cassandra and DynamoDB style | Tuning quorums, fixing stale copies |
+
+  ### Sync or async
+
+  Most systems use **semi sync**. The leader waits for one follower to confirm, and the rest catch up in the background. That way at least two machines have every write, without waiting for all.
+
+  ### Quorums in leaderless systems
+
+  With **N** copies, write to **W** of them and read from **R** of them. If **W + R > N**, every read overlaps at least one copy with the latest write. A common choice is N = 3, W = 2, R = 2.
+
+  ### Handling conflicts
+
+  If two leaders change the same record, someone must win. **Last write wins** uses timestamps, simple but can silently drop a change. Better options merge the changes, like adding both items to a cart, or use special data types called **CRDTs** that always merge cleanly.
+
+  !warn Replication is not a backup. If someone runs `DELETE FROM users`, the delete is copied to every replica in milliseconds. You still need backups you can restore from.
+
+diagrams:
+  - type: flow
+    title: Quorum with three copies
+    nodes: [["Write to 2 of 3", "def"], ["Copies A and B have it", "raised"], ["Read from 2 of 3", "def"], ["At least one has the newest", "box"]]
+    edges: ["", "", ""]
+    caption: Because 2 plus 2 is more than 3, the copies you read from always overlap the copies you wrote to.
+
+life:
+  - ["GitHub's 24 hour outage in 2018", "A 43 second network cut between data centers led to an automatic failover. Both sides had taken writes, and the data had to be reconciled by hand. Failover sounds simple and is one of the hardest parts of running databases."]
+  - ["A profile that looks unchanged", "Users edited their bio and saw the old one. Reads went to replicas that lagged under load. The fix was routing a user's reads to the leader for 10 seconds after any write they made."]
+  - ["Read replicas save a news site", "On election night reads jumped 20 times. The site added 5 read replicas and sent all article reads to them, while the leader only handled comments and edits."]
+
+tradeoffs:
+  - ["Synchronous", "No lost writes on failover.", "Every write waits for a follower. A slow follower slows everything."]
+  - ["Asynchronous", "Fast writes.", "Recent writes can be lost if the leader dies."]
+  - ["Read from followers", "Many more reads served.", "Stale reads, need read your writes tricks."]
+  - ["Multi leader", "Local writes in every region, works offline.", "Write conflicts you must resolve."]
+  - ["Leaderless with quorums", "No single leader to fail, always writable.", "More complex reads, tuning, and repair."]
+
+mistakes:
+  - Treating replicas as backups.
+  - Sending a read to a replica right after the same user wrote.
+  - Automatic failover without fencing, which can cause split brain.
+  - Assuming replication lag is always tiny. Watch it as a metric and alert on it.
+
+quiz:
+  - q: A user posts a comment and refreshes. The comment is missing, then appears a second later. Why?
+    opts: ["The comment was lost", "The read hit a follower that had not caught up yet", "The cache is full"]
+    a: 1
+    why: That is replication lag. Fix it with read your own writes.
+  - type: fill
+    q: Promoting a follower to leader when the leader dies is called ____.
+    a: ["failover", "fail over"]
+    why: Failover keeps the database writable after the leader dies.
+  - type: num
+    q: You have 5 copies. You write to 3. What is the smallest read count R so that every read sees the latest write?
+    a: 3
+    tol: 0
+    why: You need W plus R greater than N. 3 plus 3 is 6, which is more than 5. 3 plus 2 is only 5.
+  - q: Someone accidentally deletes a table. Do replicas save you?
+    opts: ["Yes, the replicas still have it", "No, the delete is copied to all replicas too"]
+    a: 1
+    why: Replication copies mistakes as faithfully as good changes. Backups are separate.
+  - type: fill
+    q: Two machines both acting as leader and both taking writes is called split ____.
+    a: ["brain"]
+    why: Split brain causes conflicting data. Systems use fencing and majority votes to prevent it.
+
+interview:
+  - q: Explain leader follower replication and the problems it brings.
+    keys:
+      - ["Writes go to the leader, which streams changes to followers", [leader, primary, stream, log, follower]]
+      - ["Followers serve reads and take over on failure", [read, failover, promote, take over]]
+      - ["Replication lag causes stale reads", [lag, stale, behind, delay]]
+      - ["Read your own writes or similar fixes", [read your, own writes, route, leader for]]
+      - ["Failover risks like lost writes or split brain", [split brain, lost, lose, async, fencing]]
+    a: |
+      All writes go to one leader, which records them in its log and streams them to followers. Followers serve reads, which spreads read load, and one can be promoted if the leader dies. The problems are mostly about time. Followers lag, so users can read stale data, including their own fresh writes. I fix the worst case with read your own writes, sending a user to the leader for a short time after they write, or reading from a follower only after it has reached their write position. Failover is the other risk. With asynchronous replication, writes not yet copied are lost, and if the old leader comes back thinking it is still leader you get split brain. Semi sync replication and fencing the old leader reduce those risks.
+    fb: Strong answers name both kinds of trouble, stale reads and failover risks, and give a fix for each.
+  - q: What is a quorum and why does W plus R greater than N work?
+    keys:
+      - ["N copies, write to W, read from R", [n copies, w, r, copies, replicas]]
+      - ["When W plus R is greater than N the sets overlap", [overlap, intersect, at least one]]
+      - ["So a read always includes a copy with the latest write", [latest, newest, recent, fresh]]
+      - ["Example such as N 3, W 2, R 2 and the trade-off of tuning", [3, 2, tune, latency, availab]]
+    a: |
+      With N copies of each item, a write counts as done when W copies confirm, and a read asks R copies and takes the newest answer. If W plus R is more than N, the group you read from must share at least one copy with the group you wrote to, so you always see the latest write. With 3 copies, W = 2 and R = 2 is the usual choice. Lowering W makes writes faster but reads riskier, and lowering R does the opposite.
+    fb: Draw three boxes and circle two for the write and two for the read. The overlap explains itself.
+
+desk:
+  title: The photo app that loses likes
+  lede: A photo app with database replicas has strange bugs. Diagnose them.
+  situation: |
+    **Snapline** runs one leader and three async followers. All reads go to followers. Users complain their new posts vanish after posting, and after last week's failover, about 200 likes disappeared.
+  rounds:
+    - title: Round 1. Diagnose
+      items:
+        - q: Why do new posts seem to vanish right after posting?
+          opts: ["The posts were deleted", "The reads go to followers that lag behind the leader", "The app has no internet"]
+          a: 1
+          why: Classic replication lag right after a write.
+        - q: Why did likes disappear after the failover?
+          opts: ["Async replication had not copied them to the new leader before the old one died", "Likes are not saved", "The cache cleared them"]
+          a: 0
+          why: Async means the leader confirmed writes that followers had not received yet.
+    - title: Round 2. Fix
+      items:
+        - type: sort
+          q: Match each fix to the problem.
+          rows:
+            - ["Read from the leader for 10 seconds after a user posts", "Vanishing posts"]
+            - ["Semi sync, wait for one follower before confirming", "Lost likes"]
+            - ["Alert when lag goes above 2 seconds", "Spot trouble early"]
+          opts: ["Vanishing posts", "Lost likes", "Spot trouble early"]
+          why: Each fix targets one cause. Monitoring lag makes the others measurable.
+  card: |
+    - Leader writes, followers read.
+    - Lag is real, read your own writes.
+    - Semi sync to avoid losing writes.
+    - W plus R greater than N.
+    - Replicas are not backups.
+
+refs:
+  - "Martin Kleppmann. Designing Data-Intensive Applications, chapter 5, replication."
+  - "GitHub. [October 21 post-incident analysis](https://github.blog/news-insights/company-news/oct21-post-incident-analysis/)."
+  - "Amazon. [Dynamo, Amazon's highly available key value store](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf)."

@@ -1,0 +1,202 @@
+slug: l13
+num: "13"
+level: 3
+short: Queues and event streams
+title: Message queues, pub sub and event streams
+time: about 55 minutes
+tags: [queues, Kafka, async, at least once]
+lede: Not every job must finish before you answer the user. Queues let you hand work off, smooth out spikes and let parts of a system fail without taking down the rest.
+
+idea: |
+  When you order food, the app says "order placed" in a second. But the restaurant still has to accept it, a rider must be found, and you need a text message. None of that should make you wait. The app puts a message on a **queue** and moves on. **Workers** pick up messages and do the slow jobs in the background.
+
+  This is called **asynchronous** processing. It brings three gifts. Users wait less. Spikes get absorbed, since the queue just grows a little and workers catch up. And if the SMS service is down, orders still work, the messages wait in the queue.
+
+  !eli5 A restaurant waiter does not cook your meal while you watch. They pin your order on the kitchen rail and go take the next order. Cooks take tickets from the rail at their own pace. The rail is the queue.
+
+scenes:
+  - title: An order with a queue in the middle
+    stats: [Step, User waiting, Queue length]
+    nodes:
+      user: {label: Customer, x: 0, y: 1, kind: box}
+      api: {label: Order service, x: 2, y: 1, kind: def}
+      q: {label: Queue, x: 4, y: 1, kind: raised, tag: order events}
+      w1: {label: Notify worker, x: 6, y: 0, kind: def}
+      w2: {label: Rider worker, x: 6, y: 2, kind: def}
+    links: [[user, api], [api, q], [q, w1], [q, w2]]
+    steps:
+      - title: Place the order
+        text: The order service saves the order and publishes an "order placed" event to the queue.
+        on: [user, api, q]
+        flow: [[user, api, ink], [api, q, def]]
+        stats: [Publish, 1 second, "1"]
+      - title: Answer at once
+        text: The user gets "order placed" right away. The slow jobs have not even started.
+        on: [user, api]
+        flow: [[api, user, def]]
+        mark: {user: ok}
+        stats: [Reply, done, "1"]
+      - title: Workers pick it up
+        text: The notification worker sends an SMS. The rider worker finds a rider. Each runs at its own pace.
+        on: [q, w1, w2]
+        flow: [[q, w1, ink], [q, w2, ink]]
+        stats: [Consume, done, "0"]
+      - title: The SMS provider is down
+        text: The notify worker fails. It does not confirm the message, so the queue keeps it and offers it again later. Orders keep flowing.
+        on: [w1]
+        flow: [[q, w1, atk]]
+        mark: {w1: bad}
+        stats: [Retry later, still done, growing]
+      - title: Poison message
+        text: One message fails every time because its data is broken. After 5 tries it moves to a **dead letter queue** so it does not block others, and someone looks at it.
+        on: [q]
+        mark: {q: warn}
+        stats: [Dead letter, done, back to normal]
+
+terms:
+  - [Producer, "The part that sends messages."]
+  - [Consumer, "The part that receives and processes them. Also called a worker."]
+  - [Message queue, "A buffer where each message is handled by one consumer. RabbitMQ, Amazon SQS."]
+  - [Pub sub, "Publish subscribe. Each message goes to every interested subscriber group."]
+  - [Event stream, "An append-only log of events that consumers read at their own position and can replay. Kafka."]
+  - [Acknowledge, "The consumer tells the queue it finished, so the message can be removed."]
+  - [At least once, "Every message is delivered, but maybe more than once. The common guarantee."]
+  - [Dead letter queue, "Where messages go after failing too many times."]
+  - [Backpressure, "Slowing producers down when consumers cannot keep up."]
+
+how: |
+  ### Queue, pub sub or stream
+
+  | Kind | Who gets a message | Kept after reading? | Example |
+  | --- | --- | --- | --- |
+  | Work queue | One worker out of many | No | SQS, RabbitMQ, resize this image |
+  | Pub sub | Every subscriber | No | SNS, Redis pub sub, a new order fans out |
+  | Event stream | Every consumer group, each at its own position | Yes, for days | Kafka, Kinesis, Pulsar |
+
+  ### How Kafka style streams scale
+
+  A **topic** is split into **partitions**. Each partition is an ordered log. Messages with the same key, like the same order id, always go to the same partition, so their order is kept. Consumers in a group share the partitions, so more partitions means more parallel consumers. Since the log is kept, a new service can read history from the start.
+
+  ### Delivery guarantees
+
+  - **At most once.** Might lose messages. Rarely what you want.
+  - **At least once.** Never lost, maybe duplicated. The usual choice.
+  - **Exactly once.** Possible inside some systems with care, but end to end it usually means at least once plus **idempotent consumers**, which remember what they already processed.
+
+  !key Assume every message can arrive twice. Make consumers idempotent, for example by checking "did I already send the SMS for order 81?" before sending.
+
+  ### Ordering
+
+  Global order across a whole busy system is expensive. Order per key, per order or per user, is cheap and usually enough.
+
+diagrams:
+  - type: split
+    title: One event, many reactions
+    source: ["Order placed event", "def"]
+    targets:
+      - ["Send confirmation", "box", "notification service"]
+      - ["Find a rider", "box", "dispatch service"]
+      - ["Update analytics", "box", "data pipeline"]
+      - ["Award loyalty points", "box", "rewards service"]
+    caption: The order service does not know or care who listens. New features subscribe without touching it.
+
+life:
+  - ["LinkedIn built Kafka", "LinkedIn needed to move huge streams of activity events to many systems. They built Kafka as a durable, replayable log and open sourced it. It now powers event pipelines at thousands of companies."]
+  - ["Duplicate welcome emails", "A queue redelivered messages after a worker crashed mid task. Users got two welcome emails. Storing processed message ids and skipping repeats fixed it."]
+  - ["A queue saves a flash sale", "Orders spiked 30 times for five minutes. The order service just wrote to a queue, and payment workers drained it over 15 minutes. Nothing crashed. Customers got confirmations a few minutes late."]
+
+tradeoffs:
+  - ["Synchronous call", "Simple, immediate answer and errors.", "Caller waits, and fails when the other side fails."]
+  - ["Queue", "Absorbs spikes, isolates failures, retries.", "Eventual results, more moving parts, harder debugging."]
+  - ["Work queue", "Easy scaling of workers.", "Messages are gone after processing, no replay."]
+  - ["Event stream", "Replay, many independent consumers, ordered per key.", "More to run and tune, partitions limit parallelism."]
+
+mistakes:
+  - Assuming a message is delivered exactly once.
+  - No dead letter queue, so one bad message blocks everything.
+  - Putting a queue where the user really needs an immediate answer, like a password check.
+  - Not watching queue length. A growing queue is an early warning.
+  - Needing a strict global order when per key order would do.
+
+quiz:
+  - q: Why put sending emails on a queue instead of sending them inside the signup request?
+    opts: ["Emails are more secure that way", "Signup stays fast and still works when the email service is slow or down", "Queues make emails smaller"]
+    a: 1
+    why: Async work removes slow and flaky parts from the user's path.
+  - type: fill
+    q: Messages that fail too many times are moved to a dead ____ queue.
+    a: ["letter"]
+    why: A dead letter queue keeps bad messages from blocking the rest.
+  - type: fill
+    q: The usual delivery guarantee, never lost but maybe repeated, is at ____ once.
+    a: ["least"]
+    why: At least once means consumers must handle duplicates.
+  - q: In Kafka, how do you keep all events for one order in order?
+    opts: ["Use one topic per order", "Use the order id as the message key so they share a partition", "It is impossible"]
+    a: 1
+    why: Same key, same partition, same order.
+  - q: Five services need to react to every new user signup. Which fits?
+    opts: ["Work queue, one worker gets it", "Pub sub or event stream, every service gets it", "Direct calls to all five"]
+    a: 1
+    why: Each service needs its own copy, which is what pub sub and streams give.
+
+interview:
+  - q: When would you put a message queue between two services?
+    keys:
+      - ["When the caller does not need the result right away", [async, right away, immediate, wait, background, later]]
+      - ["To absorb spikes and smooth load", [spike, burst, smooth, buffer, peak]]
+      - ["To isolate failures and retry", [fail, down, retry, isolat, decouple]]
+      - ["Trade-offs like duplicates, eventual results and complexity", [duplicate, idempot, eventual, complex, order]]
+    a: |
+      When the work does not have to finish before I answer the user, like sending emails, resizing images or updating analytics. A queue lets the user get a fast reply, absorbs spikes because workers drain the backlog at their own pace, and isolates failures, since messages wait and are retried if a downstream service is down. The costs are that results arrive later, messages may be delivered more than once so consumers must be idempotent, ordering needs care, and there is one more system to monitor. If the user needs the answer to continue, like a payment approval at checkout, I keep it synchronous.
+    fb: The best answers say both when to use a queue and when not to.
+  - q: How do you build a consumer that is safe with at least once delivery?
+    keys:
+      - ["Make processing idempotent", [idempot]]
+      - ["Track processed message ids or use a unique key", [message id, processed, dedup, unique, seen]]
+      - ["Acknowledge only after the work is done", [ack, acknowledge, after, commit]]
+      - ["Retries with backoff and a dead letter queue", [retry, backoff, dead letter, dlq]]
+    a: |
+      I assume every message can arrive twice. The consumer only acknowledges after the work is done, so a crash means redelivery, not loss. The work itself is idempotent. Either the action is naturally safe to repeat, like setting a status, or I record each processed message id in a table with a unique rule, in the same transaction as the work, and skip ids I have seen. Failures retry with exponential backoff, and after a few tries the message goes to a dead letter queue with an alert.
+    fb: Saying "acknowledge after, not before" and "dedup in the same transaction" are the two details that show depth.
+
+desk:
+  title: The video upload pipeline
+  lede: A video site processes uploads synchronously and it keeps timing out. Redesign it with queues.
+  situation: |
+    **ClipCraft** receives a video upload, then in the same request transcodes it into 4 sizes, makes a thumbnail, scans it for banned content and emails the uploader. Requests take 6 minutes and often time out.
+  rounds:
+    - title: Round 1. Split the work
+      items:
+        - type: sort
+          q: Which steps stay in the upload request, and which go async?
+          rows:
+            - ["Save the file to storage and create a video record", "In the request"]
+            - ["Transcode into 4 sizes", "Async worker"]
+            - ["Make a thumbnail", "Async worker"]
+            - ["Email the uploader when ready", "Async worker"]
+          opts: ["In the request", "Async worker"]
+          why: The request only does what is needed to say "got it". Everything slow moves to workers.
+        - q: Four different services need the "video uploaded" event. What should carry it?
+          opts: ["A work queue", "A pub sub topic or event stream", "A database poll every minute"]
+          a: 1
+          why: Each service gets its own copy and works independently.
+    - title: Round 2. Failure
+      items:
+        - q: A worker crashes halfway through transcoding. What happens with at least once delivery?
+          opts: ["The video is lost", "The message is redelivered and another worker starts again", "The upload is deleted"]
+          a: 1
+          why: Without an acknowledgement, the queue hands the message to another worker.
+        - type: open
+          q: How do you stop the uploader getting two "your video is ready" emails?
+          a: "Make the email step idempotent. Before sending, check and set a flag like email_sent for this video id in one atomic step, or store the message id as processed. If it is already set, skip."
+  card: |
+    - Answer fast, do slow work async.
+    - Queues absorb spikes and isolate failures.
+    - At least once means idempotent consumers.
+    - Dead letter queue and alerts on queue length.
+
+refs:
+  - "Jay Kreps. [The log, what every software engineer should know about real-time data](https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying)."
+  - "Apache Kafka. [Introduction](https://kafka.apache.org/intro)."
+  - "AWS. [Amazon SQS dead letter queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)."

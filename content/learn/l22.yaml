@@ -1,0 +1,198 @@
+slug: l22
+num: "22"
+level: 5
+short: Batch and stream processing
+title: Batch and stream processing, making sense of big data
+time: about 50 minutes
+tags: [MapReduce, Spark, Flink, windows]
+lede: Apps produce mountains of events. Some questions can wait until tonight, others need an answer in seconds. Learn the two ways to process big data and how they fit together.
+
+idea: |
+  Every click, view, payment and sensor reading is an **event**. Turning billions of events into useful answers, like top songs this week or fraud right now, is **data processing**.
+
+  **Batch processing** collects data over a period, then crunches it all at once. "Every night, count yesterday's sales by city." Simple, thorough, but the answer is hours old.
+
+  **Stream processing** handles each event as it arrives. "Flag a card used in two countries within 10 minutes." Answers in seconds, but harder to build correctly.
+
+  !eli5 Batch is doing all your laundry on Sunday. Stream is washing each sock the moment it gets dirty. Sunday laundry is easier. Instant washing means you always have clean socks.
+
+scenes:
+  - title: Counting song plays, batch and stream
+    stats: [Path, Freshness]
+    nodes:
+      app: {label: Music apps, x: 0, y: 1, kind: box, tag: play events}
+      log: {label: Event log, x: 2, y: 1, kind: raised, tag: Kafka}
+      lake: {label: Data lake, x: 4, y: 0, kind: raised, tag: files in object storage}
+      batch: {label: Nightly batch job, x: 6, y: 0, kind: def, tag: Spark}
+      stream: {label: Stream job, x: 4, y: 2, kind: def, tag: Flink}
+      dash: {label: Charts and alerts, x: 6, y: 2, kind: def}
+    links: [[app, log], [log, lake], [lake, batch], [log, stream], [stream, dash], [batch, dash]]
+    steps:
+      - title: Every play is an event
+        text: Each play sends a small event, user, song, time, country, into a durable event log.
+        on: [app, log]
+        flow: [[app, log, ink]]
+        stats: [Collect, as it happens]
+      - title: Stream path
+        text: A stream job reads events as they arrive and keeps a running count per song in 1 minute windows. The trending chart updates every minute.
+        on: [log, stream, dash]
+        flow: [[log, stream, def], [stream, dash, def]]
+        stats: [Stream, about 1 minute]
+      - title: Batch path
+        text: Events are also saved as files in a data lake. Every night a batch job reads the whole day, removes duplicates, joins with song and artist data, and computes exact royalty counts.
+        on: [log, lake, batch]
+        flow: [[log, lake, ink], [lake, batch, ink]]
+        stats: [Batch, next morning]
+      - title: Both feed the answers
+        text: The fast stream count is good enough for trending. The careful batch count is what artists get paid on. Each path does the job it is best at.
+        on: [batch, stream, dash]
+        flow: [[batch, dash, def], [stream, dash, def]]
+        mark: {dash: ok}
+        stats: [Serve, fast and exact]
+
+terms:
+  - [Batch processing, "Processing a large, fixed set of data in one run, often on a schedule."]
+  - [Stream processing, "Processing events continuously as they arrive."]
+  - [MapReduce, "Split work into map steps that run in parallel on pieces of data, then reduce steps that combine results."]
+  - [Data lake, "Raw data stored cheaply as files, usually in object storage."]
+  - [Data warehouse, "Cleaned, structured data built for analytics queries. BigQuery, Snowflake, Redshift."]
+  - [ETL, "Extract, transform, load. Moving data from sources, cleaning it, and loading it somewhere useful."]
+  - [Window, "A slice of time a stream job groups events by, like every 5 minutes."]
+  - [Event time, "When the event actually happened, versus when it was processed."]
+  - [Watermark, "The stream system's guess that it has seen all events up to a certain time."]
+  - [CDC, "Change data capture. Turning every database change into an event."]
+
+how: |
+  ### MapReduce in one picture
+
+  To count words in a billion documents, the **map** step runs on many machines, each turning its documents into pairs like `(cat, 1)`. The **shuffle** groups all pairs with the same word together. The **reduce** step adds them up, `(cat, 48211)`. Spark does the same idea much faster by keeping data in memory.
+
+  ### Windows in streams
+
+  | Window | Example |
+  | --- | --- |
+  | Tumbling, fixed and not overlapping | Plays per minute |
+  | Sliding, overlapping | Average over the last 10 minutes, updated every minute |
+  | Session, based on gaps | One user's visit, ends after 30 minutes of quiet |
+
+  ### Late events
+
+  A phone in a tunnel sends events 10 minutes late. Should they count in the window when they happened, or when they arrived? Good stream systems use **event time** and **watermarks** to wait a little for stragglers, and update results when late events arrive.
+
+  ### Architectures
+
+  - **Lambda architecture**. Run both a batch path for exact results and a stream path for fast ones, then merge. Powerful, but two codebases.
+  - **Kappa architecture**. Only a stream path. To recompute, replay the event log from the start. One codebase.
+
+  ### Change data capture
+
+  Instead of apps writing to both the database and the event log, **CDC** tools like Debezium read the database's own log and publish each change as an event. This keeps search indexes, caches and warehouses in sync without extra code in the app.
+
+  !key Keep raw events forever in cheap storage if you can. Bugs in processing are common, and with raw events you can always fix the code and recompute.
+
+diagrams:
+  - type: flow
+    title: MapReduce word count
+    nodes: [["Split documents", "box"], ["Map, emit word and 1", "def"], ["Shuffle, group by word", "raised"], ["Reduce, add counts", "def"], ["Results", "box"]]
+    edges: ["", "", "", ""]
+    caption: Map and reduce both run in parallel on many machines. The shuffle moves data so each word ends up in one place.
+
+life:
+  - ["Google's MapReduce", "Google described MapReduce in 2004 to build its search index from the whole web on thousands of cheap machines. Hadoop copied the idea and started the big data era."]
+  - ["Fraud detection in seconds", "Card companies run stream jobs that score every transaction as it happens, checking things like many purchases in a short time or two distant countries within minutes, and block suspicious ones before they complete."]
+  - ["Uber's real time pricing", "Surge pricing needs supply and demand per small area every minute. Stream processing over rider and driver events computes it continuously."]
+
+tradeoffs:
+  - ["Batch", "Simple, exact, easy to rerun.", "Results are hours old."]
+  - ["Stream", "Results in seconds.", "Harder, late and duplicate events, state to manage."]
+  - ["Lambda", "Fast and exact answers.", "Two code paths to keep in agreement."]
+  - ["Kappa", "One code path, replay to fix.", "Needs a long retained, replayable log."]
+  - ["Data warehouse", "Fast analytics with SQL.", "Data must be modelled and loaded first."]
+
+mistakes:
+  - Running heavy analytics queries on the main production database.
+  - Using processing time when event time matters, so late events land in the wrong window.
+  - Throwing away raw events and losing the ability to recompute.
+  - Building a stream pipeline when a nightly batch would answer the question fine.
+  - Not handling duplicate events in at least once pipelines.
+
+quiz:
+  - q: A company needs yesterday's total sales by city for a morning report. Best fit?
+    opts: ["Stream processing", "A nightly batch job", "A cache"]
+    a: 1
+    why: The answer can wait until morning, and batch is simpler and exact.
+  - type: fill
+    q: Turning every database change into an event is called change data ____.
+    a: ["capture"]
+    why: CDC keeps other systems in sync from the database's own log.
+  - q: In MapReduce, what does the shuffle step do?
+    opts: ["Encrypts data", "Groups all values with the same key together for the reducer", "Deletes duplicates"]
+    a: 1
+    why: The shuffle moves data so each reducer gets every value for its keys.
+  - type: fill
+    q: A fixed, non overlapping time window, like each whole minute, is a ____ window.
+    a: ["tumbling", "fixed"]
+    why: Tumbling windows cover time with no gaps and no overlaps.
+  - q: An event arrives 10 minutes late. What helps put it in the right window?
+    opts: ["Using processing time", "Using event time with watermarks", "Dropping it"]
+    a: 1
+    why: Event time records when it happened. Watermarks decide how long to wait for stragglers.
+
+interview:
+  - q: How would you build a real time dashboard of views per video, updated every minute, for a site with billions of views a day?
+    keys:
+      - ["Clients send view events to a durable log like Kafka", [kafka, kinesis, log, event, stream]]
+      - ["Stream processor counts per video in time windows", [flink, spark streaming, stream process, window, tumbling, count]]
+      - ["Pre aggregate or partition by video id to scale", [partition, pre aggregat, key, shard, combine]]
+      - ["Store results in a fast store for the dashboard", [redis, cassandra, druid, pinot, clickhouse, store results, time series]]
+      - ["Handle late and duplicate events, and reconcile with batch", [late, duplicate, watermark, event time, batch, reconcil, exact]]
+    a: |
+      Players send view events to a Kafka topic partitioned by video id. A Flink job reads them, keys by video id and counts views in 1 minute tumbling windows using event time, with a watermark that waits a little for late events. To handle hot videos, it pre aggregates in each task before the final sum. Results go to a fast store built for time series, like Druid, ClickHouse or Redis, which the dashboard reads. Since delivery is at least once, the counts are approximate. A nightly batch job over the raw events in the data lake computes exact counts for anything that matters, like creator payouts.
+    fb: Splitting "fast and approximate" from "slow and exact" shows you understand why both paths exist.
+  - q: What is the difference between a data lake and a data warehouse?
+    keys:
+      - ["A data lake stores raw data cheaply as files in many formats", [raw, files, cheap, object storage, any format]]
+      - ["A warehouse stores cleaned, structured data for fast SQL analytics", [clean, structured, sql, analytic, schema]]
+      - ["Lake is schema on read, warehouse schema on write", [schema on read, schema on write, schema]]
+      - ["They are often used together, lakehouse", [together, lakehouse, load from, both]]
+    a: |
+      A data lake is a cheap place, usually object storage, where raw data of any shape is dumped as files, logs, JSON, images. You decide its structure when you read it. A data warehouse holds cleaned, modelled tables, built for fast SQL questions by analysts. Its structure is decided when the data is loaded. Most companies use both. Raw data lands in the lake, and pipelines clean it into the warehouse. Lakehouse tools try to give warehouse style tables directly on top of the lake.
+    fb: The phrases "schema on read" and "schema on write" are the crisp way to say it.
+
+desk:
+  title: Analytics for a delivery company
+  lede: A delivery company wants both live dashboards and accurate monthly reports. Design the pipelines.
+  situation: |
+    **Boxtrail** delivers 2 million parcels a day. Drivers' apps send scan events at each stop. Operations wants a live map of late deliveries per city. Finance wants exact monthly driver pay. Analysts run heavy reports on the main Postgres database, which slows down the app.
+  rounds:
+    - title: Round 1. Pick the path
+      items:
+        - type: sort
+          q: Batch or stream for each need?
+          rows:
+            - ["Live map of late deliveries per city", "Stream"]
+            - ["Exact monthly driver pay", "Batch"]
+            - ["Alert when a depot falls 30 minutes behind", "Stream"]
+            - ["Quarterly delivery time report", "Batch"]
+          opts: ["Stream", "Batch"]
+          why: Seconds matter for live operations. Exactness and simplicity matter for money and reports.
+        - q: How do you stop analysts from slowing the app's database?
+          opts: ["Ask them to run reports at night", "Copy data to a warehouse with CDC and run reports there", "Add more indexes"]
+          a: 1
+          why: Analytics belong in a warehouse, kept in sync from the database log.
+    - title: Round 2. Late scans
+      items:
+        - type: open
+          q: Drivers in areas with no signal upload scans hours later. How does that affect the live map and the monthly pay?
+          a: "The live map uses event time with a watermark of a few minutes, so very late scans miss their live window, and the map may briefly show a delivery as late. The monthly batch reads all events from the lake by event time, so pay is exact. That is why money uses the batch path."
+  card: |
+    - Batch for exact and can wait, stream for now.
+    - Event time and watermarks for late data.
+    - CDC to sync warehouses and indexes.
+    - Keep raw events to recompute.
+
+refs:
+  - "Jeffrey Dean and Sanjay Ghemawat. [MapReduce, simplified data processing on large clusters](https://research.google/pubs/mapreduce-simplified-data-processing-on-large-clusters/)."
+  - "Tyler Akidau. [Streaming 101](https://www.oreilly.com/radar/the-world-beyond-batch-streaming-101/)."
+  - "Apache Flink. [Timely stream processing](https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/)."
+  - "Debezium. [Change data capture](https://debezium.io/documentation/reference/stable/index.html)."

@@ -1,0 +1,179 @@
+slug: d04
+num: "04"
+short: Notification system
+title: Design a notification system
+time: about 60 minutes
+tags: [push, email, SMS, queues]
+lede: Send the right message to the right person on the right channel, push, SMS or email, without duplicates, without spam, and without losing the important ones.
+
+ask: |
+  Many teams in a company want to notify users. Order shipped, password changed, a friend liked your photo, a weekly digest. Build one shared service that takes these requests and delivers them through push, SMS and email providers.
+
+reqs:
+  func:
+    - Send push, SMS and email notifications.
+    - Users choose which notifications and channels they want.
+    - Templates with variables, in many languages.
+    - Scheduled sends and bulk campaigns.
+  nonfunc:
+    - Critical messages like one time codes arrive in seconds.
+    - No duplicates, no lost critical messages.
+    - Absorb huge bursts, like a campaign to 50 million users.
+    - Respect provider rate limits and user quiet hours.
+  out:
+    - Building our own SMS carrier or push network. We use providers like APNs, FCM, Twilio and SES.
+
+estimate:
+  intro: |
+    10 million push, 1 million SMS and 5 million emails a day, plus occasional campaigns to 50 million users.
+  items:
+    - type: num
+      q: Average notifications a second, all channels? 16 million a day.
+      a: 160
+      tol: 20
+      unit: per second
+      why: 16 million divided by 100 thousand is 160 a second. Small on average.
+    - type: num
+      q: A campaign to 50 million users must finish within 1 hour. How many sends a second?
+      a: 14000
+      tol: 1500
+      unit: per second
+      why: 50 million divided by 3,600 seconds is about 14 thousand a second. Bursts, not averages, size this system.
+  after: |
+    !key The average is tiny and the bursts are huge. Queues in front of channel workers are the heart of this design, so bursts wait in line instead of breaking things.
+
+api: |
+  ```
+  POST /v1/notifications
+    {
+      "user_id": "u42",
+      "type": "order_shipped",
+      "priority": "high",
+      "data": { "order_id": "o9", "eta": "Friday" },
+      "idempotency_key": "order_shipped:o9"
+    }
+    reply 202 Accepted { "notification_id": "n123" }
+  ```
+
+  It returns `202 Accepted`, meaning "queued", not "delivered". Delivery happens later.
+
+data: |
+  | Store | Holds |
+  | --- | --- |
+  | user preferences | per user, per type, per channel on or off, quiet hours, time zone |
+  | device tokens | user to push tokens for each device |
+  | templates | type, language, channel, text with variables |
+  | notification log | id, user, type, status per channel, timestamps, for dedup and audit |
+
+scenes:
+  - title: An order shipped notification
+    stats: [Step, Status]
+    nodes:
+      svc: {label: Order service, x: 0, y: 1, kind: box}
+      api: {label: Notification API, x: 2, y: 1, kind: def}
+      pref: {label: Preferences, x: 2, y: 3, kind: raised}
+      q: {label: Channel queues, x: 4, y: 1, kind: raised, tag: high and low priority}
+      pw: {label: Push worker, x: 6, y: 0, kind: def}
+      ew: {label: Email worker, x: 6, y: 2, kind: def}
+      prov: {label: "APNs, FCM, SES", x: 8, y: 1, kind: raised, tag: providers}
+    links: [[svc, api], [api, pref], [api, q], [q, pw], [q, ew], [pw, prov], [ew, prov]]
+    steps:
+      - title: Request arrives
+        text: The order service calls the API with an idempotency key. If the same key was seen before, the API returns the earlier result. No duplicates.
+        on: [svc, api]
+        flow: [[svc, api, ink]]
+        stats: [Accept, "202 queued"]
+      - title: Check preferences
+        text: This user wants shipping updates by push and email, not SMS. It is 11 PM their time, inside quiet hours, but shipping is allowed.
+        on: [api, pref]
+        flow: [[api, pref, ink], [pref, api, def]]
+        stats: [Filter, push and email]
+      - title: Queue per channel
+        text: One message goes onto the push queue and one onto the email queue. High priority queues are separate so a campaign never delays a login code.
+        on: [api, q]
+        flow: [[api, q, def]]
+        stats: [Enqueue, 2 messages]
+      - title: Workers render and send
+        text: Workers fill in the template in the user's language and call the providers, respecting each provider's rate limit.
+        on: [q, pw, ew, prov]
+        flow: [[q, pw, ink], [q, ew, ink], [pw, prov, def], [ew, prov, def]]
+        stats: [Send, sent]
+      - title: A provider fails
+        text: The email provider returns errors. The worker retries with backoff. After several failures the message goes to a dead letter queue, and critical types can fall back to another provider.
+        on: [ew, prov]
+        flow: [[ew, prov, atk]]
+        mark: {ew: warn}
+        stats: [Retry, email pending]
+
+hld: |
+  1. **Notification API** validates, deduplicates with the idempotency key, and records the request.
+  2. **Preference and rules check** drops unwanted channels and delays sends in quiet hours unless critical.
+  3. **Queues per channel and priority**, like push high, push low, email, SMS.
+  4. **Channel workers** render templates and call providers with rate limits, retries and fallbacks.
+  5. **Status tracking** from provider callbacks, delivered, bounced, opened, written to the log.
+  6. **Scheduler** releases scheduled and campaign sends into the queues gradually.
+
+diagrams:
+  - type: split
+    title: One request, many channels
+    source: ["Notification request", "def"]
+    targets:
+      - ["Push queue", "box", "Phone and web push via APNs and FCM"]
+      - ["Email queue", "box", "Via an email provider, bounces handled"]
+      - ["SMS queue", "box", "Expensive, used for codes and critical alerts"]
+      - ["In app inbox", "box", "Stored for the notification bell"]
+    caption: Separate queues let each channel move at its own speed and fail on its own.
+
+deep:
+  - ["Priority lanes", "Login codes and security alerts must never sit behind a marketing blast. Use separate high priority queues and dedicated workers."]
+  - ["Deduplication", "Idempotency keys at the API, plus a unique key in the notification log per user, type and object, like `order_shipped:o9`, stop double sends from retries."]
+  - ["Rate limits", "Providers cap how fast you can send. Workers use a token bucket per provider, lesson 14. Also cap how many notifications one user can get per hour to avoid spam."]
+  - ["Campaigns", "Do not dump 50 million messages at once. The scheduler feeds them gradually, by time zone, so users get them at a sensible local hour."]
+  - ["Invalid tokens", "Push providers report uninstalled apps. Delete those tokens, or you waste capacity and may be throttled."]
+
+tradeoffs:
+  - ["One queue for all", "Simple.", "Campaigns delay critical messages."]
+  - ["Queues per channel and priority", "Isolation and fair speed.", "More queues and workers to run."]
+  - ["Single provider per channel", "Simple contracts.", "Their outage is your outage."]
+  - ["Multiple providers with failover", "Resilient.", "More integrations, harder to keep templates and stats consistent."]
+
+task:
+  intro: |
+    Explain the design with a focus on bursts, priority and duplicates.
+  items:
+    - q: Design a notification service that handles both one time codes and a 50 million user campaign without either hurting the other.
+      keys:
+        - ["API that accepts, deduplicates and returns 202", [api, "202", accept, idempot, dedup]]
+        - ["User preferences and quiet hours checked", [preference, opt, quiet hours, settings]]
+        - ["Separate queues by channel and priority", [queue, priority, separate, channel]]
+        - ["Workers with templates, rate limits, retries and dead letter", [worker, template, rate limit, retry, dead letter, backoff]]
+        - ["Campaigns released gradually by a scheduler", [campaign, schedul, gradual, throttle, time zone, batch]]
+        - ["Delivery tracking and provider fallback", [track, status, callback, fallback, provider]]
+      a: |
+        Services call a notification API with a user, a type, data and an idempotency key. It dedupes, checks preferences and quiet hours, records the notification and returns 202. Messages go onto queues split by channel and priority, so one time codes ride a high priority lane with dedicated workers, while campaigns use low priority queues. Campaign sends are released gradually by a scheduler, about 14 thousand a second spread by time zone, so they never flood the system. Channel workers render templates in the user's language, respect provider rate limits with token buckets, retry with backoff, fall back to a second provider for critical types and move hopeless messages to a dead letter queue. Provider callbacks update delivery status for tracking.
+      fb: Separate priority lanes is the single most important idea here. Lead with it.
+
+interview:
+  - q: How do you make sure a user never gets the same notification twice?
+    keys:
+      - ["Idempotency key from the caller", [idempotency, key]]
+      - ["Unique constraint or dedup record per user, type and object", [unique, constraint, dedup, record, log]]
+      - ["Workers mark sent atomically before or with sending, handling retries", [atomic, mark, status, sent, retry]]
+      - ["Accept that providers may still rarely duplicate, at least once", [at least once, rare, provider, cannot guarantee]]
+    a: |
+      Callers send an idempotency key like `order_shipped:o9`, and the API stores it with a unique rule so repeated calls return the first result. Workers update the notification's status to sending in an atomic step before calling the provider, and skip any message already marked sent, so queue redelivery does not resend. A small risk remains if a worker crashes after the provider accepted the message but before marking it, so for most types we accept rare duplicates, and for critical ones we pass our id to providers that support their own dedup.
+    fb: Honestly naming the tiny window that remains shows a deep understanding of at least once delivery.
+  - q: The SMS provider goes down. What happens to one time login codes?
+    keys:
+      - ["Detect failures with retries and a circuit breaker", [retry, circuit, detect, error rate]]
+      - ["Fail over to a second SMS provider", [second provider, fallback, failover, another provider, backup]]
+      - ["Offer other channels like email, push or authenticator", [email, push, authenticator, voice, other channel]]
+      - ["Codes expire quickly, so stale queued codes should be dropped", [expire, ttl, stale, drop, old code]]
+    a: |
+      Workers see errors and a circuit breaker opens for that provider. Critical messages then route to a second SMS provider we keep under contract. The login screen also offers another way, like email or an authenticator app. Since codes expire in a few minutes, messages older than that are dropped rather than retried, so users do not get a flood of useless codes when the provider recovers.
+    fb: Dropping expired codes is a thoughtful product detail many people miss.
+
+refs:
+  - "Alex Xu. System Design Interview volume 1, chapter 10, design a notification system."
+  - "Uber Engineering. [Uber's real-time push platform](https://www.uber.com/blog/real-time-push-platform/)."
+  - "Apple. [Sending notification requests to APNs](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns)."

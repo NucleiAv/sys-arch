@@ -1,0 +1,184 @@
+slug: l15
+num: "15"
+level: 3
+short: Unique IDs and time
+title: Unique IDs and time across many machines
+time: about 40 minutes
+tags: [Snowflake, UUID, clocks]
+lede: One database can count 1, 2, 3. A thousand machines cannot share one counter without slowing down. Learn how big systems make unique, sortable ids and why clocks lie.
+
+idea: |
+  Every post, order and message needs an id that no other item will ever have. With one database you just use an auto increment counter. Once you have many databases or shards, two of them might both hand out id 1001.
+
+  There are a few ways out. **UUIDs** are random 128 bit numbers, so unlikely to clash that nobody checks. **Snowflake** style ids pack the time, the machine number and a counter into one 64 bit number, so they are unique and roughly sorted by time.
+
+  Time itself is tricky. Every machine has its own clock, and clocks drift apart by milliseconds or more. So "which happened first" is not always clear across machines.
+
+  !eli5 Two cashiers numbering receipts would clash if both start at 1. Give cashier A the numbers ending in A and cashier B ending in B. Add the time in front, and you can also sort receipts by when they were printed.
+
+scenes:
+  - title: Building a Snowflake id
+    stats: [Part, Bits, Value]
+    nodes:
+      req: {label: New post, x: 0, y: 1, kind: box}
+      gen: {label: ID generator, x: 2, y: 1, kind: def, tag: machine 17}
+      t: {label: Time part, x: 4, y: 0, kind: raised}
+      m: {label: Machine part, x: 4, y: 1, kind: raised}
+      s: {label: Sequence part, x: 4, y: 2, kind: raised}
+      id: {label: Final id, x: 6, y: 1, kind: def}
+    links: [[req, gen], [gen, t], [gen, m], [gen, s], [t, id], [m, id], [s, id]]
+    steps:
+      - title: Time
+        text: 41 bits hold the milliseconds since a chosen start date. That lasts about 69 years. Putting time first makes ids sort by creation time.
+        on: [gen, t]
+        flow: [[req, gen, ink], [gen, t, def]]
+        stats: [Time, "41", ms since 2020]
+      - title: Machine
+        text: 10 bits hold the generator's own number, up to 1,024 machines. No two machines share a number, so they never clash.
+        on: [gen, m]
+        flow: [[gen, m, def]]
+        stats: [Machine, "10", "17"]
+      - title: Sequence
+        text: 12 bits count ids made in the same millisecond on this machine, up to 4,096. That is over 4 million ids a second per machine.
+        on: [gen, s]
+        flow: [[gen, s, def]]
+        stats: [Sequence, "12", "0 to 4095"]
+      - title: Put it together
+        text: The three parts make one 64 bit number. No database call, no coordination, unique and roughly time ordered.
+        on: [t, m, s, id]
+        flow: [[t, id, def], [m, id, def], [s, id, def]]
+        mark: {id: ok}
+        stats: [Final id, "64", 7.2 trillion style number]
+
+terms:
+  - [Auto increment, "The database counts 1, 2, 3. Simple, but needs one central counter."]
+  - [UUID, "A random 128 bit id. Unique without coordination, but not sorted and long."]
+  - [UUIDv7, "A newer UUID that starts with the time, so it sorts well in indexes."]
+  - [Snowflake id, "A 64 bit id made of time, machine number and a counter. Created by Twitter."]
+  - [Clock skew, "The difference between two machines' clocks."]
+  - [NTP, "Network Time Protocol. Keeps machine clocks close to real time, usually within a few ms."]
+  - [Logical clock, "A counter that tracks the order of events instead of real time, like a Lamport clock."]
+
+how: |
+  ### The options
+
+  | Method | Unique across machines | Sortable by time | Size | Needs coordination |
+  | --- | --- | --- | --- | --- |
+  | Auto increment | Only with one database | Yes | small | Yes, one counter |
+  | Ticket server or ranges | Yes | Roughly | small | A little, to hand out ranges |
+  | UUIDv4 | Yes | No | 128 bits | No |
+  | UUIDv7 or ULID | Yes | Yes | 128 bits | No |
+  | Snowflake | Yes | Yes, roughly | 64 bits | Only to assign machine numbers |
+
+  ### Why sorted ids matter
+
+  Databases keep B-tree indexes sorted. Random ids like UUIDv4 land all over the index, which causes many page splits and slower inserts. Time ordered ids append near the end, which is much friendlier. They also let you page "older than this id" without a separate time column.
+
+  ### Clocks lie
+
+  - Clocks drift, and NTP corrects them, sometimes even moving time **backwards**. A Snowflake generator must notice this and wait, or it might repeat ids.
+  - Two events on two machines a few ms apart cannot be ordered reliably by timestamps.
+  - **Logical clocks** solve ordering without real time. A Lamport clock is a counter that each machine bumps on every event and on every message it receives, taking the bigger value.
+
+  !key Never use "last write wins by timestamp" for important data without knowing that clock skew can make the older write win.
+
+diagrams:
+  - type: flow
+    title: The 64 bits of a Snowflake id
+    nodes: [["1 bit unused", "box"], ["41 bits time", "def"], ["10 bits machine", "raised"], ["12 bits sequence", "raised"]]
+    caption: Time first, so ids sort by when they were made. Machine next, so machines never clash.
+
+life:
+  - ["Twitter built Snowflake", "When Twitter moved off a single MySQL, it needed tens of thousands of unique ids a second, roughly sorted by time, in 64 bits. Snowflake was the answer and inspired Discord, Instagram and many others."]
+  - ["Instagram's ids from Postgres", "Instagram generated ids inside each Postgres shard using a function that combined time, the shard number and a per shard sequence, a Snowflake idea with no separate service."]
+  - ["A leap second bug", "In 2012 a leap second confused some Linux systems and caused high CPU across many sites. Time is a common source of strange outages."]
+
+tradeoffs:
+  - ["Auto increment", "Tiny, simple, perfectly ordered.", "One central bottleneck, leaks how many records you have."]
+  - ["UUIDv4", "No coordination at all.", "Large, random order hurts index inserts."]
+  - ["UUIDv7 or ULID", "No coordination and time ordered.", "Still 128 bits."]
+  - ["Snowflake", "Small, fast, time ordered.", "Need to assign machine ids and handle clocks going backwards."]
+
+mistakes:
+  - Exposing auto increment ids in URLs, which lets anyone guess other records and count your orders.
+  - Using random UUIDs as the primary key on a huge, write heavy table without thinking about index cost.
+  - Trusting timestamps from different machines to decide what happened first.
+  - Two generators accidentally sharing the same machine id.
+
+quiz:
+  - q: Why do Snowflake ids put the time in the first bits?
+    opts: ["To make them shorter", "So ids sort by creation time", "For security"]
+    a: 1
+    why: Leading time bits make bigger ids mean newer items.
+  - type: fill
+    q: The difference between two machines' clocks is called clock ____.
+    a: ["skew", "drift"]
+    why: Clock skew is why timestamps across machines are not fully reliable.
+  - type: num
+    q: A Snowflake sequence has 12 bits. How many ids can one machine make in one millisecond?
+    a: 4096
+    tol: 0
+    unit: ids
+    why: 2 to the power 12 is 4,096.
+  - q: Which id is unique without any coordination and also time sortable?
+    opts: ["UUIDv4", "UUIDv7", "Auto increment"]
+    a: 1
+    why: UUIDv7 starts with a timestamp and is random after that.
+
+interview:
+  - q: Design a unique id generator for a system with thousands of servers.
+    keys:
+      - ["Explain why auto increment does not work at scale", [auto increment, single, central, bottleneck]]
+      - ["Propose Snowflake style ids with time, machine and sequence", [snowflake, timestamp, machine, worker, sequence]]
+      - ["Explain how machine ids are assigned uniquely", [zookeeper, etcd, assign, config, lease, registry]]
+      - ["Handle clock going backwards and sequence overflow", [backward, clock, wait, overflow, next millisecond]]
+      - ["Mention alternatives like UUIDv7 and the trade-offs", [uuid, ulid, 128, trade]]
+    a: |
+      A single counter would be a bottleneck and a single point of failure. I would use Snowflake style 64 bit ids. 41 bits of milliseconds since a custom start date, 10 bits of worker id and 12 bits of sequence. Each server or id service instance gets a unique worker id from a coordination service like etcd or ZooKeeper, with a lease so ids are not reused while alive. Within a millisecond the sequence counts up. If it reaches 4,096 the generator waits for the next millisecond. If the clock moves backwards, it refuses or waits until time catches up, so ids never repeat. If 64 bits were not required, UUIDv7 is a simpler choice with no worker ids to manage.
+    fb: Clock going backwards is the classic follow up. Mention it before they ask.
+  - q: Why can you not simply use timestamps to order events across servers?
+    keys:
+      - ["Each server has its own clock that drifts", [own clock, drift, skew, different]]
+      - ["NTP keeps them close but not exact, and can jump", [ntp, milliseconds, jump, backwards, not exact]]
+      - ["So close events can appear in the wrong order", [wrong order, order, before, after]]
+      - ["Use logical clocks, versions or a single sequencer", [lamport, logical, vector, version, sequence, single]]
+    a: |
+      Every server keeps its own clock, and clocks drift. NTP keeps them within a few milliseconds, but not exactly, and corrections can even move a clock backwards. So if two events happen a millisecond apart on different servers, their timestamps can show them in the wrong order. When order matters, I use logical clocks like Lamport or vector clocks, version numbers on records, or route related events through one sequencer, such as one partition of a log.
+    fb: A short example, like a reply getting an earlier timestamp than the message it answers, makes this concrete.
+
+desk:
+  title: IDs for a growing marketplace
+  lede: A marketplace is moving from one database to many shards. Pick its id scheme.
+  situation: |
+    **Tradepost** uses auto increment order ids like `/orders/18342`. It is splitting into 16 shards. The team also learned that competitors estimate its sales by placing an order each week and comparing ids.
+  rounds:
+    - title: Round 1. Problems
+      items:
+        - q: What breaks with auto increment across 16 shards?
+          opts: ["Nothing", "Two shards can create the same id", "Ids become too short"]
+          a: 1
+          why: Each shard counts on its own, so ids collide.
+        - q: How do competitors use the ids?
+          opts: ["They hack the database", "Sequential ids reveal how many orders were placed between two dates", "They cannot"]
+          a: 1
+          why: Order 18342 a week after order 15342 means about 3,000 orders that week.
+    - title: Round 2. Pick a scheme
+      items:
+        - type: sort
+          q: Match each scheme to its main trait.
+          rows:
+            - ["Snowflake", "64 bit, time ordered, needs worker ids"]
+            - ["UUIDv4", "No coordination, random order"]
+            - ["UUIDv7", "No coordination, time ordered, 128 bit"]
+          opts: ["64 bit, time ordered, needs worker ids", "No coordination, random order", "No coordination, time ordered, 128 bit"]
+          why: Each has a place. Time ordered ids are kinder to database indexes.
+  card: |
+    - One counter does not scale.
+    - Snowflake, time plus machine plus sequence.
+    - UUIDv7 when you can afford 128 bits.
+    - Clocks drift, never fully trust timestamps.
+
+refs:
+  - "Twitter. [Announcing Snowflake](https://blog.x.com/engineering/en_us/a/2010/announcing-snowflake)."
+  - "IETF. [RFC 9562, UUIDs including version 7](https://www.rfc-editor.org/rfc/rfc9562)."
+  - "Leslie Lamport. [Time, clocks, and the ordering of events in a distributed system](https://lamport.azurewebsites.net/pubs/time-clocks.pdf)."

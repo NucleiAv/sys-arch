@@ -1,0 +1,190 @@
+slug: l14
+num: "14"
+level: 3
+short: Rate limiting
+title: Rate limiting, saying slow down politely
+time: about 45 minutes
+tags: [token bucket, 429, throttling]
+lede: A rate limiter caps how many requests someone can make in a time window. It protects your system from abuse, bugs and sudden floods, and keeps things fair.
+
+idea: |
+  Without limits, one buggy client in a loop, one scraper or one attacker can use up all your servers and everyone else suffers. A **rate limiter** counts requests per user, per key or per IP, and when someone goes over their limit, it answers `429 Too Many Requests` instead of doing the work.
+
+  !eli5 A water park lets each child on the big slide only so many times an hour. A kid who tries to go 50 times is asked to wait, so everyone gets a turn and the slide is not overloaded.
+
+scenes:
+  - title: The token bucket
+    stats: [Time, Tokens left, Result]
+    nodes:
+      client: {label: Client, x: 0, y: 1, kind: box}
+      rl: {label: Rate limiter, x: 2, y: 1, kind: raised, tag: bucket of 5}
+      api: {label: API, x: 4, y: 1, kind: def}
+      redis: {label: Counter store, x: 2, y: 3, kind: raised, tag: Redis}
+    links: [[client, rl], [rl, api], [rl, redis]]
+    steps:
+      - title: A full bucket
+        text: Each user has a bucket that holds 5 tokens and refills 1 token every second. Each request costs one token.
+        on: [rl, redis]
+        flow: [[rl, redis, ink]]
+        stats: [0 s, "5", ready]
+      - title: A quick burst
+        text: The client sends 5 requests at once. Each takes a token and passes. Bursts are allowed up to the bucket size.
+        on: [client, rl, api]
+        flow: [[client, rl, ink], [rl, api, def]]
+        stats: [0 s, "0", 5 allowed]
+      - title: One too many
+        text: Request 6 finds an empty bucket. The limiter answers `429` with a `Retry-After` header. The API never sees it.
+        on: [client, rl]
+        flow: [[client, rl, ink], [rl, client, atk]]
+        mark: {rl: warn}
+        stats: [0 s, "0", "429"]
+      - title: Refill
+        text: Two seconds later the bucket has 2 tokens again. The client can send 2 more. Over time it averages 1 request a second.
+        on: [client, rl, api]
+        flow: [[client, rl, ink], [rl, api, def]]
+        mark: {api: ok}
+        stats: [2 s, "2 then 0", 2 allowed]
+
+terms:
+  - [Rate limit, "The maximum number of requests allowed in a time window."]
+  - [Token bucket, "A bucket of tokens that refills at a steady rate. Allows short bursts."]
+  - [Leaky bucket, "Requests drain out at a fixed rate like water from a hole. Smooths traffic perfectly."]
+  - [Fixed window, "Count requests per clock minute. Simple, but allows double bursts at window edges."]
+  - [Sliding window, "Count over the last 60 seconds from now. Fairer, a bit more work."]
+  - [429, "The HTTP status for Too Many Requests."]
+  - [Throttling, "Slowing down instead of rejecting outright."]
+  - [Load shedding, "Dropping some requests on purpose when the whole system is overloaded, to save the rest."]
+
+how: |
+  ### The algorithms
+
+  | Algorithm | How it works | Good | Bad |
+  | --- | --- | --- | --- |
+  | Fixed window | Counter per user per minute, reset each minute | Very simple | 2 times the limit can slip through around the minute edge |
+  | Sliding window log | Keep timestamps of recent requests | Exact | Uses memory per request |
+  | Sliding window counter | Blend this minute and last minute counts | Accurate and cheap | Small approximation |
+  | Token bucket | Tokens refill steadily, requests spend them | Allows bursts, popular | Two numbers to tune |
+  | Leaky bucket | Queue that drains at a fixed rate | Smooth output | Bursts wait or drop |
+
+  ### Where to put it
+
+  - **At the edge**, in an API gateway or load balancer, to block floods before they reach your servers.
+  - **In the service**, for limits that need business knowledge, like "3 password tries a minute".
+  - **For calls you make**, so you do not exceed someone else's API limits.
+
+  ### Many servers, one limit
+
+  If you have 20 API servers, each one counting alone lets a user get 20 times the limit. So counters usually live in a shared fast store like Redis, updated with an atomic increment or a small script. For very high traffic, servers can keep local counts and sync often, accepting a little slack.
+
+  ### Be kind to clients
+
+  Return `429` with `Retry-After`, and headers like `X-RateLimit-Remaining`. Good clients back off. Document the limits.
+
+  !key Choose what you limit by. Per IP hurts people behind one office network. Per API key or user is fairer. Use several limits together, per user, per IP for logins, and a global cap.
+
+diagrams:
+  - type: flow
+    title: Where limits sit
+    nodes: [["Client", "box"], ["Edge limits", "raised", "per IP, global"], ["API gateway", "def", "per key or user"], ["Service", "def", "per action"], ["Database", "raised"]]
+    edges: ["", "", "", ""]
+    caption: Cheap, coarse limits at the edge. Precise, business limits deeper inside.
+
+life:
+  - ["GitHub API limits", "GitHub's API allows a set number of requests an hour per token and tells you the remaining count in response headers. Clients that read the headers never get blocked."]
+  - ["A login brute force attack", "Attackers tried thousands of passwords per account. A limit of 5 login attempts per account per 15 minutes, plus per IP limits, stopped it without hurting normal users."]
+  - ["A mobile bug that looked like an attack", "A new app version retried failed requests instantly in a loop. Traffic jumped 40 times. Per user rate limits kept the backend alive until a fix shipped."]
+
+tradeoffs:
+  - ["Fixed window", "Simplest to build.", "Edge bursts up to double the limit."]
+  - ["Token bucket", "Allows healthy bursts, smooth average.", "Tuning size and rate."]
+  - ["Central counter in Redis", "Accurate across all servers.", "An extra network call per request, Redis becomes critical."]
+  - ["Local counters", "No extra hop, very fast.", "Less accurate across many servers."]
+  - ["Fail open when the limiter is down", "Users keep working.", "No protection during the outage."]
+  - ["Fail closed", "Always protected.", "A limiter outage becomes a full outage."]
+
+mistakes:
+  - Counting on each server separately and calling it a global limit.
+  - Limiting by IP only, which blocks whole offices and mobile carriers.
+  - Returning 500 or a vague error instead of 429 with Retry-After.
+  - Letting the rate limiter itself become a single point of failure.
+
+quiz:
+  - q: Which algorithm allows a short burst and then a steady average?
+    opts: ["Leaky bucket", "Token bucket", "Fixed window"]
+    a: 1
+    why: The bucket size allows the burst, the refill rate sets the average.
+  - type: fill
+    q: The HTTP status code for "too many requests" is ____.
+    a: ["429"]
+    why: Clients should read 429 and back off.
+  - type: num
+    q: A fixed window limit is 100 per minute. What is the most a client can send in the two seconds around a minute boundary?
+    a: 200
+    tol: 0
+    unit: requests
+    why: 100 at 0:59 and another 100 at 1:00. This edge burst is why sliding windows exist.
+  - q: You have 10 API servers and want 100 requests a minute per user in total. Where should the counter live?
+    opts: ["In each server's memory", "In a shared store like Redis", "In the user's browser"]
+    a: 1
+    why: A shared counter sees every request, no matter which server handled it.
+  - type: fill
+    q: Dropping some requests on purpose when the whole system is overloaded is called load ____.
+    a: ["shedding"]
+    why: Shedding sacrifices some requests to keep the system alive for the rest.
+
+interview:
+  - q: Design a rate limiter for a public API.
+    keys:
+      - ["Pick what to limit by, like API key, user or IP", [api key, user, ip, per key]]
+      - ["Choose an algorithm like token bucket or sliding window and why", [token bucket, sliding window, leaky, fixed window]]
+      - ["Shared counter in a fast store with atomic operations", [redis, atomic, shared, incr, lua, central]]
+      - ["Return 429 with retry information and rate limit headers", ["429", retry-after, retry after, header]]
+      - ["Handle limiter failure and scale, fail open or closed, local caching", [fail open, fail closed, down, local, scale, latency]]
+    a: |
+      I limit per API key, with a looser per IP limit for unauthenticated calls. I use a token bucket per key, for example 100 tokens refilling 10 a second, so short bursts are fine. The bucket state lives in Redis and is updated with one atomic script that refills based on elapsed time, checks and spends a token. The limiter runs in the API gateway so rejected requests never reach services. Over the limit, it returns `429` with `Retry-After` and remaining quota headers. Limits per plan are kept in config. If Redis is unreachable, I fail open for normal endpoints so a limiter outage is not a full outage, but fail closed for sensitive ones like login. For very high traffic I shard keys across Redis nodes.
+    fb: Mentioning the atomic update and the fail open versus closed choice is what lifts this from good to great.
+  - q: What is the difference between rate limiting and load shedding?
+    keys:
+      - ["Rate limiting is per client fairness and abuse protection", [per client, per user, fair, abuse, each client]]
+      - ["Load shedding protects the whole system when overloaded", [whole system, overload, capacity, protect, total]]
+      - ["Shedding drops low priority work first", [priority, low priority, less important, drop]]
+    a: |
+      Rate limiting caps each client, even when the system has plenty of room, to stop abuse and keep things fair. Load shedding looks at the whole system. When servers are near their limit, they drop some requests on purpose, ideally the least important ones, like prefetches or analytics, to keep serving the important ones like checkout. You usually want both.
+    fb: The one line version is "rate limiting is about one client, load shedding is about the whole system".
+
+desk:
+  title: Protect a weather API
+  lede: A free weather API is getting hammered. Add the right limits.
+  situation: |
+    **SkyCast** offers a free tier of 1,000 calls a day and a paid tier of 100 calls a second. It runs 12 API servers. A few free users run scrapers that send 50 calls a second each.
+  rounds:
+    - title: Round 1. Design
+      items:
+        - q: What should limits be keyed by?
+          opts: ["IP address only", "API key, with a fallback per IP for calls without a key", "Country"]
+          a: 1
+          why: Keys map to plans and owners. IP alone is unfair and easy to dodge.
+        - q: Each of the 12 servers counts in its own memory. A free user's daily limit is 1,000. How many calls can they really make?
+          opts: ["1,000", "Up to 12,000", "Exactly 1,012"]
+          a: 1
+          why: Each server allows 1,000 separately. Use a shared counter.
+    - title: Round 2. Behaviour
+      items:
+        - type: sort
+          q: Pick the response for each case.
+          rows:
+            - ["Free user over their daily limit", "429 with Retry-After"]
+            - ["Redis for the limiter is down for normal calls", "Fail open and alert"]
+            - ["The whole cluster is at 95 percent CPU", "Shed free tier traffic first"]
+          opts: ["429 with Retry-After", "Fail open and alert", "Shed free tier traffic first"]
+          why: Polite rejections for individuals, keep serving if the limiter breaks, and protect paying users when the whole system is in trouble.
+  card: |
+    - Token bucket for bursts, sliding window for fairness.
+    - Shared atomic counters.
+    - 429 plus Retry-After.
+    - Decide fail open or closed.
+
+refs:
+  - "Stripe. [Scaling your API with rate limiters](https://stripe.com/blog/rate-limiters)."
+  - "Cloudflare. [How we built rate limiting capable of scaling to millions of domains](https://blog.cloudflare.com/counting-things-a-lot-of-different-things/)."
+  - "GitHub Docs. [Rate limits for the REST API](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)."

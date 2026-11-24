@@ -1,0 +1,216 @@
+title: System design, one idea at a time
+lede: Each step explains one idea in plain words, shows it in a picture and ends with a quick check. Read them in order. You need no background. Your place is saved in this browser.
+
+steps:
+  - short: What is a system
+    title: What is a system?
+    body: |
+      A **system** is a group of parts that work together to do one job. A restaurant is a system. There is a waiter who takes your order, a kitchen that cooks, a fridge that stores food and a cashier who takes money. Each part has one job. Together they feed you.
+
+      Software systems are the same. An app like a food delivery app has parts that take orders, parts that store data, parts that send messages and parts that take payments.
+
+      **System design** is deciding which parts you need, what each part does, and how they talk to each other. **System architecture** is the drawing of that plan, the boxes and the arrows between them.
+
+      !eli5 If the app is a house, architecture is the floor plan. Design is all the choices behind it. Where the kitchen goes, how big the pipes are, what happens when the power fails.
+    diagrams:
+      - type: flow
+        title: A restaurant and an app are both systems
+        lanes:
+          - label: restaurant
+            nodes: [["Waiter", "box", "takes order"], ["Kitchen", "raised", "does work"], ["Fridge", "box", "stores food"]]
+            edges: ["order", "ingredients"]
+          - label: app
+            labelkind: def
+            nodes: [["API server", "def", "takes request"], ["Worker", "raised", "does work"], ["Database", "box", "stores data"]]
+            edges: ["job", "data"]
+        caption: The same shape shows up everywhere. Something takes requests, something does the work, something remembers.
+    quiz:
+      - q: In a restaurant, which part is most like a database?
+        opts: ["The waiter", "The fridge and pantry", "The menu"]
+        a: 1
+        why: The database is where things are stored and fetched when needed, just like the fridge.
+
+  - short: Client and server
+    title: Clients ask, servers answer
+    body: |
+      Almost every app is split into two sides. The **client** is what you hold, your phone app or your browser. The **server** is a computer far away that does the heavy work and keeps the data safe.
+
+      The client sends a **request**, like "show me my orders". The server sends back a **response**, like a list of three orders. That is it. Everything else in system design is about making this simple loop fast, safe and able to handle millions of people at once.
+
+      !key Why not keep everything on the phone? Because your data must be the same on every device, it must be safe if you lose your phone, and other people need to see some of it, like the restaurant seeing your order.
+    diagrams:
+      - type: flow
+        title: The request and response loop
+        nodes: [["Client", "box", "phone or browser"], ["Server", "def", "runs the code"], ["Database", "raised", "keeps the data"]]
+        edges: ["request", "query"]
+        caption: The client never talks to the database directly. The server checks who you are and what you may see first.
+    terms:
+      - [Request, "A message from the client asking for something."]
+      - [Response, "The message the server sends back."]
+      - [API, "The list of requests a server accepts. Like a menu of what you can order."]
+    quiz:
+      - type: fill
+        q: The part of a system that asks for data is the ____.
+        a: ["client", "the client"]
+        why: The client asks. The server answers.
+
+  - short: The trip of one request
+    title: The trip of one request
+    body: |
+      When you tap "open", your phone first finds the server's address using **DNS**, the internet's phone book. Then it opens a connection, locks it with encryption, sends the request and waits for the answer.
+
+      Every trip across the network takes time. The farther the server, the longer the wait. A trip across the world and back takes about a fifth of a second, even if the server is instant.
+    scenes:
+      - title: One request, start to finish
+        stats: [Step, Time so far]
+        nodes:
+          phone: {label: Phone, x: 0, y: 1, kind: box, tag: client}
+          dns: {label: DNS, x: 2, y: 0, kind: raised, tag: phone book}
+          srv: {label: Server, x: 4, y: 1, kind: def}
+          db: {label: Database, x: 6, y: 1, kind: raised}
+        links: [[phone, dns], [phone, srv], [srv, db]]
+        steps:
+          - title: Look up the address
+            text: The phone asks DNS for the number behind the name.
+            on: [phone, dns]
+            flow: [[phone, dns, ink], [dns, phone, def]]
+            stats: [DNS, 20 ms]
+          - title: Send the request
+            text: The phone opens a safe connection and asks the server.
+            on: [phone, srv]
+            flow: [[phone, srv, ink]]
+            stats: [Request, 90 ms]
+          - title: Get the data
+            text: The server asks the database for your data.
+            on: [srv, db]
+            flow: [[srv, db, ink], [db, srv, def]]
+            stats: [Database, 100 ms]
+          - title: Answer
+            text: The server sends the answer back. Your screen fills in.
+            on: [phone, srv]
+            flow: [[srv, phone, def]]
+            mark: {phone: ok}
+            stats: [Response, 140 ms]
+    more: |
+      Lesson 1 in Concepts goes much deeper into DNS, TCP, HTTP and TLS.
+    quiz:
+      - q: Why does a server on the other side of the world feel slow even if it is very powerful?
+        opts: ["Because it is old", "Because each trip over the network takes time, and distance adds to it", "Because DNS is broken"]
+        a: 1
+        why: Data cannot travel faster than light in a cable. Distance costs time on every trip.
+
+  - short: Speed words
+    title: Latency, throughput and why they are different
+    body: |
+      **Latency** is how long one person waits. **Throughput** is how many people you can serve each second.
+
+      Think of a road. Latency is how long it takes one car to drive from A to B. Throughput is how many cars pass per minute. Adding lanes raises throughput, but one car does not get there faster. Building a shorter road lowers latency.
+
+      We usually talk about latency with **percentiles**. **p50** is the time that half the requests beat. **p99** is the time that 99 out of 100 requests beat. The slowest 1 in 100 matters, because a busy user makes hundreds of requests a day and will hit it often.
+    terms:
+      - [Latency, "Time for one request. Lower is better."]
+      - [Throughput, "Requests handled per second. Higher is better."]
+      - [p99, "The time that 99 percent of requests are faster than. A measure of the slow tail."]
+    quiz:
+      - type: fill
+        q: How many requests a system can handle each second is called ____.
+        a: ["throughput"]
+        why: Throughput is volume per second. Latency is time per request.
+      - q: Your p50 is 80 ms and your p99 is 4 seconds. What does that tell you?
+        opts: ["Everything is fine", "Most requests are fast, but 1 in 100 is painfully slow", "Half of the requests fail"]
+        a: 1
+        why: The average hides the slow tail. Find what makes those 1 percent slow, like a cold cache or a big customer.
+
+  - short: One computer is not enough
+    title: When one computer is not enough
+    body: |
+      One server can handle a few thousand people. What happens when a million show up?
+
+      You have two choices. **Scale up**, also called vertical scaling, means buying a bigger computer. It is simple, but there is a biggest computer, it is very expensive, and if it dies everything dies.
+
+      **Scale out**, also called horizontal scaling, means adding more ordinary computers and spreading the work. A **load balancer** sits in front and hands each request to one of them. This has no real limit, and if one dies the others carry on. The catch is that the servers must not keep anything important in their own memory. We call that being **stateless**.
+
+      Try it below. Pick how many users you have, then add parts until the system is healthy. Watch which part breaks first.
+    sim: true
+    diagrams:
+      - type: split
+        title: Scale out with a load balancer
+        source: ["Load balancer", "def"]
+        targets: [["Server 1", "box", "same code"], ["Server 2", "box", "same code"], ["Server 3", "box", "same code"]]
+        caption: Every server runs the same code. If one dies, the load balancer stops sending it work.
+    quiz:
+      - q: Which is true about scaling out?
+        opts: ["It means buying one huge machine", "It adds more machines and spreads work across them", "It only works for databases"]
+        a: 1
+        why: Out means more machines. Up means a bigger machine.
+
+  - short: Where data lives
+    title: Where data lives
+    body: |
+      Servers come and go. Data must stay. So data lives in special places built to keep it safe.
+
+      - A **database** keeps the important records, like users and orders. It is careful and correct, but every visit costs time.
+      - A **cache** keeps copies of popular answers in fast memory. It is about 100 times faster than a database, but it is small and can forget.
+      - **Object storage** keeps big files like photos and videos, cheaply.
+      - A **CDN** keeps copies of files in many cities, close to users.
+
+      !eli5 Your database is the library. The cache is the few books on your desk. Object storage is the warehouse. The CDN is a small branch library in every town.
+    diagrams:
+      - type: layers
+        title: Where a request finds its answer, fastest first
+        attack: a request for a product page
+        layers:
+          - ["CDN near the user", "Images and files, a few ms away", "partial"]
+          - ["Cache", "Popular answers in memory, under 1 ms", "stop"]
+          - ["Database", "The source of truth, a few ms or more", "pass"]
+        caption: Good designs answer as many requests as possible at the top layers, so the database only does the work nobody else can.
+    quiz:
+      - type: fill
+        q: Fast memory that keeps copies of popular answers is called a ____.
+        a: ["cache"]
+        why: A cache saves trips to the slower database.
+
+  - short: Things break
+    title: Things will break, plan for it
+    body: |
+      With one computer, failure is rare. With a thousand computers, something breaks every day. Disks die, networks drop, a bad update goes out.
+
+      Good systems expect this. They keep **copies** of everything important, called **redundancy**. They notice when a part dies and move the work away from it, called **failover**. They wait only so long for an answer, called a **timeout**, and try again carefully, called a **retry**.
+
+      !key The goal is not "nothing ever breaks". The goal is "when something breaks, users barely notice".
+    terms:
+      - [Redundancy, "Having more than one of anything important."]
+      - [Single point of failure, "One part that, if it dies, takes everything down. Hunt these in every design."]
+      - [Availability, "The share of time the system works. 99.9 percent means about 8.8 hours of downtime a year."]
+    quiz:
+      - q: Your app has three servers and one database with no copy. What is the single point of failure?
+        opts: ["Any one server", "The database", "The load balancer only if there are two"]
+        a: 1
+        why: If any server dies the others carry on. If the only database dies, everything stops.
+
+  - short: Think like an architect
+    title: How an architect thinks
+    body: |
+      There is no perfect design. Every choice trades one good thing for another. A cache makes reads fast but the copy can be a little old. Many copies of data make it safe but keeping them in sync is hard.
+
+      So architects always ask the same questions, in the same order.
+
+      1. **What must it do?** The features, called functional requirements.
+      2. **How well must it do it?** Speed, size, uptime, called non-functional requirements.
+      3. **How big is it?** Users, requests per second, data per day. Do the rough math.
+      4. **What are the parts?** Draw the boxes and arrows.
+      5. **Where will it break?** Find the busiest and weakest parts and fix them.
+      6. **What did I trade?** Say it out loud.
+
+      The rest of this site teaches the parts, level by level, and then you use them to design real systems. You are ready. Open level 1.
+    diagrams:
+      - type: cycle
+        title: The architect's loop
+        nodes: [["What must it do", "def"], ["How well", "def"], ["How big", "raised"], ["Draw the parts", "box"], ["Find the weak spots", "atk"], ["Name the trade-offs", "raised"]]
+        center: Repeat as you learn more
+        caption: The same six questions work for a school project and for a system with a billion users.
+    quiz:
+      - q: Which of these is a non-functional requirement?
+        opts: ["Users can post a photo", "A photo appears on friends' feeds within 5 seconds", "Users can like a photo"]
+        a: 1
+        why: Features are functional. How fast, how big and how reliable are non-functional.

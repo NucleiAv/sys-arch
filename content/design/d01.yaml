@@ -1,0 +1,189 @@
+slug: d01
+num: "01"
+short: Link shortener
+title: Design a link shortener
+time: about 60 minutes
+tags: [beginner, read heavy, caching]
+lede: Turn a long web address into a short one like `sho.rt/aZ3k9`, and send anyone who clicks it to the right place, fast, billions of times.
+
+ask: |
+  People paste a long link and get a short one back. When anyone opens the short link, they are sent to the long one. Think of services like bit.ly.
+
+  It looks tiny, which is why it is the most common first design question. The interesting parts are making short codes that never clash, and serving a huge number of clicks fast.
+
+reqs:
+  func:
+    - Create a short link from a long URL.
+    - Opening the short link redirects to the long URL.
+    - Optional custom alias, like `sho.rt/summer-sale`.
+    - Links can expire.
+  nonfunc:
+    - Redirects are very fast, under 50 ms at p99.
+    - Very high availability for redirects. A dead link breaks other people's websites.
+    - Short codes must never point to the wrong place.
+  out:
+    - Click analytics dashboards, user accounts beyond a simple API key.
+
+estimate:
+  intro: |
+    Assume 100 million new links a month and 100 clicks for every link created.
+  items:
+    - type: num
+      q: About how many new links a second? A month is about 2.5 million seconds.
+      a: 40
+      tol: 5
+      unit: per second
+      why: 100 million divided by 2.5 million is 40 writes a second. Tiny.
+    - type: num
+      q: With 100 reads for every write, how many redirects a second on average?
+      a: 4000
+      tol: 400
+      unit: per second
+      why: 40 times 100 is 4,000 a second. Peaks maybe 20 thousand. Very read heavy.
+    - type: num
+      q: Each link record is about 500 bytes. Storage for 5 years, in TB? 100 million a month for 60 months.
+      a: 3
+      tol: 0.5
+      unit: TB
+      why: 6 billion links times 500 bytes is 3 TB. Fits on a few machines.
+    - type: num
+      q: How many different codes do 7 characters from 62 letters and digits give, in trillions? 62 to the power 7 is about 3.5 trillion.
+      a: 3.5
+      tol: 0.2
+      unit: trillion
+      why: 3.5 trillion is far more than 6 billion, so 7 characters is plenty.
+  after: |
+    !key Reads beat writes 100 to 1. That one fact shapes the design. Cache hard, and keep the redirect path as short as possible.
+
+api: |
+  ```
+  POST /api/v1/links
+    body  { "long_url": "...", "alias": "summer-sale", "expires_at": "..." }
+    reply 201 { "short_url": "https://sho.rt/aZ3k9" }
+
+  GET /{code}
+    reply 301 or 302 with Location: <long_url>
+    reply 404 if missing or expired
+  ```
+
+  **301 or 302?** A 301, moved permanently, lets browsers cache the redirect, which saves load but means you never see repeat clicks. A 302, found, sends every click through you, which costs more but lets you count clicks and change the target. Many shorteners use 302 for analytics.
+
+data: |
+  | Field | Type | Note |
+  | --- | --- | --- |
+  | code | string, primary key | `aZ3k9` |
+  | long_url | text | where to go |
+  | owner_key | string | who created it |
+  | created_at, expires_at | time | |
+
+  The only lookup is by `code`, so a key value store such as DynamoDB or Cassandra fits well. A single Postgres with a primary key also works for years at this size.
+
+scenes:
+  - title: Creating a link and following it
+    stats: [Step, Where the work happens]
+    nodes:
+      user: {label: User, x: 0, y: 1, kind: box}
+      lb: {label: Load balancer, x: 2, y: 1, kind: raised}
+      app: {label: Link service, x: 4, y: 1, kind: def}
+      ids: {label: ID ranges, x: 4, y: 3, kind: raised, tag: counter}
+      cache: {label: Cache, x: 6, y: 0, kind: raised}
+      db: {label: Link store, x: 6, y: 2, kind: raised}
+    links: [[user, lb], [lb, app], [app, ids], [app, cache], [app, db]]
+    steps:
+      - title: Ask for a short link
+        text: The user posts a long URL. The service needs a new unique number.
+        on: [user, lb, app]
+        flow: [[user, lb, ink], [lb, app, ink]]
+        stats: [Create, Link service]
+      - title: Take a number
+        text: Each server grabs a block of 1,000 numbers from a central counter at a time, then hands them out from memory. No clashes, few trips.
+        on: [app, ids]
+        flow: [[app, ids, ink], [ids, app, def]]
+        stats: [Get id, Counter block]
+      - title: Encode and save
+        text: Number 125,000,000 in base 62 becomes `8sFvU`. Save code to long URL in the store.
+        on: [app, db]
+        flow: [[app, db, def]]
+        stats: [Save, Link store]
+      - title: A click arrives
+        text: Someone opens `sho.rt/8sFvU`. The service checks the cache first. Popular links are almost always there.
+        on: [lb, app, cache]
+        flow: [[user, lb, ink], [lb, app, ink], [app, cache, def]]
+        mark: {cache: ok}
+        stats: [Redirect, Cache hit]
+      - title: Redirect
+        text: The service replies 302 with the long URL. The browser goes there. Total time, a few ms inside the data center.
+        on: [user, app]
+        flow: [[app, user, def]]
+        mark: {user: ok}
+        stats: [Done, under 10 ms]
+
+hld: |
+  1. A load balancer in front of stateless link service servers in several zones.
+  2. Codes come from a counter handed out in blocks, encoded in base 62.
+  3. Links are stored in a replicated key value store keyed by code.
+  4. A Redis cache holds hot codes. With 100 to 1 reads, the cache serves most redirects.
+  5. A CDN or edge can even cache 301 redirects for the most popular links.
+  6. Click events go to a queue for analytics, never slowing the redirect.
+
+diagrams:
+  - type: flow
+    title: The redirect path
+    nodes: [["Browser", "box"], ["Load balancer", "raised"], ["Link service", "def"], ["Cache, then store", "raised"], ["302 to long URL", "def"]]
+    edges: ["GET /code", "", "lookup", ""]
+    caption: Keep this path short. Analytics are sent to a queue on the side.
+
+deep:
+  - ["How to make short codes", "**Hash the URL** with MD5 and take 7 characters. Simple, but two URLs can clash, so you must check and retry. **Counter plus base 62**. Every number is unique, so no clash checks, but codes are guessable in order, which you can hide by shuffling the number first. **Random codes**. Generate 7 random characters and insert only if absent. Most designs pick counter blocks or random codes."]
+  - ["Custom aliases", "Check the alias is free with a conditional insert, so two people cannot grab it at once. Keep a block list for offensive or reserved words like `api` and `login`."]
+  - ["Scaling redirects", "A cache in front absorbs most reads. Links are almost never edited, so cache them for a long time. If a key value store is the main store, it scales out by code."]
+  - ["Abuse", "Shorteners are used to hide phishing links. Check new URLs against a safe browsing list, rate limit creation per key, and let people report links."]
+  - ["Expiry", "Store `expires_at` and check it on read. A background job removes expired rows later. Never reuse a code from an expired link, it may still be printed somewhere."]
+
+tradeoffs:
+  - ["301 redirect", "Browsers cache it, less load.", "Cannot count repeat clicks or change the target."]
+  - ["302 redirect", "Every click counted, target can change.", "Every click hits your servers."]
+  - ["Hash of URL", "Same URL gives same code.", "Collisions to handle."]
+  - ["Counter with base 62", "No collisions, short codes.", "Needs a counter service, codes look sequential."]
+  - ["Random codes", "No coordination, not guessable.", "Rare collisions to retry."]
+
+task:
+  intro: |
+    Now explain the design in your own words, as you would in an interview.
+  items:
+    - q: Walk through your link shortener design, from creating a link to a redirect, including how codes are made and how you handle 20 thousand redirects a second.
+      keys:
+        - ["Requirements and the 100 to 1 read ratio", [read, ratio, "100", read heavy]]
+        - ["How codes are generated without clashes", [base 62, base62, counter, hash, random, collision]]
+        - ["Key value store keyed by code", [key value, dynamo, cassandra, store, database, primary key]]
+        - ["Cache for hot links", [cache, redis]]
+        - ["301 versus 302 choice", ["301", "302", redirect]]
+        - ["Availability and abuse or analytics on the side", [replica, zone, available, abuse, phishing, analytics, queue]]
+      a: |
+        It is a read heavy system, about 40 creates and 4,000 redirects a second, 3 TB over 5 years. Creating, the service takes a unique number from a block of ids it reserved from a central counter, encodes it in base 62 into a 7 character code and writes code to URL into a replicated key value store. Redirecting, the service looks up the code in Redis, falling back to the store, and returns a 302 so we can count clicks, publishing a click event to a queue for analytics. Servers are stateless behind a load balancer across zones. Popular links stay in cache, and the store is replicated so redirects keep working if a node dies. New URLs are checked against a phishing list and creation is rate limited.
+      fb: Interviewers often ask "what if two servers make the same code?" Answer that before they ask by explaining your id scheme.
+
+interview:
+  - q: How would you generate short codes so they are unique, short and not easy to guess?
+    keys:
+      - ["Compare approaches, hash, counter, random", [hash, counter, random]]
+      - ["Base 62 encoding and length math", [base 62, base62, "62", "7 char", length]]
+      - ["Avoid clashes with counter blocks or check on insert", [block, range, collision, conditional, unique, retry]]
+      - ["Hide order with shuffling, random codes or a secret mapping", [guess, shuffle, scramble, random, permut, obfusc]]
+    a: |
+      Seven characters of base 62 give 3.5 trillion codes, enough. For uniqueness I would hand each server a block of numbers from a central counter, so there are no clashes and no checks. Plain counters give guessable, sequential codes, so I would pass the number through a reversible scramble, like a keyed permutation, before encoding. Another good option is fully random 7 character codes inserted with a "only if not exists" write, retrying on the rare clash.
+    fb: Doing the 62 to the 7 math out loud shows you sized the code length, not guessed it.
+  - q: Your shortener goes viral and one link gets 500 thousand clicks a second. What happens and what do you do?
+    keys:
+      - ["It is a hot key on one cache or database node", [hot key, hot, one node, single key]]
+      - ["Cache at the edge or CDN, or local in memory caches", [cdn, edge, local cache, in memory, in-memory]]
+      - ["Use 301 or long cache headers for that link", ["301", cache header, cache-control]]
+      - ["Send analytics asynchronously or sampled", [async, queue, sample, batch]]
+    a: |
+      All those requests go for one key, so one cache node takes the full load, a hot key. I would add a small in memory cache on each link server for the hottest codes, so most requests never leave the server, and let the CDN or edge serve the redirect with a short cache time. For click counting I would batch counts in memory and flush them every second, or sample, instead of one write per click.
+    fb: Naming it a hot key and adding local caching is the expected answer. Edge caching is the bonus.
+
+refs:
+  - "Alex Xu. System Design Interview volume 1, chapter 8, design a URL shortener."
+  - "Bitly Engineering. [Lessons learned building a distributed system that handles 6 billion clicks a month](https://word.bitly.com/post/28558800777/lessons-learned-building-a-distributed-system-that)."
+  - "MDN. [301 Moved Permanently](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/301) and [302 Found](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/302)."

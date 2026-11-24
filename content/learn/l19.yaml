@@ -1,0 +1,208 @@
+slug: l19
+num: "19"
+level: 4
+short: Security for architects
+title: Security for architects
+time: about 50 minutes
+tags: [auth, OAuth, encryption, least privilege]
+lede: Security is part of the design, not a coat of paint at the end. Learn how to check who someone is, what they may do, and how to protect data in motion and at rest.
+
+idea: |
+  Every design must answer four questions.
+
+  1. **Who are you?** That is **authentication**, logging in.
+  2. **What may you do?** That is **authorization**, permissions.
+  3. **Can anyone read or change the data on the way or on disk?** That is **encryption**.
+  4. **If something is broken into, how much damage can it do?** That is **least privilege** and **defense in depth**.
+
+  !eli5 A hotel checks your ID at the front desk, that is authentication. Your key card opens only your room and the gym, not other rooms, that is authorization. The safe in your room is encryption. Even if a thief gets one key card, they get one room, not the whole hotel. That is least privilege.
+
+scenes:
+  - title: Logging in with OAuth and calling an API with a token
+    stats: [Step, Who holds what]
+    nodes:
+      user: {label: User and app, x: 0, y: 1, kind: box}
+      idp: {label: Login provider, x: 2, y: 0, kind: def, tag: identity}
+      gw: {label: API gateway, x: 2, y: 2, kind: raised}
+      api: {label: Photo service, x: 4, y: 2, kind: def}
+      db: {label: Database, x: 6, y: 2, kind: raised, tag: encrypted}
+    links: [[user, idp], [user, gw], [gw, api], [api, db]]
+    steps:
+      - title: Log in at the provider
+        text: The app sends the user to the login provider. The user types their password there, never into the app's own servers. They may also use a second factor.
+        on: [user, idp]
+        flow: [[user, idp, ink]]
+        stats: [Authenticate, Provider checks password]
+      - title: Get a token
+        text: The provider returns a short lived **access token**, signed so it cannot be forged, listing who the user is and what they may do, like `photos.read`.
+        on: [user, idp]
+        flow: [[idp, user, def]]
+        mark: {user: ok}
+        stats: [Token issued, App holds a 15 minute token]
+      - title: Call the API
+        text: The app sends the token with each request over HTTPS. The gateway checks the signature and expiry. No database lookup needed.
+        on: [user, gw]
+        flow: [[user, gw, pen]]
+        stats: [Authenticate request, Gateway verifies token]
+      - title: Check permission
+        text: The photo service checks authorization. Is this user the owner of album 9, or shared on it? If not, `403 Forbidden`.
+        on: [gw, api]
+        flow: [[gw, api, ink]]
+        stats: [Authorize, Service checks ownership]
+      - title: Read encrypted data
+        text: The service reads from a database that is encrypted on disk, using its own narrow credentials that can only touch photo tables.
+        on: [api, db]
+        flow: [[api, db, def]]
+        mark: {db: ok}
+        stats: [Least privilege, Service has narrow access]
+
+terms:
+  - [Authentication, "Proving who you are. Passwords, passkeys, one time codes."]
+  - [Authorization, "Deciding what you are allowed to do."]
+  - [OAuth 2.0, "A standard for letting an app get limited access tokens on a user's behalf."]
+  - [OpenID Connect, "A layer on OAuth that also tells the app who the user is. Used for Sign in with Google and similar."]
+  - [JWT, "JSON Web Token. A signed token that carries claims like user id and expiry."]
+  - [RBAC, "Role based access control. Permissions come from roles like admin or viewer."]
+  - [Encryption in transit, "Data is encrypted while moving, with TLS."]
+  - [Encryption at rest, "Data is encrypted on disk, so stolen disks or backups are unreadable."]
+  - [Least privilege, "Every user and service gets only the access it needs."]
+  - [Secrets manager, "A safe service that stores passwords and keys, like Vault or AWS Secrets Manager."]
+
+how: |
+  ### Passwords done right
+
+  Never store passwords. Store a slow, salted **hash**, made with bcrypt, scrypt or Argon2. Add rate limits on login, see lesson 14, and offer **multi factor** login or **passkeys**.
+
+  ### Sessions or tokens
+
+  | | Server sessions | Signed tokens, JWT |
+  | --- | --- | --- |
+  | Where state is | Session store | Inside the token |
+  | Check cost | A lookup per request | Verify a signature |
+  | Log out instantly | Easy, delete the session | Hard, wait for expiry or keep a deny list |
+  | Good for | Websites | APIs and many services |
+
+  A common mix is short lived access tokens, around 15 minutes, plus a longer **refresh token** that can be revoked.
+
+  ### Authorization patterns
+
+  - Check permission in the service that owns the data, on every request.
+  - **IDOR**, insecure direct object reference, is the classic bug. Changing `/invoices/1001` to `/invoices/1002` shows someone else's invoice. Always check ownership.
+  - Use roles for simple cases and attribute or relationship rules, like "member of this team", for richer ones.
+
+  ### Service to service
+
+  Inside your network, do not trust a call just because it is internal. Use **mutual TLS** so each service proves its identity, and give each service its own narrow permissions. This is the idea behind **zero trust**.
+
+  ### Defense in depth
+
+  Layers, each catching what the last missed. Edge protection against floods, a web application firewall, rate limits, authentication at the gateway, authorization in services, input validation, encryption, audit logs, backups.
+
+  !warn The most common real breaches are boring. Public storage buckets, secrets committed to code, missing permission checks and unpatched software. Design these out first.
+
+diagrams:
+  - type: layers
+    title: Defense in depth for a web API
+    attack: an attacker's request
+    layers:
+      - ["Edge protection and WAF", "Blocks floods and known bad patterns", "partial"]
+      - ["Rate limits", "Slows brute force and scraping", "partial"]
+      - ["Authentication at the gateway", "No valid token, no entry", "stop"]
+      - ["Authorization in the service", "Checks ownership of every object", "stop"]
+      - ["Encryption and least privilege", "Limits damage if something leaks", "partial"]
+    caption: No single layer is perfect. Together they make an attack slow, noisy and limited.
+
+life:
+  - ["Capital One breach, 2019", "A misconfigured web firewall let an attacker reach the cloud metadata service and use a role with far too many permissions to read S3 buckets with over 100 million customer records. Least privilege on that role would have limited it."]
+  - ["Secrets in a public repository", "Developers often push cloud keys to public code repositories by accident. Bots scan for them within minutes and start crypto mining. Use a secrets manager and scanning before commit."]
+  - ["An IDOR in a food app", "Changing an order number in the URL showed other people's names, addresses and phone numbers. The API checked that the user was logged in but not that the order was theirs."]
+
+tradeoffs:
+  - ["Server sessions", "Instant logout, simple.", "Lookup on every request, shared store needed."]
+  - ["Self contained tokens", "Fast checks, good across services.", "Hard to revoke early, keep them short lived."]
+  - ["Central auth service", "One place to get it right.", "Critical dependency, must be highly available."]
+  - ["mTLS everywhere", "Strong service identity.", "Certificate management work, a service mesh helps."]
+
+mistakes:
+  - Storing passwords in plain text or with fast hashes like MD5.
+  - Checking that a user is logged in but not that they own the object.
+  - Long lived tokens with no way to revoke them.
+  - Secrets in code, config files or logs.
+  - Trusting every request from inside the network.
+
+quiz:
+  - q: A user changes `/invoices/1001` to `/invoices/1002` and sees another company's invoice. What is missing?
+    opts: ["Authentication", "Authorization, an ownership check", "Encryption"]
+    a: 1
+    why: The user is logged in. The service never checked if the invoice belongs to them.
+  - type: fill
+    q: Giving each user and service only the access it needs is the principle of least ____.
+    a: ["privilege"]
+    why: Least privilege limits the damage of any single breach.
+  - type: fill
+    q: Proving who you are is called ____, and deciding what you may do is authorization.
+    a: ["authentication", "authn"]
+    why: Authentication first, then authorization.
+  - q: How should passwords be stored?
+    opts: ["Encrypted with a key on the server", "As a slow salted hash like bcrypt or Argon2", "In plain text in a safe table"]
+    a: 1
+    why: Hashes cannot be reversed. Slow, salted ones resist cracking.
+
+interview:
+  - q: How would you design authentication and authorization for a multi service app?
+    keys:
+      - ["Central identity provider with OAuth or OpenID Connect", [oauth, openid, oidc, identity provider, sso, auth service]]
+      - ["Short lived signed access tokens with refresh tokens", [jwt, token, short lived, refresh, expiry]]
+      - ["Gateway verifies tokens", [gateway, verify, signature]]
+      - ["Each service does its own authorization on resources", [authoriz, permission, ownership, rbac, role, each service]]
+      - ["Service to service identity and least privilege, like mTLS", [mtls, mutual tls, service identity, least privilege, zero trust]]
+    a: |
+      Users log in at one identity provider using OpenID Connect, with MFA or passkeys. It issues short lived signed access tokens, around 15 minutes, and revocable refresh tokens. The API gateway verifies the token signature and expiry on every request and passes the user identity on. Each service then authorizes against its own data, for example "is this user a member of this project", because only it knows its resources. Between services I use mutual TLS so each service has an identity, and each has narrow permissions to its own database and nothing else. Secrets live in a secrets manager and every sensitive action is written to an audit log.
+    fb: The split, authenticate once at the edge but authorize inside each service, is the key point. Many candidates check only at the gateway.
+  - q: What is the difference between encryption in transit and at rest, and do you need both?
+    keys:
+      - ["In transit protects data moving over networks with TLS", [transit, tls, network, moving, https]]
+      - ["At rest protects stored data on disks and backups", [rest, disk, stored, backup]]
+      - ["Different threats, so you need both", [both, different threat, different risk]]
+      - ["Key management matters, like KMS and rotation", [kms, key management, rotate, rotation, keys]]
+    a: |
+      Encryption in transit, using TLS, stops anyone on the network from reading or changing data as it moves, including inside your own data center. Encryption at rest protects data stored on disks, snapshots and backups, so a stolen disk or a leaked backup is useless. They protect against different threats, so you need both. The hard part is keys. Keep them in a key management service, limit who can use them, and rotate them.
+    fb: Mention key management. Encryption is only as strong as the protection of the key.
+
+desk:
+  title: Secure a school portal
+  lede: A school portal for marks and messages is about to launch. Review its security design.
+  situation: |
+    **ClassBridge** lets students, parents and teachers log in. Teachers enter marks, parents see their own child's marks. The prototype stores passwords with MD5, checks only that a user is logged in, keeps the database password in the code, and lets the app's database user drop any table.
+  rounds:
+    - title: Round 1. Find the holes
+      items:
+        - type: sort
+          q: Match each problem to its fix.
+          rows:
+            - ["Passwords hashed with MD5", "Use bcrypt or Argon2"]
+            - ["Parents can open any student's marks by changing the id", "Check the parent is linked to that student"]
+            - ["Database password in the code", "Move it to a secrets manager"]
+            - ["App database user can drop tables", "Grant only the rights the app needs"]
+          opts: ["Use bcrypt or Argon2", "Check the parent is linked to that student", "Move it to a secrets manager", "Grant only the rights the app needs"]
+          why: Each fix closes a common, real world breach path.
+    - title: Round 2. Roles
+      items:
+        - q: Which model fits "teachers edit marks for their classes, parents read their children's marks"?
+          opts: ["Everyone is admin", "Roles plus relationship checks, teacher of this class, parent of this student", "No checks, it is a school"]
+          a: 1
+          why: Roles alone are not enough. The relationship decides which records each person can touch.
+        - type: open
+          q: Name two things you would log for audits.
+          a: "Every change to marks with who, when, old value and new value, and every login and failed login with the IP. Audit logs should be append only and kept separate from app logs."
+  card: |
+    - Authenticate once, authorize everywhere.
+    - Short lived tokens, slow password hashes.
+    - TLS in transit, encryption at rest, keys in KMS.
+    - Least privilege for people and services.
+
+refs:
+  - "OWASP. [Top 10 web application security risks](https://owasp.org/www-project-top-ten/)."
+  - "OWASP. [Password storage cheat sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)."
+  - "OAuth. [OAuth 2.0 simplified](https://www.oauth.com/)."
+  - "Google. [BeyondCorp, a new approach to enterprise security](https://research.google/pubs/beyondcorp-a-new-approach-to-enterprise-security/)."

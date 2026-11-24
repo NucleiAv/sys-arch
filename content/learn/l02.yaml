@@ -1,0 +1,198 @@
+slug: l02
+num: "02"
+level: 1
+short: APIs and how services talk
+title: APIs, how programs talk to each other
+time: about 45 minutes
+tags: [REST, GraphQL, gRPC, WebSocket]
+lede: An API is a menu of things a server will do for you. Learn the common styles, when each one fits, and how to keep a live line open for chat and live updates.
+
+idea: |
+  An **API**, application programming interface, is the list of requests a server accepts and what it sends back. The client cannot reach inside the server. It can only order from the menu.
+
+  A good API is boring in the best way. Clear names, the same rules everywhere, and it never breaks the apps already using it.
+
+  !eli5 A restaurant menu is an API. You do not walk into the kitchen. You say "one pizza, no onions" in a way the kitchen understands, and a pizza comes out. If the restaurant changes the kitchen, the menu can stay the same.
+
+scenes:
+  - title: Three ways to get new chat messages
+    stats: [Style, Requests per minute, Delay]
+    nodes:
+      app: {label: Chat app, x: 0, y: 1, kind: box, tag: client}
+      srv: {label: Chat server, x: 4, y: 1, kind: def}
+      db: {label: Messages, x: 6, y: 1, kind: raised}
+    links: [[app, srv], [srv, db]]
+    steps:
+      - title: Short polling
+        text: The app asks "anything new?" every 2 seconds. Most answers are "no". Wasteful, and a message can wait up to 2 seconds.
+        on: [app, srv]
+        flow: [[app, srv, ink], [srv, app, ink], [app, srv, ink]]
+        stats: [Short polling, 30, up to 2 s]
+      - title: Long polling
+        text: The app asks once and the server holds the request open until a message arrives or 30 seconds pass. Fewer empty answers.
+        on: [app, srv]
+        flow: [[app, srv, ink], [srv, app, def]]
+        stats: [Long polling, about 2, near instant]
+      - title: WebSocket
+        text: One connection stays open both ways. The server pushes each message the moment it lands. Best for chat and games.
+        on: [app, srv, db]
+        flow: [[db, srv, def], [srv, app, def], [app, srv, def]]
+        mark: {app: ok}
+        stats: [WebSocket, 0 asks, instant]
+
+terms:
+  - [REST, "The most common style. Things are nouns at URLs, like `/users/42`, and HTTP methods are verbs, `GET`, `POST`, `PUT`, `PATCH`, `DELETE`."]
+  - [GraphQL, "One endpoint where the client writes a query for exactly the fields it wants. Good for apps with many screens."]
+  - [gRPC, "Fast calls between servers using a compact binary format and a strict contract file. Common inside a company."]
+  - [WebSocket, "A connection that stays open so both sides can send at any time."]
+  - [Server-sent events, "A one way open stream from server to browser. Simpler than WebSocket when only the server talks."]
+  - [Webhook, "The server calls your URL when something happens, instead of you asking again and again."]
+  - [Idempotent, "Doing it twice has the same effect as doing it once. `GET`, `PUT` and `DELETE` should be. `POST` usually is not."]
+  - [Pagination, "Returning a long list in pages, so one request never returns a million rows."]
+
+how: |
+  ### REST in one picture
+
+  | Call | Meaning |
+  | --- | --- |
+  | `GET /orders` | List my orders |
+  | `GET /orders/17` | Show order 17 |
+  | `POST /orders` | Create an order |
+  | `PATCH /orders/17` | Change part of order 17 |
+  | `DELETE /orders/17` | Cancel order 17 |
+
+  Use nouns, not verbs, in paths. Use status codes honestly. Return `201` when you create, `404` when it is missing, `409` when it clashes.
+
+  ### Pagination, done right
+
+  **Offset paging**, `?page=500`, makes the database skip 10 thousand rows, and it repeats or skips items when new ones arrive. **Cursor paging**, `?after=msg_9812`, says "give me the 20 after this one". It stays fast and stable, so feeds and chats use it.
+
+  ### Versioning
+
+  Apps on old phones keep calling your old API for years. Add new fields freely, but never remove or rename one. When you must break things, publish `/v2` and keep `/v1` alive until traffic fades.
+
+  ### Idempotency keys
+
+  A phone sends "pay 20 dollars", the network drops, and the phone retries. Did it pay twice? The fix is an **idempotency key**. The client sends a unique id with the request. The server remembers ids it has seen and returns the first result again instead of paying again. Every payment API does this.
+
+diagrams:
+  - type: flow
+    title: A retry with an idempotency key
+    nodes: [["Phone sends pay, key abc", "box"], ["Server pays and saves key abc", "def"], ["Network drops the answer", "atk"], ["Phone retries with key abc", "box"], ["Server sees abc and returns the saved result", "def"]]
+    caption: The customer pays exactly once even though the request arrived twice.
+
+life:
+  - ["A food app shows the same restaurant twice", "The list used `?page=2`. Between page 1 and page 2, a new restaurant was added at the top, which pushed one item down onto page 2 again. Switching to a cursor, `?after=rest_881`, fixed it."]
+  - ["A mobile app breaks after a server update", "A developer renamed `price` to `amount` in the response. The app in the store still read `price`, so every price showed as empty. The rule is add, never rename. Keep `price` and add `amount` next to it."]
+  - ["A payment provider charges a customer twice", "This happens when an API does not support idempotency keys and a client retries after a timeout. This is why Stripe and other payment APIs ask for an `Idempotency-Key` header."]
+
+tradeoffs:
+  - ["REST", "Simple, cacheable, every tool understands it.", "Screens may need many calls, or get more data than they need."]
+  - ["GraphQL", "One call fetches exactly what a screen needs.", "Harder to cache and to protect from very heavy queries."]
+  - ["gRPC", "Fast, typed, great between your own services.", "Not native in browsers, harder to read and debug by hand."]
+  - ["WebSocket", "Instant two way updates.", "Each open connection costs server memory, harder to load balance."]
+  - ["Polling", "Dead simple, works everywhere.", "Wasteful and slow to notice changes."]
+
+mistakes:
+  - Putting verbs in URLs, like `/getUser`, instead of using HTTP methods.
+  - Returning 200 with an error message inside. Use real status codes.
+  - Using offset paging on a feed that changes all the time.
+  - Retrying a payment without an idempotency key.
+  - Removing or renaming a field that old apps still read.
+
+quiz:
+  - q: Which HTTP call should create a new order?
+    opts: ["GET /orders", "POST /orders", "DELETE /orders"]
+    a: 1
+    why: POST creates. GET only reads and must never change data.
+  - type: fill
+    q: An operation that has the same effect when done twice as when done once is called ____.
+    a: ["idempotent"]
+    why: Idempotent calls are safe to retry. That is why networks and APIs care so much about them.
+  - q: A stock price screen needs updates pushed from the server, and the browser never sends anything back. What is the simplest fit?
+    opts: ["Short polling every 100 ms", "Server-sent events", "A nightly batch job"]
+    a: 1
+    why: Server-sent events are a one way push over plain HTTP, simpler than a WebSocket when the client does not need to talk back.
+  - type: fill
+    q: Instead of `?page=500`, a feed should page with a ____ like `?after=post_981`.
+    a: ["cursor"]
+    why: A cursor points at the last item seen, so paging stays fast and nothing repeats when new items arrive.
+  - type: sort
+    q: Pick the best style for each case.
+    rows:
+      - ["A public API many companies will use", "REST"]
+      - ["Fast calls between two of your own backend services", "gRPC"]
+      - ["A multiplayer game sending moves both ways", "WebSocket"]
+      - ["A mobile app whose screens each need different fields", "GraphQL"]
+    opts: ["REST", "gRPC", "WebSocket", "GraphQL"]
+    why: Match the style to who calls it and how data flows. Simple and public, REST. Internal and fast, gRPC. Two way live, WebSocket. Flexible reads, GraphQL.
+
+interview:
+  - q: Design the REST API for a simple blog with posts and comments.
+    keys:
+      - ["Resource paths with nouns, like /posts and /posts/{id}/comments", ["/posts", posts, comments, resource]]
+      - ["Correct HTTP methods for create, read, update and delete", [get, post, put, patch, delete]]
+      - ["Pagination for lists, ideally with cursors", [page, pagination, cursor, limit, after]]
+      - ["Status codes like 201, 404 and 403", [201, 404, 403, 400, status]]
+      - ["Authentication and versioning", [auth, token, version, v1]]
+    a: |
+      - `GET /v1/posts?limit=20&after=...` lists posts with a cursor.
+      - `POST /v1/posts` creates a post and returns `201` with its id.
+      - `GET /v1/posts/{id}` returns one post or `404`.
+      - `PATCH /v1/posts/{id}` and `DELETE /v1/posts/{id}` only for the author, otherwise `403`.
+      - `GET /v1/posts/{id}/comments?after=...` and `POST /v1/posts/{id}/comments`.
+
+      All calls need a bearer token except reading public posts. The version in the path lets me change things later without breaking old clients.
+    fb: Great answers mention who is allowed to do what, how lists are paged, and how the API can change safely. Those three are what separate a toy API from a real one.
+  - q: A client times out while creating an order and retries. How do you stop a duplicate order?
+    keys:
+      - ["Client sends a unique idempotency key", [idempotency, key, unique, uuid, "request id"]]
+      - ["Server stores keys it has processed with the result", [store, save, remember, table, cache]]
+      - ["On a repeat key, return the saved result instead of doing it again", [return, same, saved, previous, again]]
+      - ["Keys expire after some time and the check is atomic", [expire, ttl, atomic, unique constraint, lock, race]]
+    a: |
+      The client creates a unique key, like a UUID, for each intended order and sends it in a header. The server saves the key with the result in the same transaction that creates the order, with a unique rule on the key. If the same key comes again, the server returns the saved result. If two copies arrive at the same moment, the unique rule lets only one win. Keys are kept for a day or so, then cleaned up.
+    fb: Mention the race between two retries that land together. A unique constraint or lock is what makes the idea actually safe.
+
+desk:
+  title: Fix the leaky API
+  lede: A startup's API is causing bugs in its app. Spot the problems and choose fixes.
+  situation: |
+    **PetPal** lets owners book dog walkers. Its API has `GET /getWalkers?page=3`, `POST /bookWalk` with no retry protection, and returns `200` with `{"error":"not found"}` when a walker is missing.
+  rounds:
+    - title: Round 1. Spot the problems
+      items:
+        - type: sort
+          q: Match each problem to the fix.
+          rows:
+            - ["`/getWalkers` and `/bookWalk`", "Use nouns and HTTP methods"]
+            - ["Double bookings after a retry", "Idempotency key"]
+            - ["`200` with an error inside", "Use real status codes"]
+            - ["Walkers repeat across pages as new ones join", "Cursor paging"]
+          opts: ["Use nouns and HTTP methods", "Idempotency key", "Use real status codes", "Cursor paging"]
+          why: Each one is a common smell. Fixing them makes the API predictable for every client.
+        - q: What should the API return when the walker does not exist?
+          opts: ["200 with an error message", "404 Not Found", "500 Server Error"]
+          a: 1
+          why: 404 says the thing is missing. 500 would wrongly blame the server.
+    - title: Round 2. Live updates
+      items:
+        - q: Owners want to see the walker's location move on a map during the walk. The app only receives. Best choice?
+          opts: ["Poll every 30 seconds", "Server-sent events or a WebSocket", "Email updates"]
+          a: 1
+          why: A live map needs pushes every few seconds. SSE is enough since the owner does not send back. A WebSocket also works.
+        - type: open
+          q: How would you rename `/bookWalk` without breaking the old app in the store?
+          a: "Add `POST /v2/walks` as the new call and keep `/bookWalk` working, pointing it at the same code. Track how many calls still hit the old path, and remove it only when almost nobody uses it, months later."
+  card: |
+    - Nouns in paths, verbs in methods.
+    - Honest status codes.
+    - Cursor paging for anything that changes.
+    - Idempotency keys for anything that costs money.
+    - Add fields, never rename.
+
+refs:
+  - "Microsoft. [Web API design best practices](https://learn.microsoft.com/en-us/azure/architecture/best-practices/api-design)."
+  - "Stripe. [Idempotent requests](https://docs.stripe.com/api/idempotent_requests)."
+  - "MDN. [The WebSocket API](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) and [Server-sent events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events)."
+  - "gRPC. [Introduction to gRPC](https://grpc.io/docs/what-is-grpc/introduction/)."

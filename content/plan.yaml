@@ -1,0 +1,82 @@
+title: The plan, ten weeks from zero to interview ready
+lede: About five hours a week. Each week has concept lessons, one or two designs and a small thinking task. Tick tasks as you go. Your ticks stay in this browser.
+
+weeks:
+  - n: 1
+    t: How the web works
+    d: Learn the words everyone uses. Do not rush this week.
+    tasks:
+      - {k: Read, time: 2 hrs, t: "Read all eight steps of Start here and play with the scale simulator until you can make 10 million users healthy.", page: basics.html, label: Start here}
+      - {k: Learn, time: 45 min, t: "Lesson 1.", page: learn/l01.html}
+      - {k: Learn, time: 45 min, t: "Lesson 2.", page: learn/l02.html}
+      - {k: Think, time: 20 min, t: "Write down what happens when you open your favourite app, from the tap to the screen. Then compare with the interview answer in lesson 1."}
+  - n: 2
+    t: Numbers and servers
+    d: Learn to estimate and to grow from one server to many.
+    tasks:
+      - {k: Learn, time: 45 min, t: "Lesson 3. Do every math question without a calculator.", page: learn/l03.html}
+      - {k: Learn, time: 45 min, t: "Lesson 4.", page: learn/l04.html}
+      - {k: Learn, time: 45 min, t: "Lesson 5.", page: learn/l05.html}
+      - {k: Design, time: 1 hr, t: "Read the method, then do the link shortener out loud with a 45 minute timer.", page: design/d00.html}
+      - {k: Design, time: 1 hr, t: "Design 01.", page: design/d01.html}
+  - n: 3
+    t: Databases
+    d: The heart of most designs.
+    tasks:
+      - {k: Learn, time: 45 min, t: "Lesson 6.", page: learn/l06.html}
+      - {k: Learn, time: 45 min, t: "Lesson 7.", page: learn/l07.html}
+      - {k: Learn, time: 45 min, t: "Lesson 8.", page: learn/l08.html}
+      - {k: Think, time: 20 min, t: "Pick an app you use. Write its three main tables and say if you would use SQL or NoSQL and why."}
+  - n: 4
+    t: Growing the data layer
+    d: Split data, cache it and move files closer to users.
+    tasks:
+      - {k: Learn, time: 45 min, t: "Lesson 9.", page: learn/l09.html}
+      - {k: Learn, time: 45 min, t: "Lesson 10.", page: learn/l10.html}
+      - {k: Learn, time: 45 min, t: "Lesson 11.", page: learn/l11.html}
+      - {k: Design, time: 1 hr, t: "Design 05.", page: design/d05.html}
+  - n: 5
+    t: Many machines, one truth
+    d: The hardest ideas in the course. Read slowly and do the practice desks.
+    tasks:
+      - {k: Learn, time: 45 min, t: "Lesson 12.", page: learn/l12.html}
+      - {k: Learn, time: 45 min, t: "Lesson 13.", page: learn/l13.html}
+      - {k: Learn, time: 45 min, t: "Lesson 14.", page: learn/l14.html}
+      - {k: Design, time: 1 hr, t: "Design 02.", page: design/d02.html}
+  - n: 6
+    t: Order, time and agreement
+    tasks:
+      - {k: Learn, time: 45 min, t: "Lesson 15.", page: learn/l15.html}
+      - {k: Learn, time: 1 hr, t: "Lesson 16.", page: learn/l16.html}
+      - {k: Design, time: 1 hr, t: "Design 03.", page: design/d03.html}
+      - {k: Design, time: 1 hr, t: "Design 04.", page: design/d04.html}
+  - n: 7
+    t: Running it for real
+    tasks:
+      - {k: Learn, time: 45 min, t: "Lesson 17.", page: learn/l17.html}
+      - {k: Learn, time: 45 min, t: "Lesson 18.", page: learn/l18.html}
+      - {k: Design, time: 1 hr, t: "Design 06.", page: design/d06.html}
+      - {k: Design, time: 1 hr, t: "Design 07.", page: design/d07.html}
+  - n: 8
+    t: Safe and well organized
+    tasks:
+      - {k: Learn, time: 45 min, t: "Lesson 19.", page: learn/l19.html}
+      - {k: Learn, time: 45 min, t: "Lesson 20.", page: learn/l20.html}
+      - {k: Design, time: 1 hr, t: "Design 08.", page: design/d08.html}
+      - {k: Design, time: 1 hr, t: "Design 09.", page: design/d09.html}
+  - n: 9
+    t: Mastery
+    tasks:
+      - {k: Learn, time: 45 min, t: "Lesson 21.", page: learn/l21.html}
+      - {k: Learn, time: 45 min, t: "Lesson 22.", page: learn/l22.html}
+      - {k: Design, time: 1 hr, t: "Design 10.", page: design/d10.html}
+      - {k: Design, time: 1 hr, t: "Design 11.", page: design/d11.html}
+  - n: 10
+    t: Interview ready
+    d: Practice out loud, with a timer, and ideally with a friend.
+    tasks:
+      - {k: Design, time: 1 hr, t: "Design 12.", page: design/d12.html}
+      - {k: Design, time: 1 hr, t: "Design 13.", page: design/d13.html}
+      - {k: Design, time: 1 hr, t: "Design 14.", page: design/d14.html}
+      - {k: Mock, time: 1 hr, t: "Press Give me a random question on the interview page five times. Answer each out loud in under 5 minutes, then get feedback.", page: interview.html, label: Interview questions}
+      - {k: Mock, time: 1 hr, t: "Ask a friend to pick any design. Do it in 45 minutes on paper. Ask them to stop you every time you skip a trade-off."}

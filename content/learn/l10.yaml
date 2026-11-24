@@ -1,0 +1,206 @@
+slug: l10
+num: "10"
+level: 2
+short: Caching
+title: Caching, remembering answers to go faster
+time: about 55 minutes
+tags: [Redis, TTL, invalidation, eviction]
+lede: A cache keeps popular answers in fast memory so you skip slow work. It is the biggest speed win in most systems, and the source of some of the trickiest bugs.
+
+idea: |
+  Many requests ask the same thing. The top 100 products, the home page, a celebrity's profile. Doing the same slow database work again and again is wasteful. A **cache** stores the answer in memory the first time, and serves it from there next time.
+
+  Memory is about 1,000 times faster than disk and a cache like Redis can answer in under a millisecond. A good cache can absorb 90 percent or more of reads.
+
+  The two hard questions are **what to keep**, because memory is small, and **when to throw an answer away**, because the real data changes.
+
+  !eli5 If people keep asking you the time, you look at your watch once and remember it for a minute. That is a cache. If you remember it for a whole day, you will give wrong answers. That is a stale cache.
+
+scenes:
+  - title: Cache aside, a hit, a miss and an update
+    stats: [Step, Result, Time]
+    nodes:
+      app: {label: App server, x: 0, y: 1, kind: def}
+      cache: {label: Cache, x: 3, y: 0, kind: raised, tag: memory}
+      db: {label: Database, x: 3, y: 2, kind: raised, tag: disk}
+    links: [[app, cache], [app, db]]
+    steps:
+      - title: Miss
+        text: The app asks the cache for product 7. It is not there.
+        on: [app, cache]
+        flow: [[app, cache, ink]]
+        mark: {cache: warn}
+        stats: [Check cache, Miss, 1 ms]
+      - title: Read the database
+        text: The app reads product 7 from the database, the slow part.
+        on: [app, db]
+        flow: [[app, db, ink], [db, app, ink]]
+        stats: [Read database, Found, 20 ms]
+      - title: Fill the cache
+        text: The app saves it in the cache with a TTL of 5 minutes.
+        on: [app, cache]
+        flow: [[app, cache, def]]
+        stats: [Fill cache, Saved, 21 ms]
+      - title: Hit
+        text: The next thousand requests for product 7 come straight from the cache. The database rests.
+        on: [app, cache]
+        flow: [[app, cache, def], [cache, app, def]]
+        mark: {cache: ok}
+        stats: [Check cache, Hit, 1 ms]
+      - title: The price changes
+        text: The app writes the new price to the database, then **deletes** product 7 from the cache. The next read is a miss and fetches the fresh price.
+        on: [app, db, cache]
+        flow: [[app, db, def], [app, cache, atk]]
+        stats: [Invalidate, Fresh next time, done]
+
+terms:
+  - [Cache hit, "The answer is in the cache."]
+  - [Cache miss, "It is not, so you do the slow work."]
+  - [Hit ratio, "Hits divided by all lookups. 90 percent or more is common for good caches."]
+  - [TTL, "Time to live. How long an entry stays before it expires."]
+  - [Eviction, "Throwing entries out when memory is full."]
+  - [LRU, "Least recently used. Evict what nobody has asked for in the longest time."]
+  - [Invalidation, "Removing or updating cached data when the real data changes."]
+  - [Cache stampede, "Many requests miss at once and all hit the database together."]
+
+how: |
+  ### Where caches live
+
+  From closest to the user to farthest. Browser cache, CDN, load balancer or reverse proxy, the app's own memory, a shared cache like Redis or Memcached, and the database's own buffer.
+
+  ### The main patterns
+
+  | Pattern | How it works | Good for |
+  | --- | --- | --- |
+  | Cache aside | App checks cache, on a miss reads the DB and fills the cache | The default, most apps |
+  | Read through | The cache itself loads from the DB on a miss | Simpler app code |
+  | Write through | Write to cache and DB together | Data read right after writing |
+  | Write behind | Write to cache, flush to DB later | Very fast writes, risk of loss |
+
+  ### Keeping it fresh
+
+  - **TTL** puts an upper limit on staleness. Short for prices, long for avatars.
+  - **Delete on write**. After updating the database, delete the cache key. Deleting is safer than updating, because two updates racing can leave the wrong value.
+  - Accept some staleness where it is harmless. A like count that is 10 seconds old is fine. A bank balance is not.
+
+  ### Eviction
+
+  Memory fills up. **LRU** throws out what was used longest ago. **LFU** throws out what is used least often. LRU is the common default.
+
+  ### Stampedes and hot keys
+
+  When a very popular key expires, thousands of requests miss at once and hammer the database. Fixes are letting only one request rebuild the key while others wait or get the old value, adding a little random jitter to TTLs so keys do not all expire together, and refreshing hot keys before they expire.
+
+  !key "There are only two hard things in computer science, cache invalidation and naming things." A famous joke, and true. Decide up front how stale each kind of data may be.
+
+diagrams:
+  - type: layers
+    title: Caches at every layer
+    attack: a request for a product page
+    layers:
+      - ["Browser cache", "Images and scripts the user already has", "partial"]
+      - ["CDN", "Copies of files and some pages near the user", "partial"]
+      - ["App cache, Redis", "Popular database answers in memory", "stop"]
+      - ["Database", "Only the misses reach here", "pass"]
+    caption: Each layer that answers saves every layer below it from doing work.
+
+life:
+  - ["Facebook's memcache at enormous scale", "Facebook built one of the largest Memcached deployments, serving billions of requests a second, and wrote about leases, a trick that stops stampedes and stale sets by letting only one client refill a missing key."]
+  - ["A sale price that would not change", "A shop cached product pages for 24 hours. The marketing team changed prices for a flash sale, but customers saw old prices all day. They moved to delete on write plus a 5 minute TTL."]
+  - ["The midnight stampede", "A news site set every cache key to expire at midnight. At 00:00 every page missed at once and the database fell over. Random jitter on TTLs spread the expiries out."]
+
+tradeoffs:
+  - ["Long TTL", "High hit ratio, fast.", "More stale data."]
+  - ["Short TTL", "Fresher data.", "More misses and more database load."]
+  - ["Cache aside", "Simple, cache failure does not break writes.", "First read after a change is slow, small race windows."]
+  - ["Write through", "Cache always warm with new data.", "Every write does two jobs, caches data nobody reads."]
+  - ["Write behind", "Fastest writes.", "Data loss if the cache dies before flushing."]
+
+mistakes:
+  - Caching data that must be exactly right, like stock levels at checkout, without a check.
+  - Updating the cache on write instead of deleting, which allows races.
+  - Same TTL on every key, so they all expire together.
+  - No plan for the cache going down. Can the database survive full load alone?
+  - Caching per user pages in a shared CDN and showing one user's data to another.
+
+quiz:
+  - q: The cache has the answer. What is it called?
+    opts: ["A miss", "A hit", "An eviction"]
+    a: 1
+    why: A hit means the answer was found in the cache.
+  - type: fill
+    q: The eviction rule that throws out what was used longest ago is called ____.
+    a: ["LRU", "least recently used"]
+    why: Least recently used assumes that what was not used for a while will not be needed soon.
+  - type: fill
+    q: The time an entry may stay in a cache before it expires is its ____.
+    a: ["TTL", "time to live"]
+    why: TTL caps how stale an entry can get.
+  - q: A hugely popular key expires and 50 thousand requests hit the database at once. What is this?
+    opts: ["A cache stampede", "Replication lag", "A shard split"]
+    a: 0
+    why: Prevent it with one rebuilder, jittered TTLs or early refresh.
+  - type: num
+    q: 10,000 reads a second. The hit ratio is 95 percent. How many reads a second still reach the database?
+    a: 500
+    tol: 0
+    unit: per second
+    why: 5 percent of 10,000 is 500. Raising the hit ratio to 99 percent would cut it to 100.
+
+interview:
+  - q: How do you keep a cache consistent with the database?
+    keys:
+      - ["Cache aside, read from DB on a miss and fill the cache", [cache aside, miss, fill, lazy]]
+      - ["Delete the key on write rather than updating it", [delete, invalidate, evict on write]]
+      - ["TTL as a safety net on staleness", [ttl, expire, expiry]]
+      - ["Decide how much staleness each data type can accept", [stale, staleness, accept, tolerate, fresh]]
+      - ["Handle races or stampedes, like leases, locks or versioning", [race, stampede, lease, lock, version, jitter]]
+    a: |
+      I use cache aside. Reads check the cache, and on a miss read the database and fill the cache. On a write I update the database first, then delete the cache key, so the next read loads fresh data. Deleting avoids the race where two writers set the cache in the wrong order. Every key also has a TTL, so even if a delete is lost, the data heals itself. I decide staleness per data type. Profile pictures can be hours old, prices a few minutes, and anything about money at checkout is read from the database. For very hot keys I guard against stampedes with a lock or lease so only one request rebuilds it.
+    fb: Saying "delete, do not update" and "staleness depends on the data" are the two signals of real experience.
+  - q: Your Redis cache goes down. What happens and how do you prepare?
+    keys:
+      - ["All reads fall through to the database at once", [database, fall through, all reads, load, overwhelm]]
+      - ["The database may not handle full load and could fall over", [overload, fall over, crash, cannot handle, cascade]]
+      - ["Run the cache with replicas or a cluster for failover", [replica, cluster, sentinel, failover, redundant]]
+      - ["Protect the database with rate limits, load shedding or warming", [limit, shed, warm, circuit, throttle, degrade]]
+    a: |
+      Every read misses and lands on the database. If the cache was absorbing 95 percent of reads, the database suddenly sees 20 times its normal load and may fall over, turning a cache problem into a full outage. To prepare, I run the cache as a replicated cluster so one node dying is a failover, not an outage. I make sure the app limits how many requests go to the database at once and sheds or degrades the rest. When the cache comes back empty, I warm the hottest keys first.
+    fb: Interviewers want to hear that a cache becomes critical once the database depends on it.
+
+desk:
+  title: The concert ticket page
+  lede: A ticketing site caches event pages. Some fans see wrong information. Sort it out.
+  situation: |
+    **Stagepass** caches each event page in Redis for 1 hour. The page shows the description, the poster and the number of seats left. On sale day, fans see "200 seats left" when the event is sold out.
+  rounds:
+    - title: Round 1. Decide what to cache
+      items:
+        - type: sort
+          q: How should each part of the page be handled?
+          rows:
+            - ["Event description and poster", "Cache for a long time"]
+            - ["Seats left shown on the page", "Cache for a few seconds"]
+            - ["Seats left when you press Buy", "Always check the database"]
+          opts: ["Cache for a long time", "Cache for a few seconds", "Always check the database"]
+          why: Static content can be cached long. Rough counts can be a bit stale. The final purchase must be exact.
+        - q: When the admin edits the event description, what should happen to the cache?
+          opts: ["Wait an hour for it to expire", "Delete the key right after saving", "Restart Redis"]
+          a: 1
+          why: Delete on write gives fresh data on the next read.
+    - title: Round 2. Sale opens
+      items:
+        - q: At 10:00 the event key expires while 80 thousand fans refresh. What protects the database?
+          opts: ["Let only one request rebuild the key while others get the old copy", "Make the TTL longer during the sale only", "Nothing can help"]
+          a: 0
+          why: Single flight rebuilds, or leases, stop the stampede.
+  card: |
+    - Cache aside, delete on write.
+    - TTL on everything, with jitter.
+    - Pick staleness per data type.
+    - Plan for the cache dying.
+
+refs:
+  - "AWS. [Caching best practices](https://aws.amazon.com/caching/best-practices/)."
+  - "Facebook. [Scaling Memcache at Facebook](https://www.usenix.org/system/files/conference/nsdi13/nsdi13-final170_update.pdf)."
+  - "Redis. [Client side caching and eviction docs](https://redis.io/docs/latest/develop/reference/eviction/)."

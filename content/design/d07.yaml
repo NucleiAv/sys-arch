@@ -1,0 +1,165 @@
+slug: d07
+num: "07"
+short: File storage and sync
+title: Design file storage and sync
+time: about 70 minutes
+tags: [chunking, sync, conflicts]
+lede: Save a file on your laptop and it appears on your phone a moment later. Edit it offline and the changes merge when you reconnect. Like Dropbox or Google Drive.
+
+ask: |
+  Users keep files in a folder that syncs across all their devices. Files can be large. Changes should sync quickly, using little bandwidth, and nothing should ever be lost, even with conflicting edits.
+
+reqs:
+  func:
+    - Upload, download, delete and rename files and folders.
+    - Automatic sync across a user's devices.
+    - Share files with other users.
+    - File version history.
+  nonfunc:
+    - Never lose a file. Very high durability.
+    - Sync changes in seconds.
+    - Upload only what changed in big files.
+    - Works offline and catches up later.
+  out:
+    - Real time co editing inside a document, see design 13.
+
+estimate:
+  intro: |
+    50 million users, average 10 GB stored, 2 million files changed an hour.
+  items:
+    - type: num
+      q: Total storage in PB before copies?
+      a: 500
+      tol: 20
+      unit: PB
+      why: 50 million times 10 GB is 500 million GB, which is 500 PB. Object storage territory.
+    - type: num
+      q: File changes a second on average? 2 million an hour.
+      a: 555
+      tol: 60
+      unit: per second
+      why: 2 million divided by 3,600 is about 555 changes a second.
+  after: |
+    !key Storage is enormous and many users store the same files. Splitting files into chunks and storing each chunk once, deduplication, saves a lot.
+
+api: |
+  ```
+  POST /v1/files/commit     { path, chunk_hashes: [...], base_version }  -> missing chunks or new version
+  PUT  {upload_url}/chunk/{hash}   upload a missing chunk
+  GET  /v1/changes?cursor=...      long poll for changes since cursor
+  GET  /v1/files/{id}/versions
+  ```
+
+data: |
+  | Store | Holds |
+  | --- | --- |
+  | file metadata, SQL | file id, owner, path, current version |
+  | versions | file id, version, ordered list of chunk hashes, author, time |
+  | chunks | content hash to object storage location, reference count |
+  | change log | per user ordered list of changes, for sync cursors |
+
+  Metadata needs transactions, a rename or move touches many rows, so a relational database sharded by user or namespace fits. Chunks live in object storage, named by their hash.
+
+scenes:
+  - title: Editing a big file on the laptop
+    stats: [Step, Bytes sent]
+    nodes:
+      laptop: {label: Laptop client, x: 0, y: 1, kind: box}
+      meta: {label: Metadata service, x: 2, y: 0, kind: def}
+      blocks: {label: Chunk storage, x: 2, y: 2, kind: raised, tag: by hash}
+      notif: {label: Change notifier, x: 4, y: 0, kind: def}
+      phone: {label: Phone client, x: 6, y: 1, kind: box}
+    links: [[laptop, meta], [laptop, blocks], [meta, notif], [notif, phone], [phone, blocks]]
+    steps:
+      - title: Find what changed
+        text: The client splits the 200 MB file into 4 MB chunks and hashes each. Only 2 chunks have new hashes.
+        on: [laptop]
+        stats: [Chunk and hash, "0"]
+      - title: Ask what is missing
+        text: The client sends the list of hashes. The metadata service replies "I only need these 2".
+        on: [laptop, meta]
+        flow: [[laptop, meta, ink], [meta, laptop, def]]
+        stats: [Compare, a few KB]
+      - title: Upload only new chunks
+        text: The client uploads 2 chunks, 8 MB, not 200 MB.
+        on: [laptop, blocks]
+        flow: [[laptop, blocks, def]]
+        stats: [Upload, 8 MB]
+      - title: Commit a new version
+        text: The metadata service saves version 12 as a list of chunk hashes, in one transaction, and adds an entry to the change log.
+        on: [meta, notif]
+        flow: [[meta, notif, ink]]
+        stats: [Commit, version 12]
+      - title: The phone syncs
+        text: The phone has a long poll open. It is told "file changed". It fetches the new chunk list and downloads only the 2 chunks it lacks.
+        on: [notif, phone, blocks]
+        flow: [[notif, phone, def], [blocks, phone, def]]
+        mark: {phone: ok}
+        stats: [Sync, 8 MB down]
+
+hld: |
+  1. **Client** watches the folder, chunks files, hashes chunks, and keeps a local database of what it has synced.
+  2. **Metadata service** with a sharded SQL database for files, versions and the change log.
+  3. **Chunk storage** in object storage, content addressed, each chunk stored once.
+  4. **Notification service** keeps long polls or WebSockets open and tells devices when to sync.
+  5. **Sharing** adds access lists on folders and makes shared changes appear in each member's change log.
+
+diagrams:
+  - type: flow
+    title: Upload only what changed
+    nodes: [["Split into chunks", "box"], ["Hash each chunk", "raised"], ["Server says which are new", "def"], ["Upload new chunks only", "def"], ["Commit version", "raised"]]
+    edges: ["", "", "", ""]
+    caption: Content hashes make chunks both a dedup key and a change detector.
+
+deep:
+  - ["Chunking and deduplication", "Fixed size chunks are simple. Content defined chunking finds chunk edges from the data itself, so inserting a byte at the start does not shift every chunk. Identical chunks across all users are stored once."]
+  - ["Conflicts", "If the phone edits version 11 offline while the laptop commits version 12, the phone's commit fails because its base version is old. The client saves its copy as `report (conflicted copy).docx` so nothing is lost, and the user decides."]
+  - ["Sync cursor", "Each device remembers a cursor into its user's change log. On reconnect it asks for all changes since the cursor, applies them in order, and moves the cursor."]
+  - ["Durability", "Object storage keeps several copies across zones. Chunks are deleted only when no version references them, using reference counts and a delayed garbage collector, so a bug cannot delete live data instantly."]
+  - ["Security", "Encrypt chunks at rest. Hash based dedup across users can leak whether someone has a known file, so some services dedup only within one user."]
+
+tradeoffs:
+  - ["Fixed size chunks", "Simple and fast.", "An insert near the start changes every later chunk."]
+  - ["Content defined chunks", "Small edits change few chunks.", "More CPU on the client."]
+  - ["Global dedup", "Big storage savings.", "Privacy risk, cross user reference counting."]
+  - ["Conflicted copies", "Never loses data, simple.", "User must merge by hand."]
+
+task:
+  intro: |
+    Explain sync from one device to another and what happens in a conflict.
+  items:
+    - q: Design a file sync service. How do changes upload efficiently, reach other devices, and survive conflicting offline edits?
+      keys:
+        - ["Split files into chunks with content hashes", [chunk, block, hash]]
+        - ["Upload only missing chunks, deduplicated", [only, missing, changed, dedup, delta]]
+        - ["Metadata service with versions and a change log", [metadata, version, change log, journal]]
+        - ["Notify devices with long polling or WebSockets and a cursor", [long poll, websocket, notify, cursor, push]]
+        - ["Conflict handling with base versions and conflicted copies", [conflict, base version, conflicted copy, optimistic]]
+        - ["Chunks in object storage with durability", [object storage, s3, durab, replica]]
+      a: |
+        The client splits each file into chunks and hashes them. To commit, it sends the list of hashes and its base version. The server says which chunks it lacks, the client uploads only those to object storage, keyed by hash, and the server then saves a new version as an ordered list of hashes in one transaction, appending to the user's change log. Other devices hold a long poll, get told there are changes, ask for everything since their cursor, and download only the chunks they do not have. If a device commits with an old base version because someone else changed the file meanwhile, the commit is rejected, and the client keeps its edit as a conflicted copy, so no data is ever lost.
+      fb: Optimistic concurrency with a base version, and conflicted copies, are the two ideas that prove you thought about offline edits.
+
+interview:
+  - q: How do you avoid re uploading a whole 1 GB file when a few bytes change?
+    keys:
+      - ["Split into chunks", [chunk, block]]
+      - ["Hash chunks and compare with the server", [hash, compare, fingerprint]]
+      - ["Upload only changed chunks", [only, changed, missing, delta]]
+      - ["Content defined chunking so inserts do not shift everything", [content defined, rolling hash, rabin, shift]]
+    a: |
+      The client splits the file into chunks of a few MB and hashes each one. It asks the server which hashes it does not already have and uploads only those. With content defined chunking, chunk edges are chosen by a rolling hash of the content, so inserting bytes near the start only changes the chunks around the edit instead of shifting all later ones.
+    fb: Mentioning content defined chunking turns a good answer into an expert one.
+  - q: What is the source of truth in this design and why does it matter?
+    keys:
+      - ["The server metadata and version history is the source of truth", [server, metadata, version, source of truth]]
+      - ["Clients are caches that sync to it", [client, cache, local]]
+      - ["Helps with recovery, conflicts and new devices", [recover, conflict, new device, reinstall]]
+    a: |
+      The server's metadata, the versions and change log, plus chunk storage, is the truth. Each client's folder is just a synced cache of it. That makes every hard case simple. A new device downloads the current state, a broken client can be reset, and a conflict is decided by comparing against the server's current version.
+    fb: Saying "clients are caches of the server" clears up many follow up questions in one go.
+
+refs:
+  - "Dropbox Tech. [Rewriting the heart of our sync engine](https://dropbox.tech/infrastructure/rewriting-the-heart-of-our-sync-engine)."
+  - "Dropbox Tech. [Streaming file synchronization](https://dropbox.tech/infrastructure/streaming-file-synchronization)."
+  - "Alex Xu. System Design Interview volume 1, chapter 15, design Google Drive."

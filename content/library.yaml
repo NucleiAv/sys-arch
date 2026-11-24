@@ -1,0 +1,34 @@
+title: Where to go deeper
+lede: The best free and paid resources, with a note on when each one helps. You do not need all of them. Pick one book and one practice site.
+
+groups:
+  - t: Practice and interactive sites
+    d: Use these after a lesson to see the same idea from another angle.
+    items:
+      - {t: System Design Simulator, u: "https://systemdesignsimulator.org/", type: simulator, n: "Over a hundred browser simulators for designs, database internals and algorithms. Good for watching Raft, LSM trees and consistent hashing move."}
+      - {t: System Design Simulator roadmap, u: "https://systemdesignsimulator.org/roadmap", type: roadmap, n: "An 8 week order through building blocks, classic designs and internals. Pairs well with the plan on this site."}
+      - {t: Designed to Scale, u: "https://designed-to-scale.vercel.app/", type: course, n: "An interactive system design course with visual explanations."}
+      - {t: Advent of System Design, u: "https://www.devmaxx.dev/advent", type: puzzles, n: "One design puzzle a day through December. Great for daily practice once you finish the designs here."}
+      - {t: ByteByteGo blog, u: "https://blog.bytebytego.com/", type: articles, n: "Short visual explainers on single topics."}
+  - t: Books
+    d: Read one properly instead of skimming three.
+    items:
+      - {t: "Designing Data-Intensive Applications, Martin Kleppmann", u: "https://dataintensive.net/", type: book, n: "The best deep book on data systems. Read it after level 3 here. Chapters 5 to 9 are gold."}
+      - {t: "System Design Interview, volumes 1 and 2, Alex Xu", u: "https://bytebytego.com/", type: book, n: "Classic interview designs, step by step. Good for the Design it track."}
+      - {t: "Database Internals, Alex Petrov", u: "https://www.databass.dev/", type: book, n: "How storage engines and distributed databases really work. For mastery."}
+      - {t: "Site Reliability Engineering, Google", u: "https://sre.google/sre-book/table-of-contents/", type: book, n: "Free online. SLOs, error budgets, on call and postmortems. Goes with lessons 17 and 18."}
+  - t: Free guides and references
+    items:
+      - {t: The System Design Primer, u: "https://github.com/donnemartin/system-design-primer", type: guide, n: "A huge free guide with diagrams and practice questions."}
+      - {t: High Performance Browser Networking, u: "https://hpbn.co/", type: book, n: "Free book on how networks, TCP, TLS and HTTP really behave."}
+      - {t: Latency numbers every programmer should know, u: "https://gist.github.com/jboner/2841832", type: reference, n: "The classic list of how long memory, disk and network take. Memorize the order of magnitude."}
+      - {t: AWS Architecture Center, u: "https://aws.amazon.com/architecture/", type: reference, n: "Real reference architectures and the Well-Architected guide."}
+      - {t: The Raft paper and visual guide, u: "https://raft.github.io/", type: paper, n: "Consensus explained with an animation. Goes with lesson 16."}
+  - t: Engineering blogs with real stories
+    d: Read how real companies solved the problems in this course.
+    items:
+      - {t: Netflix Tech Blog, u: "https://netflixtechblog.com/", type: blog, n: "Streaming, chaos engineering and resilience."}
+      - {t: Uber Engineering, u: "https://www.uber.com/blog/engineering/", type: blog, n: "Geospatial systems, scaling and data platforms."}
+      - {t: Discord Engineering, u: "https://discord.com/category/engineering", type: blog, n: "Storing trillions of messages and scaling realtime chat."}
+      - {t: Cloudflare Blog, u: "https://blog.cloudflare.com/", type: blog, n: "Networking, DNS, CDN and very honest outage reports."}
+      - {t: "AWS Builders' Library", u: "https://aws.amazon.com/builders-library/", type: articles, n: "How Amazon handles timeouts, retries, load shedding and more. Pairs with lesson 17."}

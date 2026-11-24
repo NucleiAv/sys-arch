@@ -1,0 +1,155 @@
+slug: d13
+num: "13"
+short: Collaborative documents
+title: Design collaborative document editing
+time: about 70 minutes
+tags: [OT, CRDT, realtime]
+lede: Several people type in the same document at the same time and everyone sees the same result, with no lost words. Like Google Docs or Notion.
+
+ask: |
+  Many users edit one document at once. Each sees others' cursors and changes within a fraction of a second. If two people type in the same spot at the same moment, the document must end up the same for everyone, and nobody's text may vanish.
+
+reqs:
+  func:
+    - Open, edit and save documents.
+    - Real time edits and cursors from other users.
+    - Offline edits that merge on reconnect.
+    - Version history.
+  nonfunc:
+    - Edits appear for others in under 200 ms.
+    - All copies converge to the same document.
+    - Never lose an accepted edit.
+  out:
+    - Comments, permissions in depth, rich media.
+
+estimate:
+  intro: |
+    10 million daily users, 1 million documents open at any moment, average 3 editors per open document, each typing about 2 changes a second while active.
+  items:
+    - type: num
+      q: Edits a second across the system, in millions? 1 million docs times 3 editors times 2 a second, but assume only a third are actively typing.
+      a: 2
+      tol: 0.2
+      unit: million
+      why: 1 million times 3 times 2 is 6 million, a third is 2 million edit operations a second. Each is tiny, but there are many.
+  after: |
+    !key Each document is small and its editors are few. So route all editors of one document to the same server. That makes ordering simple and keeps cross server traffic low.
+
+api: |
+  ```
+  WebSocket /docs/{id}/session
+    client sends  { op: insert, pos: 120, text: "hi", base_rev: 341, client_id, seq }
+    server sends  { op: ..., rev: 342, author }        broadcast to all editors
+    client sends  { cursor: 124 }                      presence, not stored
+  GET /v1/docs/{id}?rev=latest     snapshot plus ops after it
+  ```
+
+data: |
+  | Store | Holds |
+  | --- | --- |
+  | operations log | doc id, revision, op, author, time, append only |
+  | snapshots | full document every N revisions in object storage |
+  | documents | metadata, owner, title, latest revision |
+  | presence | cursors and who is online, in memory only |
+
+  Loading a document is the latest snapshot plus the operations after it.
+
+scenes:
+  - title: Two people type at the same spot
+    stats: [Step, Alice sees, Bob sees]
+    nodes:
+      alice: {label: Alice, x: 0, y: 0, kind: box}
+      bob: {label: Bob, x: 0, y: 2, kind: box}
+      srv: {label: Doc server for doc 7, x: 3, y: 1, kind: def, tag: one owner per doc}
+      log: {label: Operation log, x: 6, y: 1, kind: raised}
+    links: [[alice, srv], [bob, srv], [srv, log]]
+    steps:
+      - title: Same starting text
+        text: Both see "cat" at revision 10.
+        on: [alice, bob]
+        stats: [Start, cat, cat]
+      - title: Both type at once
+        text: Alice inserts "s" at position 3, making "cats". At the same moment Bob inserts "a " at position 0, making "a cat". Both edits are based on revision 10.
+        on: [alice, bob, srv]
+        flow: [[alice, srv, ink], [bob, srv, ink]]
+        stats: [Edit, cats, a cat]
+      - title: The server orders them
+        text: Bob's op arrives first and becomes revision 11. Alice's op was made against revision 10, so the server **transforms** it. Two characters were added before her position, so "insert at 3" becomes "insert at 5".
+        on: [srv, log]
+        flow: [[srv, log, def]]
+        stats: [Transform, "-", "-"]
+      - title: Everyone converges
+        text: Revision 12 is "a cats". The server sends each client the other's op, transformed for them. Both screens show the same text and no keystroke is lost.
+        on: [alice, bob, srv]
+        flow: [[srv, alice, def], [srv, bob, def]]
+        mark: {alice: ok, bob: ok}
+        stats: [Converge, a cats, a cats]
+
+hld: |
+  1. **Session routing** sends all editors of a document to the same doc server, using consistent hashing on the doc id, lesson 9.
+  2. **Doc server** keeps the live document in memory, orders and transforms operations, appends them to the operations log, then broadcasts.
+  3. **Operations log** is the durable truth, with periodic **snapshots** to load documents fast.
+  4. **Presence** like cursors is broadcast but not stored.
+  5. **Offline clients** keep a local queue of ops and send them with their base revision on reconnect.
+
+diagrams:
+  - type: flow
+    title: The edit path
+    nodes: [["Client op with base revision", "box"], ["Doc server transforms", "def"], ["Append to log", "raised"], ["Broadcast to editors", "def"], ["Clients apply", "box"]]
+    edges: ["WebSocket", "", "then", ""]
+    caption: One server per document is the single place where order is decided.
+
+deep:
+  - ["OT, operational transformation", "Each operation is adjusted against the operations that were applied before it, as in the animation. A central server decides the order. Google Docs uses OT. It works well with a server, but the transform rules are tricky to get right for rich text."]
+  - ["CRDTs", "A conflict free replicated data type gives every character a unique, ordered id, so inserts from anywhere merge in the same order without a central server. Great for offline and peer to peer. Libraries like Yjs and Automerge do the hard part. The cost is extra metadata per character."]
+  - ["Doc server failure", "Clients reconnect, are routed to a new owner, which loads the snapshot plus log. Clients resend any ops not yet acknowledged, and duplicates are dropped using client id and sequence numbers."]
+  - ["Very popular documents", "A document with 10 thousand viewers but few editors. Separate viewers from editors and fan out updates to viewers through a broadcast layer."]
+  - ["History", "The op log already is the history. Named versions are just bookmarks to a revision."]
+
+tradeoffs:
+  - ["Locking a paragraph while editing", "Simple, no conflicts.", "Feels slow and blocks people."]
+  - ["Last write wins per field", "Simple.", "Loses people's typing."]
+  - ["OT with a central server", "Compact ops, proven at huge scale.", "Complex transform functions, needs a server."]
+  - ["CRDT", "Works offline and peer to peer, merges automatically.", "More memory per character, still tricky for rich text."]
+
+task:
+  intro: |
+    Explain how two people editing the same sentence end up with the same text.
+  items:
+    - q: Design real time collaborative editing. How do edits flow, how are conflicts resolved, and how do you recover if a server dies?
+      keys:
+        - ["Persistent connections and one server owning each document", [websocket, owner, same server, route, consistent hash, sticky]]
+        - ["Operations with a base revision, ordered by the server", [operation, op, revision, order, sequence]]
+        - ["OT or CRDT to make concurrent edits converge", [ot, operational transform, crdt, transform, converge]]
+        - ["Append only operation log plus snapshots", [log, snapshot, append]]
+        - ["Recovery by reloading snapshot and log and resending unacked ops", [recover, reload, resend, unacked, reconnect, failover]]
+        - ["Presence and cursors not stored", [presence, cursor]]
+      a: |
+        Editors connect over WebSockets and are routed, by consistent hashing on the document id, to the one doc server that owns that document. Clients send small operations, like insert "s" at 3, tagged with the revision they were based on. The server orders incoming ops. If an op was based on an older revision, it transforms it against the ops applied since, OT, so its position still means the same thing. It appends the op to a durable log, then broadcasts it. Every client applies the same ops in the same order, so all copies converge. Snapshots every few hundred revisions keep loading fast. If the doc server dies, clients reconnect to the new owner, which loads the snapshot plus the log, and clients resend unacknowledged ops, deduplicated by client sequence numbers. Cursors are sent as presence and never stored. For strong offline support I would consider a CRDT library like Yjs instead of OT.
+      fb: Naming one owner per document is the architectural trick, and OT or CRDT is the algorithmic one. Mention both.
+
+interview:
+  - q: Explain the difference between OT and CRDTs to a beginner.
+    keys:
+      - ["OT adjusts operations against earlier ones", [adjust, transform, shift, against]]
+      - ["OT usually needs a central server to order operations", [central, server, order]]
+      - ["CRDTs give elements unique ids so merges always agree without a server", [unique id, id, merge, any order, without server, no server]]
+      - ["Trade-offs, CRDT metadata versus OT complexity, offline support", [metadata, memory, offline, complex, peer]]
+    a: |
+      Both solve "two people typed at once". OT, operational transformation, takes an incoming edit and shifts it to account for edits that already happened. If someone added two letters before your spot, your "insert at 3" becomes "insert at 5". It needs a server to decide the order. CRDTs give every character a unique id that also says where it sits relative to its neighbours, so edits can be merged in any order, on any device, and always give the same result, even offline, without a server. The price is extra data stored for every character.
+    fb: The "insert at 3 becomes insert at 5" example is the clearest way to explain OT. Use it.
+  - q: Why route all editors of a document to the same server?
+    keys:
+      - ["One place decides the order of operations", [order, one place, single, decide]]
+      - ["Keeps the live document in memory, fast", [memory, fast, live document]]
+      - ["Avoids cross server coordination", [coordinat, cross server, across servers]]
+      - ["Use consistent hashing and handle failover", [consistent hash, failover, rebalance, owner]]
+    a: |
+      Ordering is the hard part, and it is trivial when one process sees every op for a document. That server holds the live document in memory, so it can transform and broadcast in microseconds without coordinating with other servers. Documents are small and have few editors, so one server per document is plenty. I map documents to servers with consistent hashing, and if a server dies its documents move to others, which reload state from the log.
+    fb: Pointing out that documents are small and editors few justifies the choice with numbers.
+
+refs:
+  - "Google. [What's different about the new Google Docs, making collaboration fast](https://drive.googleblog.com/2010/09/whats-different-about-new-google-docs.html)."
+  - "Martin Kleppmann. [CRDTs, the hard parts](https://martin.kleppmann.com/2020/07/06/crdt-hard-parts-hydra.html)."
+  - "Figma. [How Figma's multiplayer technology works](https://www.figma.com/blog/how-figmas-multiplayer-technology-works/)."
+  - "Yjs. [Shared data types for building collaborative software](https://docs.yjs.dev/)."

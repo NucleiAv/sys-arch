@@ -1,0 +1,197 @@
+slug: l09
+num: "09"
+level: 2
+short: Sharding and consistent hashing
+title: Sharding and consistent hashing
+time: about 55 minutes
+tags: [partitioning, shard key, hot spots]
+lede: When data is too big or writes are too many for one database, you split it across many. The hard part is choosing how to split and moving data when you add machines.
+
+idea: |
+  Replication copies all data to every machine. That helps reads but not writes, and every machine still holds everything. When the data or the write load is too big for one machine, you **shard**, also called **partitioning**. Each machine holds only part of the data.
+
+  The big decision is the **shard key**, the field that decides where each row goes. A good key spreads data and traffic evenly and keeps things that are read together on the same shard.
+
+  !eli5 A library too big for one room splits books into rooms by the author's last name. A to F in room 1, G to M in room 2, and so on. Finding a book is still easy if you know the author. But if half the authors start with S, room 4 gets crowded.
+
+scenes:
+  - title: Adding a server, normal hashing versus consistent hashing
+    stats: [Method, Keys that must move]
+    nodes:
+      k: {label: Keys, x: 0, y: 1, kind: box, tag: user ids}
+      r: {label: Router, x: 2, y: 1, kind: raised}
+      s1: {label: Shard 1, x: 4, y: 0, kind: def}
+      s2: {label: Shard 2, x: 5, y: 1, kind: def}
+      s3: {label: Shard 3, x: 4, y: 2, kind: def}
+      s4: {label: New shard 4, x: 6, y: 2, kind: raised}
+    links: [[k, r], [r, s1], [r, s2], [r, s3], [r, s4]]
+    steps:
+      - title: Hash and divide
+        text: "With 3 shards, shard = hash(user_id) mod 3. Every user lands on one of three shards, evenly."
+        show: [k, r, s1, s2, s3]
+        on: [r, s1, s2, s3]
+        flow: [[k, r, ink], [r, s1, ink], [r, s2, ink], [r, s3, ink]]
+        stats: [Mod 3, none yet]
+      - title: Add a fourth shard with mod
+        text: "Now it is mod 4. Almost every key gets a new answer, so about **75 percent** of all data must move at once. A painful, risky migration."
+        on: [r, s4]
+        flow: [[s1, s4, atk], [s2, s4, atk], [s3, s4, atk]]
+        mark: {s4: warn}
+        stats: [Mod 4, about 75 percent]
+      - title: Consistent hashing, a ring
+        text: Put shards and keys on a circle of hash values. Each key belongs to the next shard clockwise. Adding shard 4 only takes keys from its one neighbour.
+        on: [r, s3, s4]
+        flow: [[s3, s4, def]]
+        mark: {s4: ok}
+        stats: [Ring, about 25 percent]
+      - title: Virtual nodes
+        text: Each real shard gets many points on the ring, say 100. New shards then take a small slice from every old shard, which keeps everything even.
+        on: [s1, s2, s3, s4]
+        flow: [[s1, s4, def], [s2, s4, def], [s3, s4, def]]
+        stats: [Ring with virtual nodes, about 1 in N]
+
+terms:
+  - [Shard, "One piece of the data on its own machine."]
+  - [Shard key, "The field that decides which shard a row lives on."]
+  - [Range sharding, "Split by ranges of the key, like A to F. Good for range queries, risk of hot ranges."]
+  - [Hash sharding, "Split by a hash of the key. Spreads evenly, but range queries must ask every shard."]
+  - [Consistent hashing, "A ring of hash values where adding or removing a shard moves only a small share of keys."]
+  - [Virtual nodes, "Many points per real shard on the ring, for even spread."]
+  - [Hot spot, "One shard getting far more traffic than the others."]
+  - [Scatter gather, "A query that must ask every shard and combine the answers. Slow and expensive."]
+
+how: |
+  ### Range or hash
+
+  | | Range | Hash |
+  | --- | --- | --- |
+  | How | Key ranges, like user ids 1 to 1 million | `hash(key)` spread over shards |
+  | Range queries | Easy, one shard | Hard, ask every shard |
+  | Even spread | Risky, new users all land on the last range | Even by design |
+  | Example | Time ranges, alphabetical | User id, order id |
+
+  ### Choosing a shard key
+
+  1. **High cardinality.** Many distinct values. `country` is bad, `user_id` is good.
+  2. **Even traffic.** Avoid keys where one value is very busy.
+  3. **Matches your main query.** If most queries are "this user's messages", shard by `user_id` so one query hits one shard.
+
+  ### Hot spots, the celebrity problem
+
+  Even with a good key, one value can be very busy, like a celebrity with 100 million followers. Fixes include adding a random suffix to split one hot key across several shards, caching hot items in front, or giving very large customers their own shard.
+
+  ### What you give up
+
+  - Joins across shards are slow or impossible. Design so common queries stay in one shard.
+  - Transactions across shards need extra machinery, see lesson 16.
+  - Unique ids must work across shards, see lesson 15.
+  - Resharding later is hard. Plan for growth, often by starting with many small logical shards that can move between machines.
+
+  !key Shard last, not first. Scale up, add replicas and caches first. Sharding solves real problems but makes every later change harder.
+
+diagrams:
+  - type: flow
+    title: Routing a query to a shard
+    nodes: [["Query for user 42", "box"], ["Router hashes 42", "raised"], ["Shard map says shard 3", "def"], ["Shard 3 answers", "def"]]
+    edges: ["", "", ""]
+    caption: The router or a client library keeps a map from key ranges or hash ranges to shards.
+
+life:
+  - ["Instagram's shard ids", "Instagram split data into thousands of logical shards mapped onto fewer physical Postgres servers. Moving a logical shard to a new server is much easier than rehashing everything."]
+  - ["The tenant that ate a shard", "A business software company sharded by customer. One huge customer grew to 40 percent of all traffic and overloaded its shard. They moved big customers onto dedicated shards."]
+  - ["Discord's hot channels", "A few huge servers sent most messages to a few partitions. Discord added request coalescing and routing changes so one hot channel could not swamp a storage node."]
+
+tradeoffs:
+  - ["Range sharding", "Range queries hit one shard.", "Hot spots on new or popular ranges."]
+  - ["Hash sharding", "Even spread.", "Range queries must ask every shard."]
+  - ["Consistent hashing", "Adding shards moves few keys.", "More complex routing, needs virtual nodes to be even."]
+  - ["Directory based map", "Total control over where data lives.", "The map itself must be fast and highly available."]
+
+mistakes:
+  - Sharding by a low cardinality key like country or status.
+  - Sharding too early, before trying bigger machines, replicas and caches.
+  - Picking a key that makes the main query a scatter gather.
+  - Using `hash mod N`, which makes adding a shard move almost everything.
+  - Forgetting that celebrity keys can still create hot spots.
+
+quiz:
+  - q: You shard a chat app's messages. Most reads are "the latest messages in one conversation". Best shard key?
+    opts: ["message_id", "conversation_id", "created_at"]
+    a: 1
+    why: All messages of a conversation land on one shard, so the main query hits one machine.
+  - type: fill
+    q: The scheme where shards sit on a ring and adding one only moves a small share of keys is called consistent ____.
+    a: ["hashing"]
+    why: Consistent hashing limits data movement when the cluster changes size.
+  - type: num
+    q: With hash mod N, you go from 4 shards to 5. About what percent of keys move?
+    a: 80
+    tol: 5
+    unit: percent
+    why: With mod N most keys change shard. Only about 1 in 5 keep the same answer, so about 80 percent move.
+  - q: You shard by date. Which problem appears?
+    opts: ["Range queries by date become impossible", "All of today's writes hit one shard, a hot spot", "Data cannot be deleted"]
+    a: 1
+    why: Every new write has today's date, so one shard takes all the writes.
+  - type: fill
+    q: One shard getting far more traffic than the others is called a hot ____.
+    a: ["spot", "shard", "key", "partition"]
+    why: Hot spots defeat the point of sharding. Watch for celebrity keys.
+
+interview:
+  - q: How would you choose a shard key for a large e-commerce orders table?
+    keys:
+      - ["Start from the main query patterns", [query, access, pattern, read]]
+      - ["High cardinality and even spread, avoid hot spots", [cardinality, even, hot, spread, distribut]]
+      - ["Propose a key like user id or customer id and say why", [user_id, user id, customer, buyer]]
+      - ["Name the trade-off, like seller views needing scatter gather or a second index", [seller, scatter, secondary, other query, every shard, trade]]
+      - ["Plan for resharding with consistent hashing or logical shards", [consistent, logical, reshard, virtual, ring]]
+    a: |
+      I look at the main queries first. For orders, the hottest is "my orders" for a buyer, so I shard by `customer_id`. It has huge cardinality and spreads evenly, and each buyer's orders sit on one shard. The trade-off is that sellers asking "all orders for my shop" would have to ask every shard. I would serve that from a second copy of the data keyed by `seller_id`, built from an event stream, or from a search index. To grow, I would hash into many logical shards, say 4,096, mapped onto a few physical servers, so I can move logical shards instead of rehashing.
+    fb: The top answers always name the query that becomes hard after sharding and how they serve it. That shows real experience.
+  - q: Explain consistent hashing to a beginner.
+    keys:
+      - ["Servers and keys are placed on a ring by hash", [ring, circle, hash]]
+      - ["A key belongs to the next server clockwise", [clockwise, next, nearest]]
+      - ["Adding or removing a server moves only its neighbour's keys", [neighbour, neighbor, few, small, only]]
+      - ["Virtual nodes keep the spread even", [virtual, many points, replicas on the ring, even]]
+    a: |
+      Imagine a clock face. Each server gets placed at a point on it using a hash of its name. Each piece of data is also hashed onto the clock, and it belongs to the first server you meet going clockwise. When you add a server, it only takes the keys between it and the server before it, so most data stays put. When a server leaves, only its keys move to the next one. To keep things even, each server is placed at many points, called virtual nodes.
+    fb: The clock face picture is what makes it click for a listener. Then mention virtual nodes to show you know the real world fix.
+
+desk:
+  title: Split the social network
+  lede: A social network's single database is full. Plan how to shard it.
+  situation: |
+    **Circlet** has 300 million users and one huge Postgres. Main queries are "posts by user", "a user's followers" and "posts with a hashtag". Some users have 50 million followers.
+  rounds:
+    - title: Round 1. Pick keys
+      items:
+        - q: Best shard key for the posts table?
+          opts: ["hashtag", "author user_id", "post length"]
+          a: 1
+          why: Posts by user is the main query and user ids spread well.
+        - q: How should "posts with a hashtag" be served after sharding by user?
+          opts: ["Ask every shard each time", "A separate index or search system keyed by hashtag", "Stop supporting hashtags"]
+          a: 1
+          why: Keep a second view of the data shaped for that query.
+    - title: Round 2. Hot spots
+      items:
+        - type: open
+          q: The followers list of a celebrity with 50 million followers is one huge, very hot key. What can you do?
+          a: "Split the list across many keys, like followers of user 7 part 0 to 99, spread over shards. Cache the first pages heavily. Treat celebrities as a special case, which you will see again in the news feed design."
+        - type: fill
+          q: To avoid moving almost all data when adding shards, use consistent hashing or many small ____ shards mapped onto fewer machines.
+          a: ["logical", "virtual"]
+          why: Logical shards can be moved whole between machines.
+  card: |
+    - Shard key from the main query.
+    - High cardinality, even traffic.
+    - Never hash mod N.
+    - Celebrities are always special.
+    - Shard last.
+
+refs:
+  - "Instagram Engineering. [Sharding and IDs at Instagram](https://instagram-engineering.com/sharding-ids-at-instagram-1cf5a71e5a5c)."
+  - "David Karger and others. [Consistent hashing and random trees](https://www.akamai.com/site/en/documents/research-paper/consistent-hashing-and-random-trees-distributed-caching-protocols-for-relieving-hot-spots-on-the-world-wide-web-technical-publication.pdf)."
+  - "Martin Kleppmann. Designing Data-Intensive Applications, chapter 6, partitioning."

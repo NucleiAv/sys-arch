@@ -1,0 +1,201 @@
+slug: l17
+num: "17"
+level: 4
+short: Designing for failure
+title: Designing for failure, timeouts, retries and circuit breakers
+time: about 55 minutes
+tags: [timeouts, backoff, circuit breaker, bulkhead]
+lede: In a big system something is always broken. Learn the small patterns that stop one slow part from dragging the whole system down.
+
+idea: |
+  The most dangerous failure is not a server that dies. It is a server that becomes **slow**. Callers wait for it, their threads fill up, then they become slow, and their callers wait on them. One slow service can freeze everything. This chain reaction is a **cascading failure**.
+
+  A few simple habits stop it. Never wait forever, use **timeouts**. Try again, but gently, with **retries with backoff**. Stop calling something that is clearly broken, with a **circuit breaker**. Keep failures in their own box, with **bulkheads**. And when a part is down, show something useful anyway, called **graceful degradation**.
+
+  !eli5 If you call a friend and they do not pick up, you do not hold the phone for an hour. You hang up after a while, try again later, and after a few tries you stop calling and send a text instead.
+
+scenes:
+  - title: A circuit breaker saves the checkout page
+    stats: [State, Calls to reviews, Checkout]
+    nodes:
+      user: {label: Users, x: 0, y: 1, kind: box}
+      shop: {label: Product service, x: 2, y: 1, kind: def}
+      cb: {label: Circuit breaker, x: 4, y: 1, kind: raised}
+      rev: {label: Reviews service, x: 6, y: 1, kind: def}
+    links: [[user, shop], [shop, cb], [cb, rev]]
+    steps:
+      - title: Closed, all normal
+        text: The product page calls reviews through the breaker. Calls pass, answers come back in 30 ms.
+        on: [shop, cb, rev]
+        flow: [[user, shop, ink], [shop, cb, ink], [cb, rev, ink], [rev, shop, def]]
+        stats: [Closed, pass through, fast]
+      - title: Reviews gets slow
+        text: Reviews starts taking 10 seconds. Without protection, every product page would wait 10 seconds and threads would pile up.
+        on: [rev]
+        flow: [[cb, rev, atk]]
+        mark: {rev: warn}
+        stats: [Closed, timing out, slowing]
+      - title: Open, stop calling
+        text: After 50 percent of calls fail or time out in a short window, the breaker opens. Calls fail instantly without touching reviews. The page shows "reviews unavailable".
+        on: [shop, cb]
+        flow: [[user, shop, ink], [shop, cb, ink], [cb, shop, def]]
+        mark: {cb: bad, rev: bad}
+        stats: [Open, none, fast again]
+      - title: Half open, test the water
+        text: After 30 seconds, the breaker lets a few test calls through. If they succeed, it closes. If not, it opens again.
+        on: [cb, rev]
+        flow: [[cb, rev, pen], [rev, cb, def]]
+        mark: {rev: ok}
+        stats: [Half open, a few, fast]
+
+terms:
+  - [Timeout, "The longest you will wait for an answer before giving up."]
+  - [Retry, "Trying a failed call again."]
+  - [Exponential backoff, "Waiting longer after each failed try, like 100 ms, 200, 400, 800."]
+  - [Jitter, "Adding randomness to wait times so many clients do not retry at the same moment."]
+  - [Circuit breaker, "Stops calling a failing dependency for a while, then tests it again."]
+  - [Bulkhead, "Separate pools of threads or connections per dependency, so one cannot use them all."]
+  - [Graceful degradation, "Showing a simpler result when a part is down, instead of an error."]
+  - [Retry storm, "Many clients retrying at once and making the outage worse."]
+  - [Fallback, "What you return when the real call fails, like cached or default data."]
+
+how: |
+  ### Timeouts
+
+  Every network call needs one. Base it on the dependency's normal p99 plus a margin, not on "30 seconds just in case". Also set an overall **deadline** for the user's request and pass the time left down the chain, so deep services do not keep working on a request the user already gave up on.
+
+  ### Retries, done safely
+
+  1. Only retry errors that might pass, like timeouts and 503. Never retry a 400.
+  2. Only retry **idempotent** calls, or use idempotency keys.
+  3. Use **exponential backoff with jitter**.
+  4. Cap the number of tries, usually 2 or 3.
+  5. Retry at one layer only. If 4 layers each retry 3 times, one failure becomes 81 calls.
+
+  ### Bulkheads
+
+  Ships have walls between compartments so one leak does not sink the whole ship. Give each dependency its own small connection pool. If recommendations hang, they use up only their own pool, and checkout still has connections.
+
+  ### Graceful degradation
+
+  | Part down | Degraded answer |
+  | --- | --- |
+  | Recommendations | Show best sellers from a cache |
+  | Reviews | Hide the section |
+  | Personal prices | Show the standard price |
+  | Search | Show categories to browse |
+
+  !key Decide what the critical path is, the few things that must work, like login, cart and pay. Everything else should be able to fail quietly.
+
+  ### Practice failing
+
+  **Chaos engineering** means breaking things on purpose, in a controlled way, to prove the system copes. Netflix's Chaos Monkey randomly kills servers in production so teams build services that survive it.
+
+diagrams:
+  - type: flow
+    title: A cascading failure, and where each pattern cuts it
+    nodes: [["Database slow", "atk"], ["Service A threads wait", "atk"], ["Service B waits on A", "atk"], ["Gateway runs out of threads", "atk"], ["Whole site down", "atk"]]
+    edges: ["timeout", "breaker", "bulkhead", ""]
+    caption: Each pattern breaks the chain at one link. Use all of them.
+
+life:
+  - ["Netflix and the Simian Army", "Netflix built Chaos Monkey to kill production servers at random, and later tools that drop whole regions. Engineers designed for failure because failure was guaranteed every day."]
+  - ["AWS us-east-1 in 2021", "Network congestion inside AWS caused many internal services to time out and retry, which added even more traffic. The AWS write-up describes how retries can amplify problems."]
+  - ["A homepage that died for a widget", "A news site's homepage waited for a weather widget with no timeout. When the weather provider hung, the whole homepage hung. A 300 ms timeout and hiding the widget on failure fixed it."]
+
+tradeoffs:
+  - ["Short timeout", "Fails fast, protects threads.", "May cut off calls that would have succeeded."]
+  - ["Long timeout", "Fewer false failures.", "Threads pile up when a dependency is slow."]
+  - ["More retries", "Hides brief blips.", "Multiplies load during real outages."]
+  - ["Circuit breaker", "Stops cascades, gives the dependency room to recover.", "Needs tuning, may trip on short spikes."]
+  - ["Degrade instead of error", "Users keep going.", "Shows less, needs product decisions and testing."]
+
+mistakes:
+  - No timeout, or a default of minutes.
+  - Retrying instantly, with no backoff or jitter.
+  - Retrying at every layer of the stack.
+  - Retrying non idempotent calls like payments without idempotency keys.
+  - Treating every feature as critical, so any failure is a full outage.
+
+quiz:
+  - q: Which is the most dangerous for a big system?
+    opts: ["A server that crashes cleanly", "A dependency that becomes very slow but does not fail", "A server that restarts"]
+    a: 1
+    why: Slow dependencies tie up callers and spread the problem. Crashes are noticed and routed around.
+  - type: fill
+    q: Waiting longer after each failed try, like 100, 200, 400 ms, is exponential ____.
+    a: ["backoff", "back off", "back-off"]
+    why: Backoff gives the failing service room to recover.
+  - type: fill
+    q: Adding randomness to retry timings so clients do not retry together is called ____.
+    a: ["jitter"]
+    why: Jitter spreads retries out and prevents synchronized storms.
+  - type: num
+    q: Three layers each retry a failed call up to 3 times, so 3 tries each. How many calls can one user request cause at the bottom layer?
+    a: 27
+    tol: 0
+    unit: calls
+    why: 3 times 3 times 3 is 27. Retry at one layer only.
+  - q: After the circuit breaker opens, what happens next?
+    opts: ["It stays open forever", "After a wait it goes half open and sends a few test calls", "It retries every call"]
+    a: 1
+    why: Half open checks if the dependency has recovered before letting full traffic back.
+
+interview:
+  - q: How do you stop one slow service from taking down the whole system?
+    keys:
+      - ["Timeouts on every call, with deadlines", [timeout, deadline]]
+      - ["Retries with backoff and jitter, limited and idempotent", [retry, backoff, jitter]]
+      - ["Circuit breakers", [circuit breaker, breaker]]
+      - ["Bulkheads or separate pools", [bulkhead, pool, isolat]]
+      - ["Fallbacks and graceful degradation", [fallback, degrad, cache, default]]
+    a: |
+      The danger is a cascade, where callers wait on the slow service and run out of threads themselves. I put a timeout on every network call, based on the dependency's p99, and pass a deadline down the chain. Retries are limited to 2 or 3, only for idempotent calls, with exponential backoff and jitter, and only at one layer. A circuit breaker around each dependency stops calls when the error rate is high and tests recovery with a few calls later. Bulkheads give each dependency its own connection pool, so one cannot starve the others. Finally, every non critical feature has a fallback, like cached data or hiding a section, so the core path keeps working.
+    fb: Using the word cascade and giving the five patterns in order shows a complete mental model.
+  - q: Why can retries make an outage worse, and how do you avoid it?
+    keys:
+      - ["Retries add load to a service that is already struggling", [load, more traffic, overload, struggling, amplif]]
+      - ["Many clients retrying together cause storms", [storm, same time, together, synchroni, thundering]]
+      - ["Retries at every layer multiply", [layer, multipl]]
+      - ["Use backoff, jitter, caps, retry budgets and circuit breakers", [backoff, jitter, cap, budget, breaker, limit]]
+    a: |
+      A service that is failing because it is overloaded gets even more work when every caller retries. If clients retry at fixed intervals, they hit it in synchronized waves. And if several layers retry, one user request can turn into dozens of calls at the bottom. To avoid it I use exponential backoff with jitter, cap the tries, retry at one layer only, use a retry budget, for example retries may be at most 10 percent of calls, and let a circuit breaker stop retries when the dependency is clearly down.
+    fb: The retry budget idea, from Google's SRE practices, is a strong extra detail.
+
+desk:
+  title: The travel site that falls over at peak
+  lede: A travel booking site goes down whenever its hotel price partner is slow. Make it resilient.
+  situation: |
+    **TripNest** shows flights, hotel prices from a partner API, reviews and personalized deals on one search page. The partner API sometimes takes 20 seconds. The search page has no timeouts, retries 5 times instantly, and uses one shared pool of 200 connections for everything.
+  rounds:
+    - title: Round 1. Diagnose
+      items:
+        - type: sort
+          q: Match each problem to its fix.
+          rows:
+            - ["Waiting 20 seconds for the partner", "Timeout around the partner's p99"]
+            - ["5 instant retries", "2 retries with backoff and jitter"]
+            - ["One shared pool of 200 connections", "Bulkhead per dependency"]
+            - ["Search fails if deals fail", "Graceful degradation"]
+          opts: ["Timeout around the partner's p99", "2 retries with backoff and jitter", "Bulkhead per dependency", "Graceful degradation"]
+          why: Each fix closes one path for the slow partner to spread its problem.
+    - title: Round 2. Decide the fallbacks
+      items:
+        - q: The partner is down for an hour. What should hotel results show?
+          opts: ["An error page", "Cached prices marked as possibly outdated, with a recheck at booking", "Nothing at all, silently"]
+          a: 1
+          why: Degrade with honest labels. The final booking checks the real price.
+        - type: open
+          q: Which parts of the search page are on the critical path?
+          a: "Flight search results and the ability to start a booking. Hotel prices, reviews and personalized deals are helpful but can be hidden or served from cache when their services fail."
+  card: |
+    - Timeouts everywhere, with deadlines.
+    - Retry 2 or 3 times, backoff, jitter, one layer.
+    - Circuit breakers and bulkheads.
+    - Know your critical path, degrade the rest.
+
+refs:
+  - "AWS Builders' Library. [Timeouts, retries and backoff with jitter](https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/)."
+  - "Martin Fowler. [Circuit breaker](https://martinfowler.com/bliki/CircuitBreaker.html)."
+  - "Michael Nygard. Release It!, design and deploy production-ready software."
+  - "Netflix. [Chaos engineering principles](https://principlesofchaos.org/)."

@@ -1,0 +1,170 @@
+slug: d05
+num: "05"
+short: Search autocomplete
+title: Design search autocomplete
+time: about 60 minutes
+tags: [trie, caching, ranking]
+lede: As you type "how to", the box suggests "how to tie a tie". Suggestions must appear in under 100 ms on every keystroke, for billions of searches.
+
+ask: |
+  Show the top 5 suggestions for whatever prefix the user has typed so far, ranked by popularity. Every keystroke is a request, so this is one of the most read heavy systems there is.
+
+reqs:
+  func:
+    - Return the top 5 completions for a prefix.
+    - Rank by how often each query is searched, with recent trends counting more.
+    - Filter out offensive suggestions.
+  nonfunc:
+    - Under 100 ms end to end, so the backend gets about 20 to 50 ms.
+    - Huge read volume, highly available.
+    - Suggestions can be minutes or hours stale.
+  out:
+    - Spelling correction, personalized suggestions, the search results page itself.
+
+estimate:
+  intro: |
+    100 million daily users, 10 searches each, about 6 keystrokes per search sent to the server.
+  items:
+    - type: num
+      q: Autocomplete requests a day, in billions?
+      a: 6
+      tol: 0.5
+      unit: billion
+      why: 100 million times 10 times 6 is 6 billion requests a day.
+    - type: num
+      q: Requests a second on average, in thousands?
+      a: 60
+      tol: 6
+      unit: thousand
+      why: 6 billion divided by 100 thousand is 60 thousand a second. Peaks well above 100 thousand.
+  after: |
+    !key Reads are enormous and freshness can lag. So precompute the answers for every popular prefix offline, and serve them from memory and caches.
+
+api: |
+  ```
+  GET /v1/suggest?q=how%20to&limit=5
+    reply { "prefix": "how to", "suggestions": ["how to tie a tie", "how to screenshot", ...] }
+  ```
+
+  The browser waits about 50 ms after a keystroke before sending, called **debouncing**, and cancels older requests.
+
+data: |
+  ### The trie
+
+  A **trie** is a tree where each step down adds one letter. The path h, o, w spells "how". Each node can store the **top 5 completions** under it, computed ahead of time, so answering a prefix is just walking down a few letters and reading the list. No searching at query time.
+
+  | Stored | Example |
+  | --- | --- |
+  | Node for prefix "how t" | top 5, how to tie a tie 1.2M, how to screenshot 900K, ... |
+  | Query counts | from search logs, by week |
+
+scenes:
+  - title: Serving and rebuilding suggestions
+    stats: [Step, Where]
+    nodes:
+      user: {label: Browser, x: 0, y: 1, kind: box}
+      cdn: {label: CDN and cache, x: 2, y: 1, kind: raised}
+      sug: {label: Suggest servers, x: 4, y: 1, kind: def, tag: trie in memory}
+      logs: {label: Search logs, x: 4, y: 3, kind: raised}
+      build: {label: Trie builder, x: 6, y: 3, kind: def, tag: batch job}
+      store: {label: Trie snapshots, x: 6, y: 1, kind: raised}
+    links: [[user, cdn], [cdn, sug], [sug, logs], [logs, build], [build, store], [store, sug]]
+    steps:
+      - title: Type a letter
+        text: The user types "how t". The browser waits 50 ms, then asks for suggestions.
+        on: [user, cdn]
+        flow: [[user, cdn, ink]]
+        stats: [Request, browser]
+      - title: Cache first
+        text: Popular prefixes like "how t" are the same for everyone, so a CDN or edge cache answers most of them directly.
+        on: [cdn]
+        flow: [[cdn, user, def]]
+        mark: {cdn: ok}
+        stats: [Hit, edge cache]
+      - title: Walk the trie
+        text: On a miss, a suggest server walks h, o, w, space, t in its in memory trie and reads the stored top 5. Under a millisecond.
+        on: [cdn, sug]
+        flow: [[cdn, sug, ink], [sug, cdn, def]]
+        stats: [Miss, trie in memory]
+      - title: Log the search
+        text: Completed searches are logged as events. They are the raw counts for ranking.
+        on: [sug, logs]
+        flow: [[sug, logs, ink]]
+        stats: [Log, event stream]
+      - title: Rebuild offline
+        text: A batch job counts queries, weights recent ones more, filters banned words, rebuilds the trie with top 5 lists and publishes a snapshot. Servers load it and swap.
+        on: [logs, build, store, sug]
+        flow: [[logs, build, ink], [build, store, def], [store, sug, def]]
+        stats: [Refresh, hourly or daily]
+
+hld: |
+  1. **Browser** debounces keystrokes and caches recent answers itself.
+  2. **CDN or edge cache** answers popular prefixes with a short TTL.
+  3. **Suggest servers** hold the trie fully in memory. They are read only and stateless, so they scale out easily.
+  4. **Trie sharding** by first letters if the trie is too big for one machine, with a smarter split for busy letters like "s".
+  5. **Data pipeline** builds a new trie from search logs on a schedule. A stream job can add fast rising trends between builds.
+
+diagrams:
+  - type: flow
+    title: Read path and build path
+    lanes:
+      - label: read, every keystroke
+        labelkind: def
+        nodes: [["Browser", "box"], ["Edge cache", "raised"], ["Suggest server", "def"]]
+        edges: ["debounced", "miss"]
+      - label: build, every hour
+        nodes: [["Search logs", "raised"], ["Count and rank", "def"], ["New trie snapshot", "raised"]]
+        edges: ["", ""]
+    caption: The two paths never block each other. Reads are served from memory while the next trie is built offline.
+
+deep:
+  - ["Why store the top 5 in every node", "Without it, answering \"s\" means scanning millions of completions under that node. With precomputed lists, every answer is a short walk and a read. It costs memory and build time, which is fine because builds are offline."]
+  - ["Trending queries", "A nightly build misses breaking news. A stream job counts queries in 5 minute windows and boosts fast risers into a small overlay that is merged with the trie's results."]
+  - ["Filtering", "Remove offensive, dangerous or private suggestions at build time with block lists and review, and keep a fast kill switch that removes a suggestion within minutes."]
+  - ["Memory size", "Only store queries searched more than a few times. A few hundred million popular queries fit in tens of GB, which a cluster of servers can hold."]
+
+tradeoffs:
+  - ["Precomputed top k per node", "Instant answers.", "More memory, results only as fresh as the last build."]
+  - ["Compute at query time", "Always fresh.", "Too slow at 100 thousand requests a second."]
+  - ["Edge caching", "Removes most load.", "Popular prefixes stay stale for the TTL."]
+  - ["Shard by prefix", "Fits large tries.", "Uneven load, some letters are far more common."]
+
+task:
+  intro: |
+    Explain your design out loud, including how suggestions stay fresh.
+  items:
+    - q: Design search autocomplete for 60 thousand requests a second with under 100 ms latency.
+      keys:
+        - ["Trie data structure with prefixes", [trie, prefix tree]]
+        - ["Top k completions precomputed and stored in nodes", [top 5, top k, precomput, stored in node, each node]]
+        - ["Served from memory on stateless read only servers", [memory, in-memory, in memory, stateless, read only]]
+        - ["Caching in browser and CDN, debouncing", [cdn, cache, debounce, browser]]
+        - ["Offline pipeline from search logs to rebuild, plus trends", [log, batch, rebuild, pipeline, trend, stream]]
+        - ["Filtering offensive results", [filter, offensive, block, banned]]
+      a: |
+        The browser debounces keystrokes and caches answers. Requests hit an edge cache, which answers most popular prefixes. Misses go to stateless suggest servers that keep a trie in memory, where every node stores its precomputed top 5 completions, so a lookup is a walk of a few characters and one read. Search events are logged to a stream. An hourly batch job aggregates counts, weights recent searches higher, removes blocked terms, builds a new trie and publishes a snapshot, which servers load and swap atomically. A stream job adds trending terms between builds. If the trie outgrows one machine, I shard by prefix with extra shards for busy letters.
+      fb: Separating the fast read path from the offline build path is the key structure. Say it clearly in one sentence.
+
+interview:
+  - q: How do you update suggestions without slowing down reads?
+    keys:
+      - ["Build the new trie offline, separate from serving", [offline, separate, batch, background]]
+      - ["Publish a snapshot and atomically swap it in on servers", [snapshot, swap, atomic, replace, load]]
+      - ["Roll out gradually across servers and keep the old one to roll back", [rolling, gradual, roll back, rollback, previous]]
+    a: |
+      Reads never touch the data being built. A batch job builds a complete new trie from logs and writes it as a versioned snapshot to object storage. Each suggest server downloads it in the background, loads it into memory next to the old one, then switches a pointer to the new trie in one atomic step. Servers update a few at a time, and if the new version looks wrong, we point back to the previous snapshot.
+    fb: The atomic pointer swap and rollback are the details that show you have built something like this.
+  - q: How would you add personalized suggestions?
+    keys:
+      - ["Keep global suggestions from the trie as the base", [global, base, trie]]
+      - ["Add the user's own recent searches from a per user store", [recent, history, per user, personal]]
+      - ["Merge and re rank both lists", [merge, rank, blend, combine]]
+      - ["Privacy and the cache impact of personal results", [privacy, cache, cannot cache, private]]
+    a: |
+      I keep the global trie as is, and add a small per user store of recent searches, for example the last 50 in a key value store. At request time I fetch both, take the user's past queries that match the prefix, merge them with the global top 5 and re rank. Personal results cannot be shared in the CDN, so I would cache the global part at the edge and add the personal part in the app or the server. Users must be able to delete their history.
+    fb: Noticing that personalization breaks shared caching is a sharp observation.
+
+refs:
+  - "Alex Xu. System Design Interview volume 1, chapter 13, design a search autocomplete system."
+  - "Wikipedia. [Trie](https://en.wikipedia.org/wiki/Trie)."
+  - "Advent of System Design. [Day 10, search autocomplete](https://www.devmaxx.dev/advent)."

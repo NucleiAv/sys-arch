@@ -1,0 +1,222 @@
+slug: l03
+num: "03"
+level: 1
+short: Back of the envelope math
+title: Back of the envelope math
+time: about 50 minutes
+tags: [estimation, numbers]
+lede: Rough math that fits on a napkin tells you if you need one server or a thousand. Learn the handful of numbers and tricks that every architect uses.
+
+idea: |
+  Before you draw boxes, you need to know how big the problem is. You do not need exact numbers. You need the right **size**. Is it 10 requests a second, or 10 thousand, or 10 million? Each size needs a very different design.
+
+  !eli5 If you are planning a party, you do not need to know that exactly 47 people will come. You need to know if it is about 5, about 50 or about 500. That decides if you cook at home, rent a hall or hire a caterer.
+
+  The trick is to **round hard**. A day has 86,400 seconds. Call it 100 thousand. Now 10 million requests a day is about 100 a second. Easy.
+
+scenes:
+  - title: From users to servers, a photo app
+    stats: [Step, Number]
+    nodes:
+      users: {label: Daily users, x: 0, y: 1, kind: box}
+      req: {label: Requests a second, x: 2, y: 1, kind: raised}
+      peak: {label: Peak, x: 4, y: 1, kind: atk}
+      store: {label: Storage a year, x: 4, y: 3, kind: raised}
+      srv: {label: Servers, x: 6, y: 1, kind: def}
+    links: [[users, req], [req, peak], [req, store], [peak, srv]]
+    steps:
+      - title: Start with users
+        text: 10 million people use the app each day. Each opens it 10 times and looks at about 10 photos, so 100 reads each.
+        on: [users]
+        stats: [Daily users, 10 million]
+      - title: Turn the day into seconds
+        text: 10 million times 100 is 1 billion reads a day. Divide by 100 thousand seconds. About **10 thousand reads a second**.
+        on: [users, req]
+        flow: [[users, req, ink]]
+        stats: [Average reads, 10 thousand a second]
+      - title: Plan for the peak
+        text: Traffic is not flat. Evenings can be 2 to 3 times the average. Plan for about 30 thousand a second.
+        on: [req, peak]
+        flow: [[req, peak, atk]]
+        stats: [Peak reads, 30 thousand a second]
+      - title: Storage
+        text: 1 in 100 users posts a photo a day, so 100 thousand photos of 2 MB. 200 GB a day, about 70 TB a year. That is object storage, not a database.
+        on: [req, store]
+        flow: [[req, store, ink]]
+        stats: [Storage, 70 TB a year]
+      - title: How many servers
+        text: If one app server handles about 2 thousand requests a second, 30 thousand needs 15, plus spares. Call it 20. Now you know the shape of the system.
+        on: [peak, srv]
+        flow: [[peak, srv, def]]
+        mark: {srv: ok}
+        stats: [App servers, about 20]
+
+terms:
+  - [DAU, "Daily active users. The usual starting number."]
+  - [QPS or RPS, "Queries or requests per second."]
+  - [Peak factor, "How much busier the busiest time is than the average. Usually 2 to 5."]
+  - [Read to write ratio, "How many reads for each write. Social apps are often 100 to 1 or more."]
+  - [Order of magnitude, "The size in powers of ten. 3,000 and 7,000 are the same order, about thousands."]
+
+how: |
+  ### Numbers to remember
+
+  | Thing | Rough size |
+  | --- | --- |
+  | Seconds in a day | about 100 thousand (86,400) |
+  | Seconds in a month | about 2.5 million |
+  | 1 thousand, million, billion bytes | KB, MB, GB, then TB, PB |
+  | A short text post | about 1 KB |
+  | A photo | about 200 KB to 2 MB |
+  | A minute of HD video | about 50 MB |
+
+  ### How long things take
+
+  | Action | Rough time |
+  | --- | --- |
+  | Read from memory | 100 nanoseconds |
+  | Read from a fast SSD | 100 microseconds |
+  | Trip inside one data center | 0.5 ms |
+  | Read from a spinning disk | 10 ms |
+  | Trip across a continent | 50 to 100 ms |
+  | Trip around the world | 150 to 250 ms |
+
+  !key Memory is about 1,000 times faster than SSD, and the network across the world is about 1,000 times slower than inside a data center. That is why caches and nearby servers matter.
+
+  ### What one machine can do, roughly
+
+  | Part | Rough capacity |
+  | --- | --- |
+  | One web app server | 1 to 10 thousand simple requests a second |
+  | One SQL database | a few thousand writes and tens of thousands of simple reads a second |
+  | One Redis cache | 100 thousand or more operations a second |
+  | One Kafka partition | tens of MB a second |
+
+  These depend on hardware and work done. In an interview, say your guess and move on.
+
+  ### The four step recipe
+
+  1. Users a day times actions each gives actions a day.
+  2. Divide by 100 thousand to get per second.
+  3. Multiply by 2 to 5 for the peak.
+  4. Actions a day times size times 365 gives storage a year. Add copies, usually times 3.
+
+diagrams:
+  - type: flow
+    title: The estimation recipe
+    nodes: [["Daily users", "box"], ["Actions a day", "raised"], ["Per second", "def"], ["Peak", "atk"], ["Storage a year", "raised"]]
+    edges: ["times actions", "divide by 100k", "times 2 to 5", ""]
+    caption: Write each step down out loud. Interviewers want to follow your thinking, not just see the final number.
+
+life:
+  - ["A startup buys 50 servers it does not need", "They guessed traffic from their dream number of users, not real numbers. A day of real traffic was 200 thousand requests, about 2 a second. One small server would do. Estimates protect money as well as uptime."]
+  - ["A ticket site crashes at 10 AM", "Average traffic was tiny, so they sized for the average. But every fan arrived at 10:00 sharp, about 1,000 times the average. Always ask, what is the peak, and when?"]
+  - ["Picking the storage for a chat app", "500 million messages a day at 100 bytes is 50 GB a day, about 18 TB a year, times 3 copies is over 50 TB. That is too big for one SQL database, which tells you early to plan for a database that spreads data across machines."]
+
+tradeoffs:
+  - ["Round hard", "Fast, easy to say out loud, gets the right size.", "Off by maybe 30 percent. That is fine."]
+  - ["Exact math", "Precise.", "Slow, easy to make mistakes under pressure, adds nothing to the design."]
+  - ["Plan for average load", "Cheaper.", "Falls over at the busy hour."]
+  - ["Plan for peak with headroom", "Survives spikes.", "Some machines sit idle at night. Autoscaling helps."]
+
+mistakes:
+  - Doing long division in an interview. Round to powers of ten.
+  - Forgetting the peak. The average is not the problem.
+  - Forgetting replicas and backups when sizing storage.
+  - Mixing bits and bytes. Network speed is often in bits, 8 bits make a byte.
+  - Spending 15 minutes on math. Five is plenty.
+
+quiz:
+  - type: num
+    q: 50 million requests a day. About how many per second on average? Round with 100 thousand seconds a day.
+    a: 500
+    tol: 80
+    unit: per second
+    why: 50,000,000 divided by 100,000 is 500. The exact answer with 86,400 seconds is 579, the same size.
+  - type: num
+    q: 1 million new posts a day at 1 KB each. How many GB a day?
+    a: 1
+    tol: 0.1
+    unit: GB
+    why: 1 million times 1 KB is 1 million KB, which is 1 GB.
+  - type: fill
+    q: The time a read from memory takes is about 100 ____ seconds.
+    a: ["nano", "nanoseconds", "nano seconds", "ns"]
+    why: Memory is about 100 nanoseconds. SSD is about 100 microseconds, a thousand times slower.
+  - q: Your average is 2,000 requests a second. What should you plan for?
+    opts: ["2,000 exactly", "About 4,000 to 10,000, the peak with headroom", "200"]
+    a: 1
+    why: Peaks are often 2 to 5 times the average. Plan for the peak, plus room to grow.
+  - type: num
+    q: A video app stores 100 thousand new videos a day, each 50 MB. How many TB a day?
+    a: 5
+    tol: 0.5
+    unit: TB
+    why: 100,000 times 50 MB is 5,000,000 MB, which is 5,000 GB, which is 5 TB a day. About 1.8 PB a year before copies.
+
+interview:
+  - q: Estimate the storage needed for a year of tweets-like short posts for 200 million daily users.
+    keys:
+      - ["State posts per user per day as an assumption", [assume, "per user", "a day", "per day", each]]
+      - ["Posts a day from users times rate", [million, billion, "posts a day", total]]
+      - ["Size per post including metadata", [byte, kb, size, metadata]]
+      - ["Multiply by 365 for a year", [365, year, yearly]]
+      - ["Add replication or backup copies, and treat media separately", [replica, copies, "times 3", "x3", media, image, backup]]
+    a: |
+      I assume 1 in 5 users posts once a day. That is 40 million posts a day. Each post is about 300 bytes of text plus 200 bytes of metadata like ids and time, so call it 500 bytes. 40 million times 500 bytes is 20 GB a day. Times 365 is about 7 TB a year. With 3 copies for safety, about 22 TB a year. Images and videos are much bigger and go in object storage, which I would size separately.
+    fb: Say each assumption out loud, keep the math to powers of ten, and remember copies and media. Interviewers forgive a wrong guess but not a hidden one.
+  - q: Why do architects care more about the peak than the average?
+    keys:
+      - ["Systems fail at the busiest moment, not the average", [fail, crash, break, overload, busiest]]
+      - ["Peaks are often several times the average", [times, "2", "5", spike, higher]]
+      - ["Give a real example like sales, launches or the evening", [sale, launch, evening, event, ticket, match, black friday]]
+      - ["Use headroom or autoscaling to handle it", [headroom, autoscal, buffer, spare, capacity]]
+    a: |
+      Because users feel the worst minute, not the average day. Traffic bunches up in the evening, during a sale or when a famous person posts. A system sized for the average will be overloaded exactly when the most people are watching. So I size for the expected peak with some headroom, often 2 to 3 times the average for normal apps and much more for flash sales, and use autoscaling so we do not pay for the peak all night.
+    fb: A specific example like a ticket sale opening at 10 AM makes the point stick.
+
+desk:
+  title: Size a fitness app
+  lede: A fitness app is growing fast. Estimate its load and storage before the team picks a database.
+  situation: |
+    **StepUp** has 20 million daily users. Each phone uploads step counts every 5 minutes while the app is open, about 12 uploads a day. Each upload is 200 bytes. Users open their history about 5 times a day.
+  rounds:
+    - title: Round 1. Do the math
+      items:
+        - type: num
+          q: Uploads a day, in millions?
+          a: 240
+          tol: 10
+          unit: million
+          why: 20 million users times 12 uploads is 240 million writes a day.
+        - type: num
+          q: Average writes per second? Use 100 thousand seconds a day.
+          a: 2400
+          tol: 300
+          unit: per second
+          why: 240 million divided by 100 thousand is 2,400 writes a second on average.
+        - type: num
+          q: Storage a year in TB, before copies? 240 million times 200 bytes a day.
+          a: 17.5
+          tol: 2.5
+          unit: TB
+          why: 240 million times 200 bytes is 48 GB a day. Times 365 is about 17.5 TB a year.
+    - title: Round 2. Decide
+      items:
+        - q: Morning workouts make 7 AM five times busier than average. What write rate should the database handle?
+          opts: ["About 2,400 a second", "About 12,000 a second plus headroom", "About 240 a second"]
+          a: 1
+          why: Five times 2,400 is 12,000. A single SQL database may struggle with that many writes, so this points to batching uploads on the phone or a database built for heavy writes.
+        - type: open
+          q: Name one cheap trick that cuts the write load without losing data.
+          a: "Let the phone batch steps and upload every 30 minutes, or when the app closes, instead of every 5 minutes. That cuts writes six times. Steps are not urgent, so nobody notices."
+  card: |
+    - 1 day is about 100 thousand seconds.
+    - Peak is 2 to 5 times average, more for events.
+    - Storage times 3 for copies.
+    - Memory 100 ns, SSD 100 us, world trip 200 ms.
+
+refs:
+  - "Jonas Boner. [Latency numbers every programmer should know](https://gist.github.com/jboner/2841832)."
+  - "Jeff Dean. [Numbers everyone should know, Stanford talk slides](https://static.googleusercontent.com/media/research.google.com/en//people/jeff/stanford-295-talk.pdf)."
+  - "Donne Martin. [Powers of two table and latency numbers](https://github.com/donnemartin/system-design-primer#appendix)."

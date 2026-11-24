@@ -1,0 +1,169 @@
+slug: d10
+num: "10"
+short: Payment system
+title: Design a payment system
+time: about 75 minutes
+tags: [idempotency, ledger, reconciliation]
+lede: Take a customer's money, pay the seller, and keep every cent accounted for, even when networks drop and providers time out. Correctness first, speed second.
+
+ask: |
+  An online marketplace needs to charge buyers by card and later pay out sellers. Payments go through an external payment provider. Money must never be charged twice, lost or made up.
+
+reqs:
+  func:
+    - Charge a buyer for an order.
+    - Pay sellers their share later.
+    - Refunds.
+    - A full history of every money movement.
+  nonfunc:
+    - Never double charge, never lose a payment. Correctness over speed.
+    - Every cent can be explained, audit ready.
+    - Secure. Card numbers never touch our servers.
+  out:
+    - Building our own card network, fraud models in depth, currency exchange.
+
+estimate:
+  intro: |
+    1 million orders a day.
+  items:
+    - type: num
+      q: Payments a second on average?
+      a: 10
+      tol: 2
+      unit: per second
+      why: 1 million divided by 100 thousand is 10 a second. Payments are low volume. The hard part is correctness, not scale.
+  after: |
+    !key Low volume, very high stakes. Use a relational database with transactions, idempotency everywhere, and a double entry ledger.
+
+api: |
+  ```
+  POST /v1/payments
+    headers  Idempotency-Key: order_8812_attempt_1
+    body     { order_id, amount: 4999, currency: "INR", payment_method_token }
+    reply    { payment_id, status: "succeeded" | "pending" | "failed" }
+
+  POST /v1/payments/{id}/refunds   { amount, idempotency_key }
+  POST /webhooks/psp               provider sends final status updates
+  ```
+
+  Amounts are integers in the smallest unit, paise or cents. Never floating point.
+
+data: |
+  | Table | Holds |
+  | --- | --- |
+  | payments | id, order id, amount, currency, status, provider reference, idempotency key unique |
+  | ledger_entries | entry id, transaction id, account, debit or credit, amount, time |
+  | accounts | buyer funds in transit, seller balance, platform fees, provider receivable |
+  | outbox | events to publish, written in the same transaction |
+
+  ### Double entry ledger
+
+  Every money movement is written as two or more entries that add up to zero. A 100 rupee purchase with a 10 rupee fee writes debit provider receivable 100, credit seller balance 90, credit platform fees 10. If the books ever do not sum to zero, something is wrong, and you know at once.
+
+scenes:
+  - title: Charging a card safely
+    stats: [Step, Payment status]
+    nodes:
+      app: {label: Checkout, x: 0, y: 1, kind: box}
+      pay: {label: Payment service, x: 2, y: 1, kind: def}
+      db: {label: Payments DB and ledger, x: 4, y: 3, kind: raised}
+      psp: {label: Payment provider, x: 4, y: 1, kind: raised, tag: external}
+      rec: {label: Reconciliation, x: 6, y: 2, kind: def, tag: daily}
+    links: [[app, pay], [pay, db], [pay, psp], [psp, rec], [db, rec]]
+    steps:
+      - title: Record intent first
+        text: Checkout calls with an idempotency key. The service inserts a payment row with status pending. If the key already exists, it returns that payment instead. No double charge from retries.
+        on: [app, pay, db]
+        flow: [[app, pay, ink], [pay, db, def]]
+        stats: [Create, pending]
+      - title: Call the provider
+        text: The service asks the provider to charge the card token, passing its own payment id as the provider's idempotency key.
+        on: [pay, psp]
+        flow: [[pay, psp, ink]]
+        stats: [Charge, pending]
+      - title: The network drops
+        text: No answer comes back. Did it charge? Unknown. The payment stays pending. It must **not** simply charge again with a new key.
+        on: [pay, psp]
+        flow: [[psp, pay, atk]]
+        mark: {pay: warn}
+        stats: [Unknown, pending]
+      - title: Find out, safely
+        text: The service retries with the same key, or asks the provider for the payment's status, or waits for the provider's webhook. All are safe. The answer says succeeded.
+        on: [pay, psp, db]
+        flow: [[pay, psp, def], [psp, pay, def], [pay, db, def]]
+        mark: {pay: ok}
+        stats: [Confirm, succeeded]
+      - title: Book it and check it
+        text: In one transaction, the payment becomes succeeded and ledger entries are written. Every night, reconciliation compares our records with the provider's settlement file to catch any mismatch.
+        on: [db, rec]
+        flow: [[db, rec, ink], [psp, rec, ink]]
+        mark: {rec: ok}
+        stats: [Reconcile, matched]
+
+hld: |
+  1. **Payment service** with a SQL database, every write in a transaction.
+  2. **Idempotency keys** on every incoming request and every call to the provider.
+  3. **Provider integration** via tokens, card data goes from the browser straight to the provider, keeping us out of most PCI scope.
+  4. **Webhook handler** for final statuses, idempotent and verified by signature.
+  5. **Ledger** with double entry bookkeeping, append only.
+  6. **Reconciliation** jobs comparing our ledger with provider reports daily.
+  7. **Payout service** pays sellers in batches from their ledger balance.
+
+diagrams:
+  - type: flow
+    title: A payment's life
+    nodes: [["Created, pending", "box"], ["Sent to provider", "raised"], ["Succeeded or failed", "def"], ["Ledger written", "def"], ["Reconciled", "def"]]
+    edges: ["", "webhook or poll", "same transaction", "nightly"]
+    caption: Status only moves forward. Every step can be retried without changing the result.
+
+deep:
+  - ["Unknown outcomes", "Timeouts do not mean failure. Treat them as unknown, keep the payment pending, and resolve by retrying with the same idempotency key, querying the provider, or receiving a webhook. Never guess."]
+  - ["Why a ledger", "Updating a balance column loses history and hides errors. An append only ledger where entries always sum to zero gives a full audit trail and makes bugs visible."]
+  - ["Exactly once effects", "Delivery is at least once everywhere, client retries, queue redelivery, webhook resends. Idempotency keys with unique constraints turn that into exactly once effects."]
+  - ["Security", "Use the provider's hosted fields or SDK so raw card numbers go to them, not to you. Store only tokens. Encrypt everything and log every action."]
+  - ["Consistency choice", "This is a CP system. If the database is unavailable, refuse to take payments rather than take them without records."]
+
+tradeoffs:
+  - ["Synchronous charge at checkout", "Customer knows the result immediately.", "Checkout depends on the provider being fast."]
+  - ["Async confirmation by webhook", "Robust to slow providers.", "Customer may see processing for a moment."]
+  - ["Balance column", "Simple to read.", "No history, hard to audit or fix."]
+  - ["Double entry ledger", "Complete, self checking history.", "More rows and some accounting knowledge."]
+
+task:
+  intro: |
+    Explain how your design makes sure a customer is charged exactly once.
+  items:
+    - q: Design a payment flow that never double charges, even with client retries, timeouts and duplicate webhooks.
+      keys:
+        - ["Idempotency key from the client stored with a unique constraint", [idempotency, unique, key]]
+        - ["Record a pending payment before calling the provider", [pending, before, record, intent]]
+        - ["Pass an idempotency key to the provider too", [provider, psp, stripe, same key, their idempot]]
+        - ["Treat timeouts as unknown and resolve by query, retry or webhook", [unknown, timeout, query, status, webhook, poll]]
+        - ["Double entry ledger in the same transaction", [ledger, double entry, transaction]]
+        - ["Daily reconciliation with provider reports", [reconcil, settlement, report, compare]]
+      a: |
+        Checkout sends an idempotency key. The payment service inserts a pending payment row with that key under a unique constraint, so a retry finds the existing payment. It then calls the provider with the payment id as the provider's own idempotency key. If the call times out, the payment stays pending as unknown, and a resolver either retries with the same key or queries the provider's status. Webhooks are verified, and processing is idempotent, a payment that is already succeeded ignores repeats. When the final status arrives, one transaction updates the payment and writes balanced ledger entries, plus an outbox event for the order service. Every night, reconciliation matches our ledger to the provider's settlement report and flags any difference for review.
+      fb: The sentence "a timeout is unknown, not failed" is the one that shows you really understand payments.
+
+interview:
+  - q: Why should money be stored as integers, not floating point numbers?
+    keys:
+      - ["Floating point cannot represent many decimals exactly", [exact, represent, 0.1, rounding, precision]]
+      - ["Small errors add up over many operations", [add up, accumulate, many, drift]]
+      - ["Use integers in minor units or a decimal type", [integer, cents, paise, minor unit, decimal]]
+    a: |
+      Floating point stores numbers in binary and cannot represent values like 0.1 exactly. 0.1 plus 0.2 gives 0.30000000000000004. Over millions of transactions these tiny errors add up and the books stop balancing. So I store amounts as integers in the smallest unit, like 4999 paise, or use an exact decimal type, together with the currency code.
+    fb: The 0.1 plus 0.2 example makes this answer instantly memorable.
+  - q: What is reconciliation and why is it needed if the code is correct?
+    keys:
+      - ["Comparing our records with the provider's or bank's records", [compare, provider, bank, settlement, records]]
+      - ["Catches bugs, missed webhooks, partial failures and fraud", [bug, missed, webhook, partial, fraud, mismatch]]
+      - ["Runs regularly and flags mismatches for review", [daily, regular, flag, review, alert, nightly]]
+    a: |
+      Reconciliation compares our ledger with the external truth, the provider's settlement files and bank statements, usually every day. Even with correct code, things slip through. A webhook never arrives, a refund is issued from the provider's dashboard by hand, a partial outage leaves a payment stuck. Reconciliation finds every mismatch and sends it for review or automatic fixing. In payments, you assume something will go wrong and build the check that catches it.
+    fb: Admitting that correct code is not enough, because the world outside your code changes, is the mature view.
+
+refs:
+  - "Stripe. [Designing robust and predictable APIs with idempotency](https://stripe.com/blog/idempotency)."
+  - "Square Engineering. [Books, an immutable double entry accounting database service](https://developer.squareup.com/blog/books-an-immutable-double-entry-accounting-database-service/)."
+  - "Alex Xu. System Design Interview volume 2, chapter 11, payment system."

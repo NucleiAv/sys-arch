@@ -1,0 +1,201 @@
+slug: l18
+num: "18"
+level: 4
+short: Observability and SLOs
+title: Observability, SLOs and knowing when things break
+time: about 45 minutes
+tags: [metrics, logs, tracing, SLO]
+lede: You cannot fix what you cannot see. Learn the three signals every system needs, how to set reliability goals that make sense, and how to alert without waking people for nothing.
+
+idea: |
+  When a user says "it is slow", you need to find out where, fast. **Observability** means your system tells you what it is doing. It rests on three kinds of signal.
+
+  - **Metrics** are numbers over time. Requests per second, error rate, p99 latency, CPU.
+  - **Logs** are written records of events. "Order 81 failed, card declined."
+  - **Traces** follow one request across every service it touched, with timing for each hop.
+
+  Then you set goals. A **service level objective**, SLO, says how reliable something should be, like "99.9 percent of checkout requests succeed in under 500 ms over 30 days".
+
+  !eli5 Metrics are the dashboard in a car, speed and fuel. Logs are the trip diary. Traces are the GPS track of one journey, showing exactly where you got stuck in traffic.
+
+scenes:
+  - title: Following one slow request with a trace
+    stats: [Span, Time, Running total]
+    nodes:
+      user: {label: User, x: 0, y: 1, kind: box}
+      gw: {label: Gateway, x: 2, y: 1, kind: raised}
+      ord: {label: Order service, x: 4, y: 1, kind: def}
+      pay: {label: Payment service, x: 6, y: 0, kind: def}
+      db: {label: Database, x: 6, y: 2, kind: raised}
+    links: [[user, gw], [gw, ord], [ord, pay], [ord, db]]
+    steps:
+      - title: The request gets a trace id
+        text: The gateway gives the request a trace id, like `t-7f3a`, and passes it along in a header to every service.
+        on: [user, gw]
+        flow: [[user, gw, ink]]
+        stats: [gateway, 5 ms, 5 ms]
+      - title: Order service
+        text: The order service records its own span, start and end time, with the same trace id.
+        on: [gw, ord]
+        flow: [[gw, ord, ink]]
+        stats: [order service, 15 ms, 20 ms]
+      - title: Database
+        text: The database query span takes 12 ms. Normal.
+        on: [ord, db]
+        flow: [[ord, db, ink], [db, ord, def]]
+        stats: [database, 12 ms, 32 ms]
+      - title: Found it
+        text: The payment span takes 2,400 ms. The trace view shows this bar sticking out. Now you know where to look, in seconds, not hours.
+        on: [ord, pay]
+        flow: [[ord, pay, atk], [pay, ord, atk]]
+        mark: {pay: bad}
+        stats: [payment, 2400 ms, 2432 ms]
+
+terms:
+  - [Metric, "A number measured over time, like requests per second."]
+  - [Log, "A written record of one event, best as structured JSON with fields."]
+  - [Trace, "The full path of one request across services, made of spans."]
+  - [Span, "One step inside a trace, with a start time, duration and labels."]
+  - [SLI, "Service level indicator. The measurement, like percent of requests under 300 ms."]
+  - [SLO, "Service level objective. The target for an SLI, like 99.9 percent."]
+  - [SLA, "Service level agreement. A promise to customers with penalties if broken."]
+  - [Error budget, "How much failure the SLO allows. 99.9 percent leaves 0.1 percent to spend."]
+  - [Golden signals, "Latency, traffic, errors and saturation. The four metrics to watch first."]
+
+how: |
+  ### What to measure first, the golden signals
+
+  1. **Latency.** How long requests take. Watch p50 and p99, not just the average.
+  2. **Traffic.** How many requests.
+  3. **Errors.** How many fail.
+  4. **Saturation.** How full things are, CPU, memory, queue length, connection pools.
+
+  ### Nines and what they allow
+
+  | Availability | Downtime a year | Downtime a month |
+  | --- | --- | --- |
+  | 99 percent | about 3.65 days | about 7 hours |
+  | 99.9 percent | about 8.8 hours | about 43 minutes |
+  | 99.99 percent | about 53 minutes | about 4.3 minutes |
+  | 99.999 percent | about 5 minutes | about 26 seconds |
+
+  Each extra nine costs a lot more. Users on mobile networks often cannot tell the difference above 99.9.
+
+  ### Error budgets
+
+  If the SLO is 99.9 percent, you may fail 0.1 percent of requests in the month. While budget remains, ship features fast. When it is spent, slow down and work on reliability. This turns arguments between speed and stability into a simple number.
+
+  ### Alerts that people trust
+
+  - Alert on **symptoms users feel**, like the error rate of checkout, not on every high CPU.
+  - Use **burn rate alerts**, page someone when the error budget is being spent too fast.
+  - Every alert must be actionable. If the answer is "ignore it", delete the alert.
+
+  !key Structured logs with a trace id and a request id in every line let you jump from a metric spike to the exact failing requests.
+
+diagrams:
+  - type: flow
+    title: From signal to fix
+    nodes: [["Metric spikes", "atk"], ["Alert pages on call", "raised"], ["Dashboard narrows it", "box"], ["Trace finds the slow hop", "def"], ["Logs show why", "def"]]
+    edges: ["", "", "", ""]
+    caption: Metrics tell you something is wrong, traces tell you where, logs tell you why.
+
+life:
+  - ["Google's SRE book", "Google popularized SLOs and error budgets. Teams agree on a target and use the remaining budget to decide whether to launch or to fix reliability."]
+  - ["The alert nobody read", "A team had 300 alerts a week. A real outage alert drowned in the noise. They deleted 80 percent, kept symptom based alerts and paged only on SLO burn."]
+  - ["A trace finds a hidden N plus 1", "A page made one database query per item in a list, 200 queries for 200 items. Each query was fast, so metrics looked fine, but the trace showed 200 tiny bars adding up to 2 seconds."]
+
+tradeoffs:
+  - ["More logging", "More detail when debugging.", "Storage cost, noise, risk of logging private data."]
+  - ["Sampling traces", "Much cheaper.", "May miss the rare slow request, use tail based sampling to keep slow ones."]
+  - ["Tight SLO", "Users happier.", "Expensive, slows feature work."]
+  - ["Loose SLO", "Faster shipping.", "Users may leave."]
+
+mistakes:
+  - Watching only averages, which hide the slow tail.
+  - Alerting on causes like CPU instead of symptoms like errors.
+  - Logging passwords, tokens or personal data.
+  - Promising customers 99.99 percent in an SLA while the system depends on parts with 99.9.
+  - No trace id across services, so logs cannot be joined.
+
+quiz:
+  - q: Which signal follows one request across all services?
+    opts: ["Metrics", "Traces", "Logs only"]
+    a: 1
+    why: Traces connect spans from every service with one trace id.
+  - type: fill
+    q: The four golden signals are latency, traffic, errors and ____.
+    a: ["saturation"]
+    why: Saturation shows how full your resources are, which predicts trouble.
+  - type: num
+    q: An SLO of 99.9 percent over 30 days. About how many minutes of downtime does the error budget allow?
+    a: 43
+    tol: 2
+    unit: minutes
+    why: 30 days is 43,200 minutes. 0.1 percent of that is 43.2 minutes.
+  - q: What should wake an engineer at 3 AM?
+    opts: ["CPU at 85 percent on one server", "Checkout errors burning the error budget fast", "A disk at 60 percent"]
+    a: 1
+    why: Page on user facing symptoms. Causes go on dashboards and tickets.
+  - type: fill
+    q: The target for a reliability measurement, like 99.9 percent, is called an ____.
+    a: ["SLO", "service level objective"]
+    why: SLI is the measurement, SLO the target, SLA the promise with penalties.
+
+interview:
+  - q: How would you monitor a new service you are launching?
+    keys:
+      - ["Golden signals, latency, traffic, errors, saturation", [latency, traffic, error, saturation, golden]]
+      - ["Percentiles like p99, not averages", [p99, p95, percentile, tail]]
+      - ["Structured logs and distributed tracing with ids", [log, trace, tracing, trace id, opentelemetry]]
+      - ["Define SLOs and alert on symptoms or burn rate", [slo, burn, symptom, alert]]
+      - ["Dashboards and runbooks", [dashboard, runbook, playbook]]
+    a: |
+      I instrument it with OpenTelemetry from day one. Metrics for the golden signals, request rate, error rate, latency at p50, p95 and p99, and saturation like CPU, memory, pool use and queue depth. Structured JSON logs that include a request id and trace id. Distributed tracing across every call. Then I agree on SLOs with the product owner, for example 99.9 percent of requests succeed under 300 ms, and alert on burn rate, so the on call person is paged only when users are really affected. A dashboard per service and a short runbook for each alert finish it off.
+    fb: Mention SLOs and alert on symptoms. Many candidates list tools but skip what to alert on.
+  - q: What is an error budget and how does it help teams?
+    keys:
+      - ["The allowed failure, one minus the SLO", [1 minus, allowed, 0.1, budget, remaining]]
+      - ["While there is budget, ship faster and take risks", [ship, release, feature, risk, faster]]
+      - ["When spent, focus on reliability and slow releases", [spent, freeze, reliability, slow down, stop]]
+      - ["Turns speed versus stability into an agreed number", [agree, number, objective, argument, data]]
+    a: |
+      If the SLO is 99.9 percent, the error budget is the other 0.1 percent, the amount of failure we have agreed is acceptable over the period. While budget remains, teams can release often and try risky changes. When it is used up, they slow releases and spend time on reliability until it recovers. It turns the endless argument between "ship faster" and "be more stable" into a shared number everyone agreed on.
+    fb: The phrase "turns an argument into a number" lands well with interviewers.
+
+desk:
+  title: The mysterious slow evenings
+  lede: A streaming app gets complaints every evening, but dashboards look fine. Find the problem with the right signals.
+  situation: |
+    **Reelhouse** has a dashboard showing average latency of 120 ms, and alerts when any server's CPU is over 80 percent. Those alerts fire 40 times a night and are ignored. Users say the home screen sometimes takes 8 seconds in the evening.
+  rounds:
+    - title: Round 1. See the problem
+      items:
+        - q: Why does the dashboard look fine?
+          opts: ["Users are lying", "The average hides a slow tail, p99 is probably very high", "Evenings are quiet"]
+          a: 1
+          why: A few very slow requests barely move the average.
+        - q: Which tool shows which service makes those home screens slow?
+          opts: ["Distributed traces of slow requests", "A CPU graph", "The billing report"]
+          a: 0
+          why: Traces show the timing of each hop for a single slow request.
+    - title: Round 2. Fix alerting
+      items:
+        - type: sort
+          q: Keep, change or delete each alert.
+          rows:
+            - ["CPU over 80 percent on any server", "Move to dashboard"]
+            - ["Home screen p99 over 2 s burning the SLO budget fast", "Page on call"]
+            - ["Disk 70 percent full on a log server", "Ticket for the day team"]
+          opts: ["Move to dashboard", "Page on call", "Ticket for the day team"]
+          why: Pages are for user pain now. Slow building issues get tickets. Causes go on dashboards.
+  card: |
+    - Metrics say what, traces say where, logs say why.
+    - p99, not averages.
+    - SLOs and error budgets.
+    - Page on symptoms, never on noise.
+
+refs:
+  - "Google. [Site Reliability Engineering, chapters 4 and 6, SLOs and monitoring](https://sre.google/sre-book/service-level-objectives/)."
+  - "OpenTelemetry. [What is OpenTelemetry?](https://opentelemetry.io/docs/what-is-opentelemetry/)"
+  - "Google. [The SRE workbook, alerting on SLOs](https://sre.google/workbook/alerting-on-slos/)."
