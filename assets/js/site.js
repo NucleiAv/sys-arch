@@ -232,7 +232,7 @@
     let users = 1000;
     const out = $(".sim-out", sim);
     const on = id => $("#" + id).checked;
-    const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(Math.round(n));
+    const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 1 : 0) + "M" : n >= 1e5 ? Math.round(n / 1e3) + "k" : n >= 1e3 ? +(n / 1e3).toFixed(1) + "k" : String(Math.round(n));
     const draw = () => {
       const s = { lb: on("s-lb"), cache: on("s-cache"), rep: on("s-rep"), cdn: on("s-cdn"), q: on("s-q") };
       /* a very small model of a web app. Every user sends about one request every 20 seconds at peak. */
@@ -266,9 +266,19 @@
       } else if (users === 1000 && cost > 3) {
         verdict = "Works, but you are paying for parts you do not need"; good = true;
         why = "With a thousand users, one server and one database are fine. Every extra part costs money and is one more thing that can break. Good architects add parts when the numbers ask for them, not before.";
+      } else if (util > 0.9) {
+        verdict = `At the limit. ${worst[0]} at ${Math.round(util * 100)} percent`; good = "warn";
+        why = `It still works, but ${worst[0].toLowerCase()} have almost no room left. Any spike takes the site down. ` + ({
+          "App servers": "Add more app servers behind the load balancer.",
+          "Database reads": "Cache more, so fewer reads reach the database, or add more replicas. At this size teams also split the data across many databases, which is called sharding.",
+          "Database writes": "Writes are the hardest part to grow. The next step is sharding, splitting the data so each database takes only part of the writes."
+        }[worst[0]]);
+      } else if (util > 0.7) {
+        verdict = `Healthy, but close to the limit. ${worst[0]} at ${Math.round(util * 100)} percent`; good = "warn";
+        why = "It works, but the busiest part is above 70 percent. A small spike could tip it over. Leave room to grow.";
       } else {
         verdict = "Healthy"; good = true;
-        why = util > 0.7 ? "It works, but the busiest part is above 70 percent. A small spike could tip it over. Leave room to grow." : "Every part has room to spare. This is the right amount of system for this many users.";
+        why = "Every part has room to spare. This is the right amount of system for this many users.";
       }
       out.innerHTML = `
         <div class="msg"><span class="who">traffic at the busiest minute</span><b>${fmt(rps)}</b> requests a second from ${fmt(users)} users</div>
@@ -278,7 +288,7 @@
             <div class="mr-bar"><i class="${u > 1 ? "bad" : u > 0.7 ? "warn" : ""}" style="width:${Math.max(2, pct)}%"></i></div><small class="muted">${note}</small></div>`;
         }).join("")}
         <div class="msg doc"><span class="who">what a user feels</span>${over.length ? "Pages time out or show errors." : `Pages load in about ${Math.round(ms)} ms.`} Monthly cost, ${"$".repeat(cost)}</div>
-        <div class="verdict ${good ? "good" : "bad"}">${verdict}</div>
+        <div class="verdict ${good === "warn" ? "warn" : good ? "good" : "bad"}">${verdict}</div>
         <p class="why">${why}</p>`;
     };
     $$("input", sim).forEach(i => i.addEventListener("change", draw));

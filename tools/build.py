@@ -21,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261126e"
+V = "20261127a"
 E = lambda s: html.escape(str(s), quote=True)
 
 
@@ -435,8 +435,9 @@ def render_part(kind, L, sid):
     if kind == "quiz":
         return qset(v, f"{sid}-quiz")
     if kind == "interview":
-        return ('<p class="small muted">Say or write your answer first. Then press Get feedback. The page checks which key points you covered, '
-                'shows a model answer and tells you what a strong answer adds. Your text stays in this browser.</p>' + qset(iv_items(v), f"{sid}-iv"))
+        return ('<p class="small muted">Say or write your answer first. Then press Get feedback. The page looks for key words '
+                'from each key point in your text, shows a model answer and tells you what a strong answer adds. There is no AI model and no cost. '
+                'The check runs in your browser and your text never leaves it. Key words can miss a point you made in other words, so treat it as a guide.</p>' + qset(iv_items(v), f"{sid}-iv"))
     if kind == "reqs":
         out = ""
         for k, t in (("func", "What it must do"), ("nonfunc", "How well it must do it"), ("out", "Out of scope, say it out loud")):

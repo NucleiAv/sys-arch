@@ -1018,3 +1018,4 @@ i.lg.k-req { background: var(--k-req); } i.lg.k-res { background: var(--k-res); 
 .px-hexkey i.hb { width: 12px; height: 12px; display: inline-block; }
 .px-hexkey .mono { font-size: 11.5px; color: var(--ink-3); }
 .seclens { border-left: 3px solid var(--atk); padding-left: 16px; }
+.sim-out .verdict.warn { color: var(--pencil); }
