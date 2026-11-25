@@ -121,6 +121,7 @@
         $(".reveal", q).addEventListener("click", e => {
           const open = !q.classList.contains("shown");
           if (open) fb.innerHTML = feedback(ta.value, it.keys || []);
+          if (open && qid.startsWith("bank-") && ta.value.trim().split(/\s+/).length >= 4) store.set("ivfb." + qid, 1);
           q.classList.toggle("shown", open);
           e.target.textContent = open ? "Hide feedback" : "Get feedback";
         });

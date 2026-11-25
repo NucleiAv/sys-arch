@@ -21,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261127a"
+V = "20261127f"
 E = lambda s: html.escape(str(s), quote=True)
 
 
@@ -682,6 +682,12 @@ def build_interview(tracks, design):
 
 
 # ---------------------------------------------------------------- plan
+AUTO_NOTE = {
+    "basics": '<p class="small muted auto-note">Ticks itself when you have read all the steps.</p>',
+    "protocols": '<p class="small muted auto-note">Ticks itself when you have played each of these protocols to its last step.</p>',
+    "extra_designs": '<p class="small muted auto-note">Ticks itself when you mark two designs done that are not named elsewhere in the plan.</p>',
+    "feedback": '<p class="small muted auto-note">Ticks itself after you get feedback on five questions on the interview page.</p>',
+}
 def build_plan(all_pages):
     P = load("content/plan.yaml")
     weeks = ""
@@ -693,8 +699,20 @@ def build_plan(all_pages):
             if pg and pg not in all_pages:
                 sys.exit(f"plan.yaml week {w['n']}: unknown page {pg}")
             link = f' <a href="{pg}">{E(t.get("label") or all_pages[pg])}</a>' if pg else ""
-            tasks += (f'<div class="task">{checkbox(cid, t["t"])}<div class="k">{E(t.get("k", "Do"))}<small>{E(t.get("time", ""))}</small></div>'
-                      f'<div class="body"><p>{inline(t["t"])}{link}</p></div></div>')
+            m = re.match(r"^(learn|infra|design)/([\w-]+)\.html$", pg or "")
+            dl = f' data-link="{m.group(1)}.{m.group(2)}"' if m and m.group(2) != "index" else ""
+            if t.get("done"):
+                rule = dict(t["done"])
+                if rule.get("protocols"):
+                    bad = [x for x in rule["protocols"] if f"protocols.html#/{x}" not in all_pages]
+                    if bad:
+                        sys.exit(f"plan.yaml week {w['n']}: unknown protocols {bad}")
+                if "extra_designs" in rule:
+                    rule["skip"] = sorted({re.sub(r"\.html$", "", x["page"].split("/")[1]) for ww in P["weeks"] for x in ww["tasks"]
+                                           if str(x.get("page", "")).startswith("design/d")})
+                dl += f" data-auto='{E(json.dumps(rule))}'"
+            tasks += (f'<div class="task"{dl}>{checkbox(cid, t["t"])}<div class="k">{E(t.get("k", "Do"))}<small>{E(t.get("time", ""))}</small></div>'
+                      f'<div class="body"><p>{inline(t["t"])}{link}</p>{AUTO_NOTE.get(next(iter(t["done"])), "") if t.get("done") else ""}</div></div>')
         weeks += (f'<article class="week" id="week-{w["n"]}"><div class="week-num"><b>{w["n"]:02d}</b>Week</div>'
                   f'<div><h3>{E(w["t"])}</h3><p class="small muted">{inline(w.get("d", ""))}</p>{tasks}</div></article>')
     main = (f'<div class="plan-bar" id="plan-bar"><div class="wrap"><div class="score"><b id="pts">0</b><span class="mono muted">of <span id="pmax">0</span> tasks</span></div>'

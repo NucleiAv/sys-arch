@@ -6,10 +6,10 @@ weeks:
     t: How the web works
     d: Learn the words everyone uses. Do not rush this week.
     tasks:
-      - {k: Read, time: 2 hrs, t: "Read all of Start here and play with the scale simulator until 10 million users are healthy.", page: basics.html}
+      - {k: Read, time: 2 hrs, t: "Read all of Start here and play with the scale simulator until the app stays up at 10 million users.", page: basics.html, done: {basics: all}}
       - {k: Learn, time: 40 min, t: "Concepts lesson 1.1.", page: learn/l00.html}
       - {k: Learn, time: 45 min, t: "Concepts lesson 1.2.", page: learn/l01.html}
-      - {k: Watch, time: 30 min, t: "Watch DNS, TCP and HTTP move, packet by packet, in both views.", page: "protocols.html#/dns", label: "DNS, then TCP and HTTP"}
+      - {k: Watch, time: 30 min, t: "Watch DNS, TCP and HTTP move, packet by packet, in both views.", page: "protocols.html#/dns", label: "DNS, then TCP and HTTP", done: {protocols: [dns, tcp, http]}}
       - {k: Infra, time: 45 min, t: "Infra lesson 1.1. Install Git and make your first commits.", page: infra/i01.html}
   - n: 2
     t: How programs talk
@@ -20,7 +20,7 @@ weeks:
       - {k: Learn, time: 45 min, t: "Concepts lesson 1.5.", page: learn/api-graphql.html}
       - {k: Learn, time: 45 min, t: "Concepts lesson 1.6.", page: learn/api-grpc.html}
       - {k: Learn, time: 50 min, t: "Concepts lesson 1.7.", page: learn/api-realtime.html}
-      - {k: Watch, time: 30 min, t: "Watch HTTPS, HTTP/2, WebSocket and gRPC.", page: "protocols.html#/https", label: "HTTPS and friends"}
+      - {k: Watch, time: 30 min, t: "Watch HTTPS, HTTP/2, WebSocket and gRPC.", page: "protocols.html#/https", label: "HTTPS and friends", done: {protocols: [https, http2, websocket, grpc]}}
   - n: 3
     t: Numbers, servers and teamwork
     tasks:
@@ -44,7 +44,7 @@ weeks:
       - {k: Learn, time: 50 min, t: "Concepts lesson 2.1.", page: learn/l06.html}
       - {k: Learn, time: 50 min, t: "Concepts lesson 2.2.", page: learn/l07.html}
       - {k: Learn, time: 50 min, t: "Concepts lesson 2.3.", page: learn/l08.html}
-      - {k: Watch, time: 30 min, t: "Watch MySQL, PostgreSQL and Redis on the wire.", page: "protocols.html#/postgres", label: PostgreSQL and friends}
+      - {k: Watch, time: 30 min, t: "Watch MySQL, PostgreSQL and Redis on the wire.", page: "protocols.html#/postgres", label: PostgreSQL and friends, done: {protocols: [mysql, postgres, redis]}}
       - {k: Infra, time: 50 min, t: "Infra lesson 2.1.", page: infra/i05.html}
   - n: 6
     t: Growing the data layer and containers
@@ -85,7 +85,7 @@ weeks:
     t: Safe, secure and well organized
     tasks:
       - {k: Learn, time: 50 min, t: "Concepts lesson 4.3.", page: learn/l19.html}
-      - {k: Watch, time: 40 min, t: "Watch TLS, OAuth, Kerberos and WireGuard.", page: "protocols.html#/tls", label: "TLS and the security protocols"}
+      - {k: Watch, time: 40 min, t: "Watch TLS, OAuth, Kerberos and WireGuard.", page: "protocols.html#/tls", label: "TLS and the security protocols", done: {protocols: [tls, oauth, kerberos, wireguard]}}
       - {k: Learn, time: 50 min, t: "Concepts lesson 4.4.", page: learn/l20.html}
       - {k: Practice, time: 40 min, t: "Concepts level 4 practice.", page: learn/p4.html}
       - {k: Design, time: 1 hr, t: "Design a notification system.", page: design/d04.html}
@@ -130,5 +130,5 @@ weeks:
       - {k: Design, time: 1 hr, t: "Design a payment system.", page: design/d10.html}
       - {k: Design, time: 1 hr, t: "Design an AI chat app.", page: design/d14.html}
       - {k: Mock, time: 45 min, t: "Explain the secure medical device platform to a friend as if they were the hospital security team.", page: design/d17.html}
-      - {k: Design, time: 2 hrs, t: "Pick any two other designs and do them in 45 minutes each.", page: design/index.html, label: All designs}
-      - {k: Mock, time: 1 hr, t: "Press Give me a random question five times. Answer each out loud in under 5 minutes, then get feedback.", page: interview.html}
+      - {k: Design, time: 2 hrs, t: "Pick any two other designs and do them in 45 minutes each.", page: design/index.html, label: All designs, done: {extra_designs: 2}}
+      - {k: Mock, time: 1 hr, t: "Press Give me a random question five times. Answer each out loud in under 5 minutes, then get feedback.", page: interview.html, done: {feedback: 5}}

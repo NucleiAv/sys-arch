@@ -138,6 +138,15 @@
   window.AIC = { store, enhanceSelect, enhanceAll };
 
   /* ---------- Plan page ---------- */
+  /* Tasks with no single done box tick themselves when their rule is met. */
+  function autoDone(r) {
+    const keys = Object.keys(store.all());
+    if (r.basics) return keys.filter(k => k.startsWith("basics.")).length >= 9;
+    if (r.protocols) { let seen = {}; try { seen = JSON.parse(localStorage.getItem("sysarch.px.seen")) || {}; } catch (e) {} return r.protocols.every(p => seen[p]); }
+    if (r.extra_designs) return keys.filter(k => /^design\.d\d+$/.test(k) && k !== "design.d00" && !(r.skip || []).includes(k.slice(7))).length >= r.extra_designs;
+    if (r.feedback) return keys.filter(k => k.startsWith("ivfb.")).length >= r.feedback;
+    return false;
+  }
   function initPlan() {
     if (!$("#plan-bar")) return;
     const boxes = $$("input[data-id^='plan.']");
@@ -152,7 +161,14 @@
       $("#level").textContent = t;
       boxes.forEach(b => { const r = b.closest(".task"); if (r) r.classList.toggle("done", b.checked); });
     };
-    boxes.forEach(b => b.addEventListener("change", () => setTimeout(update)));
+    /* A plan task that points to a lesson or design shares its tick with that page's "Mark this page done". */
+    boxes.forEach(b => {
+      const link = (b.closest(".task") || {}).dataset ? b.closest(".task").dataset.link : "";
+      if (link) { b.checked = store.get(link); store.set(b.dataset.id, b.checked); }
+      const auto = b.closest(".task") && b.closest(".task").dataset.auto;
+      if (auto && autoDone(JSON.parse(auto)) && !store.get(b.dataset.id)) { b.checked = true; store.set(b.dataset.id, true); }
+      b.addEventListener("change", () => { if (link) store.set(link, b.checked); setTimeout(update); });
+    });
     $("#reset").addEventListener("click", () => {
       if (confirm("Clear every tick on this page? This cannot be undone.")) { store.clear("plan."); boxes.forEach(b => { b.checked = false; }); update(); }
     });

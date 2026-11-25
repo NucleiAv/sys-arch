@@ -185,7 +185,7 @@
     play.addEventListener("click", () => {
       if (timer) return stopPlay();
       play.textContent = "Pause"; play.setAttribute("aria-pressed", "true");
-      if (cur === spec.steps.length - 1) go(0);
+      go(cur === spec.steps.length - 1 ? 0 : cur + 1);
       timer = setInterval(() => { if (cur >= spec.steps.length - 1) return stopPlay(); go(cur + 1); }, 4200);
     });
     root.tabIndex = 0;

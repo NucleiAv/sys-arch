@@ -379,13 +379,14 @@
   function onStepDone() {
     if (!playing) return;
     clearTimeout(timer);
-    timer = setTimeout(() => { if (!playing) return; if (step < cur.steps.length - 1) go(step + 1); else setPlay(false); }, 1600 / speed);
+    timer = setTimeout(() => { if (!playing) return; if (step < cur.steps.length - 1) go(step + 1); else setPlay(false); }, 1200 / speed);
   }
   function setPlay(v) {
     playing = v;
     const b = $("#px-play"); b.classList.toggle("on", v); b.setAttribute("aria-label", v ? "Pause" : "Play"); b.textContent = v ? "Pause" : "Play";
     clearTimeout(timer);
-    if (v) { if (step >= cur.steps.length - 1) go(0); else paint(); }
+    /* Respond at once. The step on screen has already played, so move to the next one, or start over from the end. */
+    if (v) go(step >= cur.steps.length - 1 ? 0 : step + 1);
   }
   function paint() {
     renderStats(); renderStepTab(); renderInspector();
