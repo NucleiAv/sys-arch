@@ -21,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261127f"
+V = "20261128a"
 E = lambda s: html.escape(str(s), quote=True)
 
 
@@ -535,6 +535,12 @@ def track_side(lessons, levels, cur, track):
     return side_wrap(track, T["label"], "".join(out))
 
 
+def donefoot(track, sid, label="Mark this page done"):
+    """The done tick sits at the end of the page, where you finish it."""
+    return ('<section class="block donefoot" id="done"><h2>Finished this page?</h2>'
+            '<p class="small muted">Tick it. Your route on the home page and your plan fill in.</p>' + donebox(track, sid, label) + "</section>")
+
+
 def donebox(track, sid, label="Mark this page done"):
     return f'<div class="doc-meta"><label class="donebox"><span class="check"><input type="checkbox" data-id="{track}.{sid}">{TICKSVG}</span>{label}</label></div>'
 
@@ -552,9 +558,9 @@ def build_track(track):
         side = track_side(lessons, levels, sid, track)
         if L.get("kind") == "practice":
             body = (crumbs + f'<header class="doc-head"><div class="eyebrow"><span class="tag {kind}"><span class="dot {kind}"></span>{crumb} · Level {L["level"]} practice</span>{lvl}<span>{E(L.get("time", ""))}</span></div>'
-                    f'<h1>{E(L["title"])}</h1><p class="lede">{inline(L["lede"])}</p>{donebox(track, sid, "Mark this practice done")}</header>'
+                    f'<h1>{E(L["title"])}</h1><p class="lede">{inline(L["lede"])}</p></header>'
                     + '<nav class="doc-toc" aria-label="Rounds">' + "".join(f'<a href="#r{j + 1}">{E(r["title"])}</a>' for j, r in enumerate(L["rounds"])) + "</nav>"
-                    + rounds_html(L, sid) + pager(prev, nxt))
+                    + rounds_html(L, sid) + donefoot(track, sid, "Mark this practice done") + pager(prev, nxt))
             page(f"{track}/{sid}.html", jt(L["title"], f'{crumb} level {L["level"]} practice'), L["lede"][:155], track, side, body)
             continue
         parts, toc = [], []
@@ -565,10 +571,10 @@ def build_track(track):
                 toc.append((pid, title))
                 parts.append(section(pid, title, inner))
         head = (crumbs + f'<header class="doc-head"><div class="eyebrow"><span class="tag {kind}"><span class="dot {kind}"></span>{crumb} · {T["eyebrow"]} {E(L["num"])}</span>{lvl}<span>{E(L.get("time", ""))}</span></div>'
-                f'<h1>{E(L["title"])}</h1><p class="lede">{inline(L["lede"])}</p>{donebox(track, sid)}</header>'
+                f'<h1>{E(L["title"])}</h1><p class="lede">{inline(L["lede"])}</p></header>'
                 + '<nav class="doc-toc" aria-label="On this page">' + "".join(f'<a href="#{a}">{E(b)}</a>' for a, b in toc) + "</nav>")
         dnext = (f'{sid}-desk.html', f'{L["short"]}, practice desk') if L.get("desk") else nxt
-        page(f"{track}/{sid}.html", jt(L["title"], f'{T["eyebrow"]} {L["num"]}'), L["lede"][:155], track, side, head + "".join(parts) + pager(prev, dnext))
+        page(f"{track}/{sid}.html", jt(L["title"], f'{T["eyebrow"]} {L["num"]}'), L["lede"][:155], track, side, head + "".join(parts) + donefoot(track, sid) + pager(prev, dnext))
         if L.get("desk"):
             dcr = f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><a href="index.html">{crumb}</a><span>/</span><a href="{sid}.html">{E(L["num"])}</a><span>/</span><span>Practice desk</span></nav>'
             page(f"{track}/{sid}-desk.html", jt(L["desk"]["title"], "Practice desk"), L["desk"]["lede"][:155], track,

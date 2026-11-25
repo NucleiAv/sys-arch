@@ -71,7 +71,7 @@
           if (!ok) b.classList.add("wrong");
           $(".why", q).insertAdjacentHTML("afterbegin", `<b>${ok ? "Correct." : "Not quite."}</b> `);
           store.set("q." + qid, ok ? 1 : 0);
-          score(box);
+          mark(box, qid, ok);
         });
       } else if (it.type === "sort") {
         $(".check-btn", q).addEventListener("click", () => {
@@ -88,6 +88,7 @@
           const w = $(".why", q);
           w.querySelector(".tally") ? w.querySelector(".tally").remove() : null;
           w.insertAdjacentHTML("afterbegin", `<b class="tally">${good} of ${it.rows.length} right. </b>`);
+          mark(box, qid, good === it.rows.length);
         });
       } else if (it.type === "num") {
         const inp = $("input", q);
@@ -99,6 +100,7 @@
           $(".res", q).textContent = ok ? "Correct" : "Not yet. Try again or read the working below";
           $(".res", q).className = "res " + (ok ? "good" : "bad");
           q.classList.add("done");
+          if (!isNaN(v)) mark(box, qid, ok);
         });
       } else if (it.type === "fill") {
         const inp = $("input", q), res = $(".res", q);
@@ -110,10 +112,11 @@
           res.textContent = good ? "Correct" : "Not yet. Try again, or show the answer";
           res.className = "res " + (good ? "good" : "bad");
           if (good) { q.classList.add("done"); store.set("q." + qid, 1); }
+          mark(box, qid, good);
         };
         $(".check-btn", q).addEventListener("click", check);
         inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); check(); } });
-        $(".show-btn", q).addEventListener("click", () => { inp.value = it.a[0]; inp.classList.add("shown"); res.textContent = "The answer is filled in. Read why below"; res.className = "res"; q.classList.add("done"); });
+        $(".show-btn", q).addEventListener("click", () => { inp.value = it.a[0]; inp.classList.add("shown"); res.textContent = "The answer is filled in. Read why below"; res.className = "res"; q.classList.add("done"); mark(box, qid, false); });
       } else if (it.type === "iv") {
         const ta = $("textarea", q), sv = $(".saved", q), fb = $(".fbk", q);
         let t;
@@ -151,15 +154,21 @@
     return `<p class="fb-line"><b>${n} of ${keys.length} key points.</b> ${line}</p><ul class="fb-list">${keys.map((k, i) => `<li class="${hit[i] ? "hit" : "miss"}">${hit[i] ? "" : "Missing. "}${k[0]}</li>`).join("")}</ul>
       <p class="small muted">This check looks for key words, so it can miss a point you said in other words. Use it as a guide, not a grade.</p>`;
   }
+  /* Score every question that has a right answer. Your first try on each one counts. */
+  function mark(box, qid, ok) {
+    const res = box.__res || (box.__res = {});
+    if (!(qid in res)) res[qid] = ok;
+    score(box);
+  }
   function score(box) {
-    const qs = $$(".q.mcq", box);
+    const qs = $$(".q.mcq, .q.fill, .q.num, .q.sort", box);
     if (qs.length < 2) return;
-    const done = qs.filter(q => q.classList.contains("done"));
-    if (done.length !== qs.length) return;
-    const right = qs.filter(q => $(".right.wrong", q) === null && !$(".wrong", q)).length;
+    const res = box.__res || {};
+    if (!qs.every(q => q.dataset.q in res)) return;
+    const right = qs.filter(q => res[q.dataset.q]).length;
     let s = $(".qscore", box);
     if (!s) { s = document.createElement("p"); s.className = "qscore"; box.appendChild(s); }
-    s.innerHTML = `<b>${right} of ${qs.length}</b> right. ${right === qs.length ? "Well done. Mark the lesson done at the top." : "Read the explanations above, then go back to the part you missed."}`;
+    s.innerHTML = `<b>${right} of ${qs.length}</b> right on the first try. ${right === qs.length ? "Well done. Mark the page done at the bottom." : "Read the explanations above, then go back to the part you missed."}`;
   }
 
   /* ---------- sidebar and done marks ---------- */

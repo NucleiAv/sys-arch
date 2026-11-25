@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/site.css?v=20261127f">
+<link rel="stylesheet" href="../assets/css/site.css?v=20261128a">
 </head>
 <body data-root="../" data-track="learn">
 <a class="skip" href="#main">Skip to content</a>
@@ -21,8 +21,8 @@ def set_volume():
     os.system(&quot;amixer set Master &quot; + str(level) + &quot;%&quot;)
     log.info(&quot;volume set by &quot; + request.headers.get(&quot;X-User&quot;, &quot;unknown&quot;))
     return {&quot;ok&quot;: True}</code></pre><div class="qset" data-id="s08-desk-r1"></div><script type="application/json" data-for="s08-desk-r1">[{"type": "sort", "q": "What kind of problem is each line?", "rows": [["No check of who is calling", "Missing authorization"], ["The user name comes from a header anyone can set", "Spoofable identity"], ["No limit on level, like 0 to 100", "Missing input validation"]], "opts": ["Missing authorization", "Spoofable identity", "Missing input validation"], "why": "Each is a separate fix."}, {"q": "The code converts level with int() before using it in os.system. Is command injection possible on this line?", "opts": ["Not with this exact code, since int() fails on text, but os.system is still a risky pattern", "Yes, always", "Only on Windows"], "a": 0, "why": "int() blocks text today. A later change that removes it would open injection. Use a library call or subprocess with a list of arguments, never a shell string.", "type": "mcq"}]</script></section><section class="block round" id="r2"><h2>Round 2. Fix and test</h2><div class="qset" data-id="s08-desk-r2"></div><script type="application/json" data-for="s08-desk-r2">[{"type": "open", "q": "List the fixes you would ask for.", "a": "<p>Require an authenticated session and check the nurse role. Take the user id from the verified session, not from a header. Validate level is an integer from 0 to 100 and reject others with 400. Replace os.system with subprocess.run with an argument list and no shell, or a sound library. Add tests for a missing token, a wrong role, level 101 and level as text.<\/p>"}, {"q": "Which test belongs in the security suite?", "opts": ["Send level 150 and expect a 400 error and no change", "Send level 50 and expect volume 50", "Check that the response is JSON"], "a": 0, "why": "It checks that a bad input is refused.", "type": "mcq"}]</script></section><section class="block" id="card"><h2>Pocket card. Keep this</h2><ul><li>Hygiene. Update, no secrets in code, review every change.</li><li>SAST reads code, DAST pokes the running app, SCA checks libraries.</li><li>Keep an SBOM. Sign builds.</li><li>Security tests ask what must not happen.</li><li>Every high threat gets a test.</li></ul></section><nav class="pager" aria-label="Lesson pages"><a class="pg prev" href="s08.html"><span class="mono">Previous</span>Secure software development and security testing</a><a class="pg next" href="s09.html"><span class="mono">Next</span>Security in the field, patches, updates, intel and incidents</a></nav></main></div><footer id="foot"></footer>
-<script src="../assets/js/site.js?v=20261127f"></script>
-<script src="../assets/js/learn.js?v=20261127f"></script>
-<script src="../assets/js/scene.js?v=20261127f"></script>
+<script src="../assets/js/site.js?v=20261128a"></script>
+<script src="../assets/js/learn.js?v=20261128a"></script>
+<script src="../assets/js/scene.js?v=20261128a"></script>
 </body>
 </html>
