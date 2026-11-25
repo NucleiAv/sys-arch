@@ -21,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261128a"
+V = "20261128b"
 E = lambda s: html.escape(str(s), quote=True)
 
 
