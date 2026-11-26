@@ -1,0 +1,232 @@
+short: Agents and tool use
+title: AI agents, tools, memory and long running work
+time: about 60 minutes
+tags: [agents, tool calling, MCP, orchestration, durable execution]
+lede: An agent is an LLM that does not only answer but acts. It chooses tools, calls them, reads the results and decides the next step, sometimes for hours without a person watching. Learn the agent loop, how tools are connected, how to keep state, and how to stop an agent that goes wrong.
+
+idea: |
+  A chat assistant answers one question. An **agent** works toward a **goal**. It runs a loop.
+
+  1. **Think.** The model looks at the goal and what has happened so far, and picks the next action.
+  2. **Act.** It calls a **tool**, such as search the tickets, read a file, run a query or send an email.
+  3. **Observe.** The tool's result is added to the agent's context.
+  4. **Repeat** until the goal is done, a limit is reached, or a person must decide.
+
+  The model never runs tools itself. It writes a structured **tool call**, such as `{"tool": "get_order", "args": {"id": 81}}`. Your code checks the call, runs the tool and sends back the result. That gap between "the model asks" and "your code does" is where you control what an agent is allowed to do.
+
+  Agents that run on their own, triggered by events or schedules, need the same things as any long running backend job. They need **state** that survives crashes, **limits** on time, steps and money, **logs** of every action, and a way for people to **approve** or **stop** them.
+
+  !eli5 An agent is like a new assistant with a to do list and a toolbox. They decide which tool to use, use it, look at the result, and decide again. A good manager gives them only the tools they need, checks the risky jobs before they happen, and can always say "stop".
+
+scenes:
+  - title: A support agent resolves a ticket on its own
+    stats: [Step, Steps used, Tools called, State]
+    nodes:
+      trig: {label: New ticket event, x: 0, y: 1, kind: box}
+      orch: {label: Agent runtime, x: 2, y: 1, kind: def, tag: "state, limits"}
+      llm: {label: LLM, x: 2, y: 3, kind: raised}
+      t1: {label: Order lookup tool, x: 5, y: 0, kind: raised, tag: read only}
+      t2: {label: Refund tool, x: 5, y: 2, kind: atk, tag: needs approval over 50 dollars}
+      human: {label: Support lead, x: 5, y: 4, kind: box}
+    links: [[trig, orch], [orch, llm], [orch, t1], [orch, t2], [orch, human]]
+    steps:
+      - title: Triggered
+        text: A ticket arrives, "My order 81 never came". The runtime starts an agent run with a goal, a budget of 15 steps and 0.50 dollars, and saves its state.
+        on: [trig, orch]
+        flow: [[trig, orch, ink]]
+        stats: [Start, "0", "0", saved]
+      - title: Think, then call a tool
+        text: The LLM decides to look up the order and returns a tool call. The runtime checks the call against the agent's allowed tools and runs it.
+        on: [orch, llm, t1]
+        flow: [[orch, llm, ink], [llm, orch, def], [orch, t1, def]]
+        stats: [Lookup, "2", "1", saved]
+      - title: Observe
+        text: The tool returns "shipped 14 days ago, courier lost it". The result goes back into the agent's context. The LLM decides a refund of 120 dollars is right.
+        on: [t1, orch, llm]
+        flow: [[t1, orch, def], [orch, llm, ink]]
+        stats: [Observe, "4", "1", saved]
+      - title: Risky action needs a person
+        text: Refunds over 50 dollars need approval. The runtime pauses the run, saves its state and asks the support lead. The agent is not burning tokens while it waits.
+        on: [orch, human, t2]
+        flow: [[orch, human, pen]]
+        mark: {t2: warn}
+        stats: [Approval, "5", "1", paused]
+      - title: Approved, act, finish
+        text: The lead approves. The run resumes from saved state, calls the refund tool with an idempotency key, replies to the customer and closes. Every step is in the audit log.
+        on: [human, orch, t2]
+        flow: [[human, orch, def], [orch, t2, def]]
+        mark: {t2: ok, orch: ok}
+        stats: [Done, "7", "2", completed]
+
+terms:
+  - [Agent, "A system where an LLM chooses actions and tools in a loop to reach a goal."]
+  - [Tool, "A function the agent can ask to call, with a name, a description and an input schema."]
+  - [Tool call, "A structured request from the model to run a tool with given arguments."]
+  - [Agent loop, "Think, act, observe, repeat, until done or stopped."]
+  - [MCP, "Model Context Protocol, an open standard from 2024 for connecting AI apps to tools and data through servers."]
+  - [Memory, "What the agent keeps between steps or runs, such as notes, past results or user preferences."]
+  - [Orchestrator, "The code that runs the loop, checks tool calls, saves state and enforces limits."]
+  - [Human in the loop, "A person approves, edits or rejects certain actions before they happen."]
+  - [Durable execution, "Running long workflows so their state survives crashes and they resume where they stopped."]
+
+how: |
+  ### Workflows or agents
+
+  Not every AI feature needs an agent.
+
+  | | Workflow | Agent |
+  | --- | --- | --- |
+  | Who decides the steps | Your code, fixed order | The model, step by step |
+  | Predictable | Yes | Less |
+  | Good for | Known tasks, such as "summarize, then classify, then route" | Open tasks where the path depends on what is found |
+  | Cost and risk | Low and bounded | Higher, needs limits |
+
+  Start with the simplest design that works. Many "agents" are better as a workflow with one or two LLM steps.
+
+  ### Designing tools
+
+  - **Narrow and clear.** `refund_order(order_id, amount, reason)` is safer than `run_sql(query)`.
+  - **Validate inputs** with a schema, and check business rules in code, not in the prompt.
+  - **Read only by default.** Separate read tools from write tools.
+  - **Idempotent writes** with keys, since agents retry, see lesson 3.7.
+  - **Useful errors.** Return a clear message the model can act on, such as "amount above order total".
+
+  ### Connecting tools with MCP
+
+  The **Model Context Protocol**, published by Anthropic in November 2024 and now supported by many AI tools, defines how an AI application, the **client**, talks to **MCP servers** that expose **tools**, **resources** such as files, and **prompts**. Messages use JSON-RPC. One MCP server for your ticket system can then be used by many agents and assistants. Treat every MCP server as code you are trusting, see lesson 8.7.
+
+  ### State, memory and limits
+
+  - **Short term memory** is the context of the current run. Long runs must summarize or drop old steps to fit the context window.
+  - **Long term memory** is stored outside the model, such as a database of notes, and retrieved when needed, like RAG.
+  - **Durable execution.** Save state after every step, so a crash resumes instead of starting over or repeating side effects. Workflow engines such as Temporal help.
+  - **Limits.** Maximum steps, wall clock time, tokens and money per run, plus a loop detector for repeated identical calls.
+
+  ### Multi agent systems
+
+  Some designs split work across several agents, such as a planner and several workers. This can help with large tasks but multiplies cost, makes failures harder to trace, and gives more places for bad data to spread. Use it only when one agent clearly cannot do the job.
+
+  !key The model proposes. Your code disposes. Every tool call passes through code that checks permissions, limits and business rules.
+
+diagrams:
+  - type: cycle
+    title: The agent loop
+    nodes: [["Goal and context", "box"], ["Think, choose action", "def"], ["Check call against policy", "atk"], ["Run tool", "raised"], ["Observe result", "def"], ["Done or limit reached?", "box"]]
+    center: Saved after every step
+    caption: The policy check sits between the model's choice and the real action. That is where safety lives.
+
+life:
+  - ["Coding agents in real repositories", "Coding agents now read code, run tests and propose changes in real projects. Teams that get good results run them in sandboxes, require review of every change, and give them only the permissions a junior developer would have."]
+  - ["The agent that deleted a database", "In July 2025 a founder reported that an AI coding agent on the Replit platform deleted a production database during a code freeze, despite instructions not to change anything. The company added stronger separation between development and production. Instructions in a prompt are not a permission system."]
+  - ["The infinite loop", "An agent asked to fix a failing test kept editing the same file and rerunning the tests for hours, burning tokens. A step limit, a budget and a check for repeated identical actions now stop such runs."]
+
+tradeoffs:
+  - ["Agent", "Handles open ended tasks.", "Less predictable, costly, needs strong guardrails."]
+  - ["Fixed workflow with LLM steps", "Predictable, cheap, easy to test.", "Cannot adapt to unexpected paths."]
+  - ["Many narrow tools", "Safer, easier to validate.", "More tools to describe and maintain."]
+  - ["One general tool, such as run any SQL", "Flexible.", "Huge blast radius if misused."]
+  - ["Multi agent design", "Splits big tasks.", "More cost, harder debugging, more attack surface."]
+
+mistakes:
+  - Building an agent when a simple workflow would do.
+  - Giving agents broad tools like shell or raw SQL on production.
+  - Relying on the prompt to stop dangerous actions.
+  - No step, time or cost limits.
+  - Keeping agent state only in memory, so a crash loses or repeats work.
+
+security: |
+  Agents turn model mistakes into real actions, so security moves from "what can it say" to "what can it do". Give each agent its own identity and the least privilege tools, require human approval for actions that move money, delete data or contact people, sandbox code execution, and log every tool call. OWASP calls the risk of agents with too much power **excessive agency**, LLM06 in its 2025 list. Lesson 8.7 covers this in depth.
+
+quiz:
+  - q: Who actually runs a tool when an agent decides to use it?
+    opts: ["Your orchestrator code, after checking the tool call", "The LLM runs it inside the model", "The user"]
+    a: 0
+    why: The model only writes a tool call. Code decides whether to run it.
+  - type: fill
+    q: The open standard from 2024 for connecting AI applications to tool and data servers is the Model ____ Protocol.
+    a: ["context"]
+    why: MCP clients talk to MCP servers that expose tools, resources and prompts.
+  - type: sort
+    q: Workflow or agent?
+    rows:
+      - ["Summarize each new ticket, then tag it with one of 10 labels", "Workflow"]
+      - ["Investigate why a customer's integration fails, using logs, docs and tests", "Agent"]
+      - ["Translate every product description into 5 languages", "Workflow"]
+    opts: ["Workflow", "Agent"]
+    why: Use an agent only when the path depends on what is found.
+  - q: Which tool design is safest for a support agent?
+    opts: ["refund_order(order_id, amount, reason) with checks in code", "run_sql(query) on the production database", "shell(command) on a server"]
+    a: 0
+    why: Narrow tools with validated inputs limit the blast radius.
+  - q: An agent run crashes after calling the refund tool but before saving that it did. What prevents a double refund on resume?
+    opts: ["An idempotency key on the refund call, plus saving state after every step", "A bigger model", "Restarting from scratch"]
+    a: 0
+    why: Durable state and idempotent tools make retries safe.
+  - type: num
+    q: An agent averages 12 steps per task, and each step uses 3,000 input and 400 output tokens. Input costs 3 dollars and output 15 dollars per million tokens. What does one task cost, in dollars?
+    a: 0.18
+    tol: 0.005
+    unit: dollars
+    why: Per step, 3,000 × 3 / 1,000,000 = 0.009 and 400 × 15 / 1,000,000 = 0.006, so 0.015. Times 12 steps is 0.18 dollars.
+
+interview:
+  - q: Design an agent that handles customer refund requests on its own.
+    keys:
+      - ["Agent loop with narrow, validated tools", [loop, tool, narrow, schema, validat]]
+      - ["Orchestrator enforces policy, limits and budgets", [orchestrat, policy, limit, budget, step]]
+      - ["Human approval for risky or large actions", [approv, human, threshold, review]]
+      - ["Durable state and idempotent actions", [durable, state, idempot, resume, crash]]
+      - ["Audit logs, evaluation and kill switch", [audit, log, evaluat, kill, stop, monitor]]
+    a: |
+      Each new refund ticket starts a run in an agent runtime that saves state after every step. The model can call a few narrow tools, read order, read shipping status, check refund policy, issue refund and reply to customer, each with an input schema. The orchestrator checks every call in code. The agent's identity can only touch the order in the ticket, refunds above a threshold or outside policy pause for a support lead's approval, and refund calls carry idempotency keys. Each run has limits on steps, time and cost, and a loop detector. Every model decision and tool call is logged for audit, a sample of runs is reviewed and scored, and a kill switch can stop all runs at once.
+    fb: Saying "policy is enforced in code, not in the prompt" is the line interviewers want.
+  - q: When should you not use an agent?
+    keys:
+      - ["When the steps are known, use a workflow", [known, fixed, workflow, steps]]
+      - ["When cost, latency or predictability matter most", [cost, latency, predictab, test]]
+      - ["When errors are very costly and cannot be checked", [costly, risk, irreversible, check, safety]]
+    a: |
+      If the steps are known in advance, a fixed workflow with one or two LLM calls is cheaper, faster, easier to test and more predictable. I also avoid open ended agents where mistakes are expensive and hard to undo, unless every risky action is reviewed by a person. Agents fit open tasks where the path depends on what is discovered, and where the extra cost is worth it.
+    fb: Choosing the simplest design that works is the mature answer.
+
+desk:
+  title: The overnight operations agent
+  lede: A team wants an agent that fixes failed deployments at night without waking anyone.
+  situation: |
+    The draft gives the agent a shell tool on production servers with an admin account. It runs until the problem is fixed. Its state lives in memory. The system prompt says "never delete data".
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: What risk does each choice create?
+          rows:
+            - ["Shell tool with an admin account", "Huge blast radius, any command can run"]
+            - ["Runs until fixed, no limits", "Runaway loops and cost"]
+            - ["State only in memory", "A crash loses or repeats work"]
+            - ["Safety rule only in the prompt", "The model can ignore or be tricked out of it"]
+          opts: ["Huge blast radius, any command can run", "Runaway loops and cost", "A crash loses or repeats work", "The model can ignore or be tricked out of it"]
+          why: Each needs a control outside the model.
+        - q: Which tool set is safer?
+          opts: ["Read logs, read status, roll back to the last good release, page a human", "Shell as root", "Delete and recreate servers"]
+          a: 0
+          why: A few narrow, reversible actions cover most night fixes.
+    - title: Round 2. Benefits and workarounds
+      items:
+        - q: What is the main benefit of limiting the agent to rollback, not arbitrary fixes?
+          opts: ["Rollback is a known, reversible action with a small blast radius", "It is more creative", "It uses more tokens"]
+          a: 0
+          why: Reversible, well tested actions are safe to automate.
+        - type: open
+          q: Write the stop conditions for one run of this agent.
+          a: "Stop when the service health check passes after a rollback. Stop after 20 steps, 30 minutes or 2 dollars of model usage. Stop if the same tool call repeats three times. Stop and page a human if rollback fails, if any action outside the allowed list is requested, or if the error is in the database layer."
+  card: |
+    - Think, act, observe, repeat.
+    - The model proposes, code disposes.
+    - Narrow, validated, idempotent tools. Read only by default.
+    - Durable state. Limits on steps, time and money.
+    - Human approval for risky actions. Log everything.
+
+refs:
+  - "Anthropic. [Building effective agents](https://www.anthropic.com/engineering/building-effective-agents)."
+  - "Model Context Protocol. [Specification and documentation](https://modelcontextprotocol.io/)."
+  - "Yao and others. [ReAct, synergizing reasoning and acting in language models, 2022](https://arxiv.org/abs/2210.03629)."

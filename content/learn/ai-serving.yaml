@@ -1,0 +1,227 @@
+short: Serving LLMs
+title: Serving large language models, tokens, GPUs and cost
+time: about 55 minutes
+tags: [tokens, GPU, KV cache, batching, model gateway]
+lede: An LLM answers one token at a time on expensive GPUs. Learn what tokens and context windows are, why the first word is slow and the rest are fast, how batching and caching make GPUs affordable, and how a model gateway keeps cost and outages under control.
+
+idea: |
+  A **large language model**, or LLM, reads text as **tokens**, small pieces of words. In English one token is roughly three quarters of a word on average. The model then writes its answer **one token at a time**. Each new token depends on all the tokens before it.
+
+  Serving an LLM has two phases.
+
+  1. **Prefill.** The model reads the whole prompt at once. Long prompts make this slower. It decides the **time to first token**.
+  2. **Decode.** The model writes the answer, one token per step. This decides the **time per output token**.
+
+  To avoid repeating work at every step, the server keeps a **KV cache**, stored attention data for every token so far, in GPU memory. The cache grows with the length of the conversation and with the number of users served at once. GPU memory is usually what limits how many users one GPU can serve.
+
+  Every token costs money. Providers charge per input token and per output token, and output tokens usually cost more. So prompt length, answer length and model choice drive the bill.
+
+  !eli5 An LLM is like a person telling a story one word at a time. First they read your whole question, which takes a moment. Then the words come quickly, one by one. To keep track, they keep notes of everything said so far, and the notes get longer as the story grows.
+
+scenes:
+  - title: One request through a model gateway
+    stats: [Step, Tokens in, Tokens out, Latency]
+    nodes:
+      app: {label: App, x: 0, y: 1, kind: box}
+      gw: {label: Model gateway, x: 2, y: 1, kind: def, tag: "auth, limits, routing"}
+      cache: {label: Response cache, x: 2, y: 3, kind: raised}
+      small: {label: Small model, x: 5, y: 0, kind: raised, tag: cheap}
+      large: {label: Large model on GPUs, x: 5, y: 2, kind: def, tag: KV cache}
+    links: [[app, gw], [gw, cache], [gw, small], [gw, large]]
+    steps:
+      - title: Request arrives
+        text: The app sends a 1,200 token prompt to the gateway. The gateway checks the app's key, its token budget for this minute, and the cache.
+        on: [app, gw, cache]
+        flow: [[app, gw, ink], [gw, cache, ink]]
+        stats: [Gateway, "1,200", "0", "5 ms"]
+      - title: Route by difficulty
+        text: A short rule says this is a complex question, so it goes to the large model. Simple ones go to the small model, which is much cheaper.
+        on: [gw, large]
+        flow: [[gw, large, ink]]
+        stats: [Route, "1,200", "0", "8 ms"]
+      - title: Prefill
+        text: The GPU reads all 1,200 prompt tokens in one pass and fills the KV cache. The first token appears after 400 ms.
+        on: [large]
+        mark: {large: warn}
+        stats: [Prefill, "1,200", "1", "400 ms to first token"]
+      - title: Decode and stream
+        text: The model writes 300 more tokens, about 25 ms each, and the gateway streams them to the app as they are made. Users read while it writes.
+        on: [large, gw, app]
+        flow: [[large, gw, def], [gw, app, def]]
+        stats: [Decode, "1,200", "300", "about 8 s total"]
+      - title: Provider slows down
+        text: The large model starts returning rate limit errors. The gateway retries once on a second provider, then falls back to the small model with a note. The app keeps working.
+        on: [gw, small, app]
+        flow: [[gw, small, pen], [small, gw, def], [gw, app, def]]
+        mark: {large: bad, small: ok}
+        stats: [Fallback, "1,200", "250", degraded but up]
+
+terms:
+  - [Token, "A piece of text the model reads or writes, often part of a word."]
+  - [Context window, "The most tokens a model can consider at once, prompt plus answer."]
+  - [Prefill, "Reading the prompt. Sets the time to first token."]
+  - [Decode, "Writing output tokens one by one."]
+  - [TTFT, "Time to first token, how long until the answer starts."]
+  - [KV cache, "Stored attention keys and values for earlier tokens, kept in GPU memory to speed up decoding."]
+  - [Continuous batching, "Adding and removing requests from a running GPU batch at every step, so the GPU stays busy."]
+  - [Quantization, "Storing model weights with fewer bits, such as 8 or 4 instead of 16, to save memory and time, with some quality loss."]
+  - [Model gateway, "A service in front of models that handles keys, limits, routing, caching, retries and logging."]
+  - [Temperature, "A setting for randomness. Low values give more predictable answers."]
+
+how: |
+  ### Memory decides capacity
+
+  Weights need about 2 bytes per parameter at 16 bit precision. A 7 billion parameter model needs about 14 GB just for weights. A 70 billion parameter model needs about 140 GB, more than one 80 GB GPU, so it is split across several. The KV cache then grows with context length and with the number of active requests. Quantization to 8 or 4 bits shrinks weights and lets more users share a GPU.
+
+  ### Batching makes GPUs pay off
+
+  Decoding one request uses a GPU poorly. Serving many requests together in a **batch** uses it far better. **Continuous batching**, used by servers such as vLLM and TensorRT LLM, lets new requests join and finished ones leave at every step. **PagedAttention** in vLLM stores the KV cache in small blocks, like pages in an operating system, so memory is not wasted.
+
+  ### Latency levers
+
+  | Lever | Helps |
+  | --- | --- |
+  | Shorter prompts | Faster prefill, lower cost |
+  | Streaming | Users see words at once |
+  | Smaller or quantized model | Faster decode, cheaper |
+  | Prompt caching of a shared prefix | Faster prefill for repeated system prompts |
+  | Limit max output tokens | Bounded time and cost |
+
+  ### Why a model gateway
+
+  Put one service between your apps and every model.
+
+  - **Keys and budgets.** Apps never hold provider keys. Each team has token limits.
+  - **Routing.** Cheap model for easy tasks, large model for hard ones, and fallback providers.
+  - **Caching.** Exact repeats can be served from a cache. Similar question caches, called semantic caches, need care, because a similar question may need a different answer.
+  - **Observability.** Log tokens, latency, cost and errors per team and feature.
+  - **Safety.** Apply input and output checks in one place, see lesson 8.5.
+
+  ### Cost math
+
+  Cost per request ≈ input tokens × input price + output tokens × output price. Long chat histories resend every earlier message on each turn, so cost grows with every turn. Summarize or trim history.
+
+  !key Tokens are the unit of latency, capacity and money. Count them in every design.
+
+diagrams:
+  - type: flow
+    title: The two phases of an LLM request
+    nodes: [["Prompt tokens", "box"], ["Prefill", "def", "read all at once"], ["First token", "raised", "TTFT"], ["Decode loop", "def", "one token per step"], ["Stream to user", "box"]]
+    edges: ["", "", "", ""]
+    caption: Long prompts slow the first token. Long answers slow the end. Both cost money.
+
+life:
+  - ["vLLM and PagedAttention", "Researchers at UC Berkeley released vLLM in 2023. Its PagedAttention stores the KV cache in blocks, which cut wasted GPU memory and let one GPU serve many more requests at once."]
+  - ["The surprise bill", "A team added the full chat history to every request. Long conversations resent thousands of tokens on every turn, and the monthly bill grew many times. Summarizing older turns and capping output length brought it back down."]
+  - ["Provider outage", "During a provider incident, apps that called one model directly showed errors. Apps behind a gateway with a second provider and a smaller fallback model stayed up with slightly weaker answers."]
+
+tradeoffs:
+  - ["Hosted model API", "No GPUs to run, newest models.", "Per token cost, rate limits, data leaves your systems."]
+  - ["Self hosted open model", "Control, data stays in, cheaper at high volume.", "GPU operations, capacity planning and tuning."]
+  - ["Larger model", "Better reasoning.", "Slower and more expensive per token."]
+  - ["Quantized model", "Less memory, faster.", "Some loss of quality, test it."]
+
+mistakes:
+  - Calling providers directly from many apps with shared keys.
+  - No limit on output tokens.
+  - Sending the full chat history on every turn.
+  - Caching answers to similar questions without checking they truly match.
+  - Planning GPU capacity on weights alone, forgetting the KV cache.
+
+security: |
+  The model gateway is a security control. Keep provider keys only there, authenticate every app, and set per team rate and token limits, which stops runaway cost, a risk OWASP calls unbounded consumption. Log prompts and outputs carefully, because they can hold personal data, and set a retention period. If prompts contain sensitive data, check the provider's data use and retention terms, or self host.
+
+quiz:
+  - type: num
+    q: A 13 billion parameter model is stored at 16 bits, 2 bytes per parameter. About how many GB do the weights need?
+    a: 26
+    tol: 1
+    unit: GB
+    why: 13 billion × 2 bytes = 26 GB, before the KV cache.
+  - q: Users say the answer starts slowly but then flows fast. Which phase is slow?
+    opts: ["Prefill, reading a long prompt", "Decode", "Network after the last token"]
+    a: 0
+    why: Time to first token is set by prefill. Shorten or cache the prompt.
+  - type: fill
+    q: Stored attention data for earlier tokens, kept in GPU memory, is the ____ cache.
+    a: ["kv", "key value", "key-value"]
+    why: It grows with context length and number of active requests.
+  - type: num
+    q: A request uses 2,000 input tokens at 3 dollars per million and 500 output tokens at 15 dollars per million. What does it cost, in dollars?
+    a: 0.0135
+    tol: 0.0005
+    unit: dollars
+    why: 2,000 × 3 / 1,000,000 = 0.006. 500 × 15 / 1,000,000 = 0.0075. Total 0.0135 dollars.
+  - type: sort
+    q: Which lever fits each problem?
+    rows:
+      - ["Same long system prompt on every request", "Prompt caching of the prefix"]
+      - ["GPU sits idle between requests", "Continuous batching"]
+      - ["Model does not fit in GPU memory", "Quantization or split across GPUs"]
+    opts: ["Prompt caching of the prefix", "Continuous batching", "Quantization or split across GPUs"]
+    why: Match the tool to the bottleneck.
+  - q: Spot the problem. "Every microservice has the provider API key in its environment and calls the model directly."
+    opts: ["No central limits, routing or logging, and the key is spread everywhere", "Environment variables are too slow", "Models need SOAP"]
+    a: 0
+    why: Put a model gateway in front, holding the only copy of the key.
+
+interview:
+  - q: How would you serve an LLM feature to millions of users at a reasonable cost?
+    keys:
+      - ["Count tokens and control prompt and output length", [token, prompt length, max tokens, trim, summar]]
+      - ["Route to smaller models when possible", [route, small model, cheap model, cascade]]
+      - ["Batching and caching on the serving side", [batch, continuous, cache, prompt caching]]
+      - ["Model gateway with limits, fallbacks and observability", [gateway, limit, fallback, budget, monitor]]
+      - ["Streaming for perceived latency", [stream, first token, ttft]]
+    a: |
+      I treat tokens as the main cost and latency unit. Prompts stay short, history is summarized, and outputs have a max token limit. A model gateway routes easy requests to a small model and hard ones to a large one, enforces per team budgets, caches exact repeats, retries on a second provider and logs tokens, cost and latency per feature. If we self host, continuous batching and paged KV cache memory, as in vLLM, keep GPUs busy, and quantization lets more users share each GPU. Streaming shows the first words quickly, so users feel low latency even for long answers.
+    fb: Mentioning both the routing cascade and token math shows you have run this in production.
+  - q: Why does the KV cache matter for capacity planning?
+    keys:
+      - ["It stores data for every token of every active request in GPU memory", [memory, gpu, every token, active]]
+      - ["Grows with context length and concurrency", [context, length, concurrent, batch, grows]]
+      - ["Limits how many requests fit, so paging or shorter contexts help", [limit, fit, paged, shorter, quantiz]]
+    a: |
+      During decoding the server keeps keys and values for every token of every active request, so it does not recompute them. That cache lives in GPU memory next to the weights and grows with context length times the number of concurrent requests. In practice it, not the weights, often limits how many users one GPU can serve. Paged KV cache management, shorter contexts and quantized caches all raise capacity.
+    fb: Saying the cache, not the weights, often sets the limit is the key insight.
+
+desk:
+  title: The slow and costly assistant
+  lede: An internal assistant is slow to start answering and costs far more than planned.
+  situation: |
+    Each request sends a 6,000 token system prompt, the full chat history and the user question to the largest model. There is no output limit. Every team calls the provider directly with one shared key.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What does each choice cause?
+          rows:
+            - ["6,000 token system prompt every time", "Slow first token and high input cost"]
+            - ["Full chat history every turn", "Cost grows with each turn"]
+            - ["One shared provider key for every team", "No per team limits and a big leak risk"]
+          opts: ["Slow first token and high input cost", "Cost grows with each turn", "No per team limits and a big leak risk"]
+          why: Each needs its own fix.
+        - q: Which change cuts time to first token the most, without changing the model?
+          opts: ["Shorten the system prompt and use prompt caching for the shared prefix", "Raise the temperature", "Remove streaming"]
+          a: 0
+          why: Prefill time depends on how many prompt tokens must be processed.
+    - title: Round 2. Fix and work around
+      items:
+        - type: open
+          q: Describe a model gateway for this company.
+          a: "One service holds the provider keys. Teams call it with their own credentials. It enforces token budgets per team, routes simple tasks to a small model and hard ones to a large one, caps output tokens, caches exact repeats, retries on a second provider, and logs tokens, latency and cost per team and feature."
+        - q: The provider rate limits you during a busy hour. What is the best workaround?
+          opts: ["Queue with backpressure, retry with backoff, and fall back to a smaller model", "Retry instantly in a tight loop", "Show a blank page"]
+          a: 0
+          why: Graceful degradation keeps the feature useful.
+  card: |
+    - Tokens drive latency, capacity and cost.
+    - Prefill sets the first token. Decode sets the rest.
+    - KV cache plus weights fill GPU memory.
+    - Batch, cache, quantize, route.
+    - One model gateway with keys, limits, fallbacks and logs.
+
+refs:
+  - "Kwon and others. [Efficient memory management for LLM serving with PagedAttention, 2023](https://arxiv.org/abs/2309.06180)."
+  - "vLLM. [Documentation](https://docs.vllm.ai/)."
+  - "Anthropic. [Prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching)."

@@ -27,3 +27,7 @@ levels:
     t: Payments and money
     d: Learn how money moves through real systems. Card authorize and capture, wallets with double entry ledgers, UPI and the pending state, sagas and inventory holds, reconciliation, offline payments and fraud detection.
     items: [pay-gateway, pay-ledger, pay-upi, pay-saga, pay-recon, pay-offline, pay-fraud, p7]
+  - n: 8
+    t: AI, LLM and agent systems
+    d: Learn how AI fits into real systems and how to keep it safe. ML systems from data to live models, serving LLMs, RAG and vector search, agents and tools, evals and guardrails, threats such as prompt injection, securing agents that run on their own, and AI governance and law.
+    items: [ai-ml, ai-serving, ai-rag, ai-agents, ai-evals, ai-threats, ai-agentsec, ai-grc, p8]

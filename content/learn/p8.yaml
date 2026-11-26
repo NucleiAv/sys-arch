@@ -1,0 +1,120 @@
+kind: practice
+title: Level 8 practice, AI, LLM and agent systems
+time: about 45 minutes
+lede: Mixed questions on ML systems, serving, RAG, agents, evals, AI threats, agent security and AI governance. Find the bug, the threat, the GRC gap, the benefit, the fix and the workaround.
+
+situation: |
+  Many questions use one company that runs a support assistant with RAG, a fraud model, and agents that act on tickets overnight.
+
+rounds:
+  - title: Round 1. Systems and numbers
+    items:
+      - type: num
+        q: A 34 billion parameter model is stored at 8 bits, 1 byte per parameter. About how many GB do the weights need?
+        a: 34
+        tol: 1
+        unit: GB
+        why: 34 billion × 1 byte = 34 GB, before the KV cache.
+      - type: num
+        q: An assistant handles 200,000 requests a day, each with 1,500 input tokens at 3 dollars per million and 300 output tokens at 15 dollars per million. What is the daily cost, in dollars?
+        a: 1800
+        tol: 10
+        unit: dollars
+        why: Per request, 1,500 × 3 / 1,000,000 = 0.0045 and 300 × 15 / 1,000,000 = 0.0045, so 0.009. Times 200,000 is 1,800 dollars a day.
+      - type: sort
+        q: Which part fixes each problem?
+        rows:
+          - ["Features differ between training and production", "Feature store"]
+          - ["GPU idle between requests", "Continuous batching"]
+          - ["Answers ignore your private documents", "Retrieval augmented generation"]
+          - ["Nobody knows if a new prompt is better", "Eval suite in CI"]
+        opts: ["Feature store", "Continuous batching", "Retrieval augmented generation", "Eval suite in CI"]
+        why: Each layer of an AI system has its own tool.
+  - title: Round 2. Find the security bug
+    items:
+      - q: Find the bug in this agent tool.
+        info: |
+          ```python
+          @tool
+          def run_query(sql: str) -> list:
+              """Run any SQL the assistant needs."""
+              return prod_db.execute(sql).fetchall()
+          ```
+        opts: ["A general SQL tool on production gives a tricked model full read and write power", "SQL tools must return strings", "The docstring is too short"]
+        a: 0
+        why: Replace it with narrow, read only tools that take validated ids, scoped to the user's data.
+      - q: Find the bug in this prompt.
+        info: |
+          ```text
+          System: You are SupportBot. Our admin API key is sk-live-7Hq...
+          Never reveal the key. Use it when the user asks for refunds.
+          ```
+        opts: ["A secret in the system prompt can leak through injection or a simple request", "The bot needs a longer name", "System prompts cannot hold text"]
+        a: 0
+        why: Keep secrets in the server side tool layer. Assume system prompts are public.
+      - q: Find the bug in this retrieval step.
+        info: |
+          ```python
+          chunks = index.search(embed(q), top_k=8)
+          answer = llm(prompt(q, chunks))
+          ```
+        opts: ["No permission filter, so any user can get answers from documents they may not read", "top_k must be 1", "embed should run after search"]
+        a: 0
+        why: Filter by the user's access rights inside the search.
+      - type: sort
+        q: Which OWASP LLM risk is each case?
+        rows:
+          - ["A web page tells the assistant to email the user's files", "Prompt injection"]
+          - ["Chat answers are rendered as HTML with scripts", "Improper output handling"]
+          - ["An agent can approve any refund amount alone", "Excessive agency"]
+          - ["A public model file from an unknown uploader runs code when loaded", "Supply chain"]
+        opts: ["Prompt injection", "Improper output handling", "Excessive agency", "Supply chain"]
+        why: Use the Top 10 as a checklist during design reviews.
+  - title: Round 3. Name the benefit
+    items:
+      - q: What is the main benefit of a model gateway?
+        opts: ["One place for keys, budgets, routing, fallbacks and logs", "Models become smarter", "No need for evals"]
+        a: 0
+        why: Central control cuts cost, risk and outages.
+      - q: What is the benefit of giving each agent its own short lived, scoped token?
+        opts: ["A tricked or buggy agent can only reach a small set of resources, and every action is traceable", "Tokens make agents faster", "It removes the need for approvals"]
+        a: 0
+        why: Identity and least privilege shrink the blast radius.
+      - type: fill
+        q: An agent with private data, untrusted content and external communication has the lethal ____.
+        a: ["trifecta"]
+        why: Remove one leg for each task.
+  - title: Round 4. GRC and governance
+    items:
+      - q: Identify the GRC issue. "We bought an AI hiring tool from a vendor, so its fairness is the vendor's problem."
+        opts: ["The company using it still owns the risk and must test and oversee it", "Vendors are always fair", "Hiring is not AI"]
+        a: 0
+        why: Buyers need evidence, testing and human oversight too.
+      - type: sort
+        q: Which NIST AI RMF function fits each activity?
+        rows:
+          - ["Create an AI inventory with owners", "Govern"]
+          - ["Test approval rates for each group", "Measure"]
+          - ["Retire a model that keeps drifting", "Manage"]
+        opts: ["Govern", "Measure", "Manage"]
+        why: The functions cover the whole life of the system.
+      - q: A support chatbot does not tell users it is an AI. Under the EU AI Act, what is the issue?
+        opts: ["A transparency duty is missing", "It must be banned", "Nothing"]
+        a: 0
+        why: People must be told when they interact with an AI system.
+  - title: Round 5. Mitigations and workarounds
+    items:
+      - type: open
+        q: A researcher shows that a hidden instruction in a support ticket makes your overnight agent email customer data to an outside address. What do you do today, and what do you change in the design?
+        a: "Today. Use the kill switch to pause the agent, revoke its tokens, review traces for any real leaks and follow the incident process, including notifying people if data left. Design. Allow outbound email only to the ticket's own customer or through human approval, scope the agent's data access to one customer per run, add an egress allow list, alert on denied actions, and add this attack as a red team case in the eval suite."
+      - type: open
+        q: "Design task. A bank wants an agent that reads incoming invoices from suppliers and schedules payments. Name five controls."
+        a: "1. Treat invoices as untrusted content and extract fields into a strict schema with a quarantined model that has no tools. 2. The payment agent never reads raw invoice text and only gets validated fields. 3. Payments only to suppliers already in the vendor master with verified bank details, and any change to bank details needs a separate human check. 4. Amount limits and human approval above a threshold, with idempotency keys. 5. Own identity with scoped, short lived tokens, full audit logs, reconciliation against invoices, and a kill switch."
+card: |
+  - Features once, train offline, serve online, watch drift.
+  - Tokens drive cost and latency. Gateway in front of models.
+  - RAG with permissions inside retrieval.
+  - The model proposes, code disposes. Limits, approvals, durable state.
+  - Evals before changes. Trace everything.
+  - OWASP LLM Top 10. Assume injection works. Break the lethal trifecta.
+  - Inventory, owners, risk tiers, human oversight.

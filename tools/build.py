@@ -21,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261126m"
+V = "20261127a"
 E = lambda s: html.escape(str(s), quote=True)
 
 
@@ -474,7 +474,7 @@ def desk_body(dk, sid, crumbs, eyebrow, kind):
 TRACKS = {
     "learn": dict(label="Concepts", crumb="Concepts", kind="def", eyebrow="Lesson",
                   ov_title="System design concepts, from zero to mastery",
-                  ov_lede="Fifty two lessons in seven levels. Each lesson explains one idea in plain words, shows it step by step and ends with practice. Each level ends with a practice page that mixes all its lessons."),
+                  ov_lede="Sixty lessons in eight levels. Each lesson explains one idea in plain words, shows it step by step and ends with practice. Each level ends with a practice page that mixes all its lessons."),
     "infra": dict(label="Infra", crumb="Infra", kind="pen", eyebrow="Lesson",
                   ov_title="Infrastructure, from your first commit to the cloud",
                   ov_lede="Git, GitHub, GitHub Actions, Linux, Docker, Kubernetes, AWS, Terraform and safe deploys. Each lesson ends with practice that includes real commands and config files. Each level ends with a practice page."),
@@ -848,8 +848,8 @@ def build_home(tracks, design, nb, niv, protos):
     nq += sum(len(p["quiz"]) for p in protos)
     nl = sum(1 for L in learn if L.get("kind") != "practice")
     ni = sum(1 for L in tracks["infra"][0] if L.get("kind") != "practice")
-    stats = [(nl, "concept lessons in seven levels, each with an animated diagram"), (ni, "infra lessons, from Git to Kubernetes, AWS and Terraform"),
-             (len(protos), "network protocols, animated packet by packet"), (len(design) - 1, "full design tasks, from a link shortener to maps, payments and a medical device platform"),
+    stats = [(nl, "concept lessons in eight levels, each with an animated diagram"), (ni, "infra lessons, from Git to Kubernetes, AWS and Terraform"),
+             (len(protos), "network protocols, animated packet by packet"), (len(design) - 1, "full design tasks, from a link shortener to payments and a secure AI agent platform"),
              (nq, "quiz, fill-up, code and scenario questions with reasons"), (niv, "interview questions with model answers and feedback")]
     cards = "".join(f'<a class="card" href="{c["href"]}"><span class="num">{inline(c["num"])}</span><h3>{E(c["t"])}</h3><p>{inline(c["d"])}</p><span class="go">{E(c["go"])}</span></a>' for c in H["cards"])
     loop = "".join(f'<div><span class="mono">{E(x[0])}</span><h3>{E(x[1])}</h3><p>{inline(x[2])}</p></div>' for x in H["loop"])
@@ -862,7 +862,7 @@ def build_home(tracks, design, nb, niv, protos):
     <p class="small muted rise d3" id="home-progress" style="margin-top:20px"></p>
   </div>
   <div class="hero-visual rise d2"><div class="sheet"><div class="sheet-cap"><span>Your route, basic to mastery</span><span>stations fill in as you finish lessons</span></div>
-    <svg id="route" class="dg" viewBox="0 0 640 446" role="img" aria-label="Route map of the seven levels of concept lessons, from foundations to mastery, then the design tasks."></svg></div></div>
+    <svg id="route" class="dg" viewBox="0 0 640 446" role="img" aria-label="Route map of the eight levels of concept lessons, from foundations to mastery, then the design tasks."></svg></div></div>
   </div></section>
   <section class="section"><div class="wrap"><div class="stats stats-6">{"".join(f'<div class="stat"><b>{n}</b><span>{E(t)}</span></div>' for n, t in stats)}</div></div></section>
   <section class="section"><div class="wrap"><h2 class="section-title">How every lesson works</h2><p class="section-sub">{inline(H["loop_sub"])}</p><div class="loop">{loop}</div></div></section>

@@ -51,6 +51,15 @@ groups:
       - {t: CISA Secure by Design, u: "https://www.cisa.gov/securebydesign", type: guide, n: "Why makers, not customers, should own security outcomes."}
       - {t: FDA medical device cybersecurity, u: "https://www.fda.gov/medical-devices/digital-health-center-excellence/cybersecurity", type: standards, n: "What the US regulator expects from connected medical devices."}
       - {t: "Adam Shostack, Threat Modeling", u: "https://shostack.org/books/threat-modeling-book", type: book, n: "The classic book on threat modeling and STRIDE."}
+  - t: AI and agent security
+    d: For level 8. Free references for building and securing AI, LLM and agent systems.
+    items:
+      - {t: OWASP Top 10 for LLM Applications 2025, u: "https://genai.owasp.org/llm-top-10/", type: standards, n: "The ten biggest risks in LLM apps, from prompt injection to unbounded consumption. Pairs with lesson 8.6."}
+      - {t: MITRE ATLAS, u: "https://atlas.mitre.org/", type: reference, n: "Real attack techniques against AI systems, like ATT&CK for AI."}
+      - {t: NIST AI Risk Management Framework, u: "https://www.nist.gov/itl/ai-risk-management-framework", type: standards, n: "Govern, Map, Measure, Manage. Pairs with lesson 8.8."}
+      - {t: Model Context Protocol, u: "https://modelcontextprotocol.io/", type: docs, n: "The open standard for connecting AI apps to tools and data. Pairs with lesson 8.4."}
+      - {t: "Anthropic, Building effective agents", u: "https://www.anthropic.com/engineering/building-effective-agents", type: guide, n: "When to use workflows or agents, and patterns that work in practice."}
+      - {t: "Simon Willison's weblog, prompt injection", u: "https://simonwillison.net/tags/prompt-injection/", type: blog, n: "Clear, current writing on prompt injection and agent security, including the lethal trifecta."}
   - t: Engineering blogs with real stories
     d: Read how real companies solved the problems in this course.
     items:

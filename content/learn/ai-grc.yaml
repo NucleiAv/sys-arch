@@ -1,0 +1,219 @@
+short: AI governance and law
+title: AI governance, risk management and the law
+time: about 50 minutes
+tags: [NIST AI RMF, ISO 42001, EU AI Act, model cards, accountability]
+lede: AI systems make decisions that affect people, so companies must manage their risks the same way they manage security and privacy. Learn the main frameworks and laws, what documents and controls they expect, and how to build them into an AI system from the start.
+
+idea: |
+  AI adds risks that classic security does not fully cover. A model can be **unfair** to a group of people, **wrong** in ways that look confident, **hard to explain**, or trained on data you were not allowed to use. Governance makes sure someone owns these risks and that they are handled on purpose, as in lesson 6.10.
+
+  Three references come up most often.
+
+  1. **NIST AI Risk Management Framework**, AI RMF 1.0, from January 2023. Voluntary guidance built on four functions, **Govern, Map, Measure, Manage**. In 2024 NIST added a profile for generative AI, NIST AI 600-1.
+  2. **ISO/IEC 42001**, from 2023. A certifiable **AI management system** standard, like ISO 27001 for information security.
+  3. **The EU AI Act**, which entered into force in August 2024 and applies in stages. It sorts AI uses by **risk**, from banned practices to high risk systems with strict duties, to systems that only need transparency.
+
+  In practice, governance means keeping an **inventory** of AI systems, assessing each one's risk, documenting data and models, testing and monitoring them, keeping **humans accountable** for decisions, and telling people when they deal with AI.
+
+  !eli5 A school lets a robot help mark homework. The head teacher wants to know which classes use it, whether it marks some students unfairly, who checks its marks, and what happens if it is wrong. Governance is writing those answers down and checking them.
+
+scenes:
+  - title: Taking a hiring model through governance
+    stats: [Step, Risk level, Documents ready, Decision]
+    nodes:
+      team: {label: Product team, x: 0, y: 1, kind: box, tag: CV screening model}
+      inv: {label: AI inventory, x: 2, y: 0, kind: raised}
+      risk: {label: Risk assessment, x: 2, y: 2, kind: def}
+      test: {label: Testing and evals, x: 4, y: 1, kind: def, tag: "accuracy, bias"}
+      board: {label: AI review board, x: 6, y: 1, kind: def, tag: accountable owner}
+      prod: {label: Production with monitoring, x: 6, y: 3, kind: raised}
+    links: [[team, inv], [team, risk], [risk, test], [test, board], [board, prod]]
+    steps:
+      - title: Register the system
+        text: The team adds the CV screening model to the AI inventory, with its purpose, data sources, owner and the people it affects.
+        on: [team, inv]
+        flow: [[team, inv, ink]]
+        stats: [Inventory, "-", system record, "-"]
+      - title: Assess the risk
+        text: The model affects who gets a job interview. Under the EU AI Act, AI for recruitment is listed as high risk. That brings duties on data, documentation, human oversight and accuracy.
+        on: [team, risk]
+        flow: [[team, risk, ink]]
+        mark: {risk: warn}
+        stats: [Risk, high, "+ risk record", "-"]
+      - title: Test for accuracy and fairness
+        text: Evals measure accuracy overall and for different groups. Selection rates for one group are much lower, traced to old hiring data. The team removes biased features and retests.
+        on: [risk, test]
+        flow: [[risk, test, def]]
+        stats: [Test, high, "+ test report", fixing]
+      - title: Review and approve
+        text: The review board checks the model card, test results and the human oversight plan. A recruiter must review every rejection. The product owner signs as accountable.
+        on: [test, board]
+        flow: [[test, board, def]]
+        mark: {board: ok}
+        stats: [Approve, high, "+ model card, oversight plan", approved with conditions]
+      - title: Monitor in production
+        text: In production, the team monitors accuracy and group selection rates every month, logs decisions, and offers candidates a way to ask for human review.
+        on: [board, prod]
+        flow: [[board, prod, def]]
+        mark: {prod: ok}
+        stats: [Monitor, high, "+ monitoring reports", live]
+
+terms:
+  - [AI governance, "Roles, policies and processes that make AI use accountable and controlled."]
+  - [NIST AI RMF, "A voluntary US framework for managing AI risk, with Govern, Map, Measure and Manage."]
+  - [ISO/IEC 42001, "An international standard for an AI management system that can be certified."]
+  - [EU AI Act, "An EU law that sets duties for AI systems based on their risk level."]
+  - [High risk AI system, "Under the EU AI Act, uses such as recruitment, credit scoring and some medical and critical infrastructure uses, with strict duties."]
+  - [Model card, "A short document describing a model's purpose, data, performance, limits and intended use."]
+  - [Human oversight, "People can understand, check and override the AI's outputs."]
+  - [Bias, "Systematic differences in how a model treats groups of people."]
+  - [AI inventory, "A list of every AI system the organization builds or buys, with owners and risk levels."]
+
+how: |
+  ### NIST AI RMF in four verbs
+
+  | Function | Means | Example activity |
+  | --- | --- | --- |
+  | Govern | Set culture, roles and policies | AI policy, review board, accountable owners |
+  | Map | Understand context and risks | Who is affected, what can go wrong, what laws apply |
+  | Measure | Test and track risks | Accuracy, fairness, robustness, security evals |
+  | Manage | Act on the risks | Mitigate, accept, monitor, retire |
+
+  ### EU AI Act risk tiers
+
+  | Tier | Examples | Duty |
+  | --- | --- | --- |
+  | Unacceptable, banned | Social scoring of people, some manipulative or exploitative systems | Not allowed |
+  | High risk | Recruitment, credit scoring, education access, some critical infrastructure | Risk management, data quality, documentation, logging, human oversight, accuracy and security |
+  | Limited, transparency | Chatbots, AI generated content | Tell people they are dealing with AI, label synthetic content |
+  | Minimal | Spam filters, game AI | No new duties |
+
+  Providers of **general purpose AI models** also have duties, such as technical documentation and a copyright policy. The Act applies in stages. Bans applied from February 2025, general purpose model duties from August 2025, and most high risk duties from August 2026. Fines for banned practices can reach 35 million euros or 7 percent of worldwide yearly turnover, whichever is higher. Check the current official text and guidance, as dates and details can change.
+
+  ### Documents you should be able to show
+
+  - **AI inventory** entry with owner and risk level.
+  - **Data sheet**. Sources, consent and licence, known gaps.
+  - **Model card**. Purpose, performance, limits, groups tested.
+  - **Risk assessment** and **impact assessment** for people affected. Under GDPR, a data protection impact assessment is often needed too.
+  - **Eval and red team reports**, lessons 8.5 and 8.6.
+  - **Human oversight plan** and **incident process**.
+
+  ### Build governance into the system
+
+  Many duties are design features. Logging of inputs, outputs and decisions. Versioned models and prompts. A path for a person to review or override. Labels that say content is AI generated. Monitoring of accuracy and group outcomes. If you design these in from the start, compliance becomes evidence you already have.
+
+  !key Governance asks "who is accountable, for which system, with what evidence". The answers should come from your inventory, your logs and your evals, not from a document written once.
+
+diagrams:
+  - type: cycle
+    title: The NIST AI RMF functions
+    nodes: [["Govern", "def"], ["Map", "box"], ["Measure", "raised"], ["Manage", "def"]]
+    center: Govern runs through all of them
+    caption: Map the context, measure the risks, manage them, and repeat as the system and the world change.
+
+life:
+  - ["Amazon's recruiting tool", "Reuters reported in 2018 that Amazon dropped an experimental CV ranking tool after finding it downgraded CVs that mentioned women's activities. It had learned from ten years of mostly male hiring data. It is the classic example of bias inherited from history."]
+  - ["The Dutch childcare benefits scandal", "Dutch tax authorities used risk scoring that wrongly flagged thousands of families for fraud in childcare benefits, many with a migration background. The scandal led the government to resign in 2021, and is often cited as a reason for strict rules on high risk public sector AI."]
+  - ["Model cards", "Researchers led by Margaret Mitchell proposed model cards in 2019, a short standard summary of what a model is for, how it was tested and where it fails. Many model publishers now ship them."]
+
+tradeoffs:
+  - ["Strict review for every AI use", "Low risk of harm.", "Slow, teams may avoid or hide AI use."]
+  - ["Risk based review", "Effort goes where harm is possible.", "Needs a clear, trusted way to rate risk."]
+  - ["Buying AI from vendors", "Faster to adopt.", "You still own the risk, and need vendor evidence."]
+  - ["Full decision logging", "Strong accountability and audits.", "Privacy duties and storage cost."]
+
+mistakes:
+  - No inventory, so nobody knows where AI is used.
+  - Treating vendor AI as the vendor's problem only.
+  - Testing accuracy overall but never per group.
+  - Human oversight on paper, where reviewers approve everything without reading.
+  - Writing documents once and never updating them.
+
+security: |
+  AI governance and security share evidence. Threat models, red team results, access controls, logging and incident response for AI systems belong in the same management system as the rest of security, ISO/IEC 27001 next to ISO/IEC 42001. Include AI incidents, such as a successful prompt injection or a harmful output, in your incident process and lessons learned.
+
+quiz:
+  - type: sort
+    q: Which NIST AI RMF function fits each activity?
+    rows:
+      - ["Set up an AI review board and policy", "Govern"]
+      - ["List who is affected and what can go wrong", "Map"]
+      - ["Test accuracy and fairness per group", "Measure"]
+      - ["Decide to retire a model that keeps failing", "Manage"]
+    opts: ["Govern", "Map", "Measure", "Manage"]
+    why: The four functions cover the whole life of an AI system.
+  - q: Under the EU AI Act, a CV screening system for hiring is in which tier?
+    opts: ["High risk", "Minimal risk", "Not covered"]
+    a: 0
+    why: Employment and recruitment uses are listed as high risk.
+  - type: fill
+    q: A short document describing a model's purpose, data, performance and limits is a model ____.
+    a: ["card"]
+    why: Model cards were proposed in 2019 and are now common.
+  - q: What must a customer service chatbot do under the EU AI Act's transparency rules?
+    opts: ["Tell people they are talking to an AI", "Get a certificate before launch", "Nothing at all"]
+    a: 0
+    why: Limited risk systems mainly have transparency duties.
+  - q: Identify the GRC issue. "Our loan model's overall accuracy is 92 percent, so it is fair."
+    opts: ["Overall accuracy can hide much worse results for some groups", "92 percent is too high", "Loans are not AI uses"]
+    a: 0
+    why: Measure performance and outcomes for each relevant group.
+  - type: fill
+    q: The international standard for an AI management system is ISO/IEC ____.
+    a: ["42001"]
+    why: It sits next to ISO/IEC 27001 for information security.
+
+interview:
+  - q: Your company wants to launch an AI feature that helps decide loan approvals. What governance would you put in place?
+    keys:
+      - ["Inventory, owner and risk classification as high risk", [inventory, owner, high risk, classif]]
+      - ["Data documentation, bias and accuracy testing per group", [bias, fair, group, data, test, accuracy]]
+      - ["Human oversight and the right to review or appeal", [human, oversight, review, appeal, override]]
+      - ["Logging, model cards, explanations and monitoring", [log, model card, explain, monitor, document]]
+      - ["Frameworks and laws, NIST AI RMF, ISO 42001, EU AI Act, GDPR", [nist, 42001, ai act, gdpr, regulat]]
+    a: |
+      I register the system in the AI inventory with an accountable owner and classify it as high risk, since credit decisions affect people's lives and are listed as high risk under the EU AI Act. I document the training data, its sources and known gaps, and test accuracy and approval rates for each relevant group, fixing or removing features that cause unfair outcomes. A loan officer reviews declines, applicants get reasons and a way to request human review, and every decision is logged with the model version and inputs. The model card, risk and impact assessments and eval reports are kept current. In production I monitor accuracy and group outcomes monthly. I map the work to NIST AI RMF functions and, where we operate in the EU, to the AI Act and GDPR duties.
+    fb: Testing per group and real human oversight are what separate this from a checklist answer.
+
+desk:
+  title: The AI nobody listed
+  lede: An internal audit finds AI features in five products, but the company has no AI policy.
+  situation: |
+    A chatbot on the public website, a CV ranking tool in HR, a fraud model in payments, a code assistant used by engineers, and an email summarizer in sales. No inventory, no owners, no risk ratings.
+  rounds:
+    - title: Round 1. Classify
+      items:
+        - type: sort
+          q: Pick the likely EU AI Act tier for each.
+          rows:
+            - ["CV ranking tool in HR", "High risk"]
+            - ["Website chatbot", "Transparency duties"]
+            - ["Spam filter in email", "Minimal risk"]
+          opts: ["High risk", "Transparency duties", "Minimal risk"]
+          why: Tier depends on the use and who it affects.
+        - q: What is the first governance step?
+          opts: ["Build an AI inventory with an owner and risk rating for each system", "Ban all AI at once", "Buy a new model"]
+          a: 0
+          why: You cannot govern what you have not listed.
+    - title: Round 2. Controls
+      items:
+        - type: open
+          q: Name four controls for the CV ranking tool.
+          a: "An accountable owner and a high risk rating in the inventory. Bias and accuracy testing per group before use and every month after. A recruiter reviews every rejection, with candidates able to ask for human review. Logging of every decision with model version, plus a model card and a data protection impact assessment."
+        - q: Engineers paste customer data into the code assistant. What kind of issue is this?
+          opts: ["A data protection and policy issue, needing rules on what data may go to which AI tools", "A performance issue", "No issue"]
+          a: 0
+          why: Data sent to an outside model may be stored, so policy and tool settings matter.
+  card: |
+    - Inventory every AI system. Name an owner.
+    - NIST AI RMF. Govern, Map, Measure, Manage.
+    - ISO/IEC 42001 for an AI management system.
+    - EU AI Act tiers. Banned, high risk, transparency, minimal.
+    - Test per group. Real human oversight. Logs and model cards.
+
+refs:
+  - "NIST. [AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework) and [AI 600-1, generative AI profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence)."
+  - "ISO. [ISO/IEC 42001, AI management systems](https://www.iso.org/standard/81230.html)."
+  - "European Commission. [AI Act](https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai)."
+  - "Mitchell and others. [Model cards for model reporting, 2019](https://arxiv.org/abs/1810.03993)."

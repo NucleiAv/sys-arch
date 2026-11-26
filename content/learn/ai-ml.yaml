@@ -1,0 +1,221 @@
+short: ML systems end to end
+title: Machine learning systems, from data to a live model
+time: about 55 minutes
+tags: [training, inference, features, drift, MLOps]
+lede: A model is a small part of a machine learning system. Most of the work is the data around it. Learn how data becomes a trained model, how the model serves live requests, and why a model that was right last month can be wrong today.
+
+idea: |
+  A **machine learning model** is a program whose behaviour is learned from examples instead of written by hand. Show it thousands of past card payments marked "fraud" or "not fraud", and it learns patterns that score new payments.
+
+  An ML system has two halves.
+
+  1. **Training**, offline. Collect data, turn it into **features**, train a model, test it and save it in a **model registry**.
+  2. **Inference**, online. A live request arrives, the system builds the same features, runs the model and returns a **prediction** in milliseconds.
+
+  The two halves must agree. If training computes "payments in the last hour" one way and the live service computes it another way, the model sees numbers it never learned from. This is called **training and serving skew**.
+
+  The world also changes. Shopping habits, fraud tricks and prices move, so the data a model sees in production slowly stops looking like the data it was trained on. This is **drift**. ML systems must be **monitored** and **retrained**, not built once.
+
+  !eli5 A model is like a student who learned from old exam papers. If the teacher changes the style of questions, the student starts to get answers wrong. You must check the student's results and give them new papers to study.
+
+scenes:
+  - title: Train offline, serve online, watch for drift
+    stats: [Step, Model version, Live accuracy, What happens]
+    nodes:
+      data: {label: Event data, x: 0, y: 0, kind: raised, tag: past payments}
+      fs: {label: Feature store, x: 2, y: 1, kind: def, tag: one definition}
+      train: {label: Training job, x: 4, y: 0, kind: def}
+      reg: {label: Model registry, x: 6, y: 0, kind: raised, tag: versions}
+      api: {label: Prediction service, x: 4, y: 2, kind: def}
+      app: {label: Checkout, x: 6, y: 2, kind: box}
+    links: [[data, fs], [fs, train], [train, reg], [reg, api], [fs, api], [app, api]]
+    steps:
+      - title: Build features once
+        text: Raw events become features, such as "payments by this card in the last hour". The feature store computes them with one definition for training and for live use.
+        on: [data, fs]
+        flow: [[data, fs, ink]]
+        stats: [Features, "-", "-", same logic offline and online]
+      - title: Train and register
+        text: A training job learns from a year of labelled features. It is tested on data it never saw. Version 7 passes and is saved in the registry with its data and settings.
+        on: [fs, train, reg]
+        flow: [[fs, train, def], [train, reg, def]]
+        mark: {reg: ok}
+        stats: [Train, v7, "-", tested on held out data]
+      - title: Serve live
+        text: The prediction service loads v7. Each checkout sends a request, the service reads live features from the store and returns a fraud score in 20 ms.
+        on: [app, api, fs, reg]
+        flow: [[app, api, ink], [fs, api, def], [reg, api, def]]
+        stats: [Serve, v7, "94 percent", predictions in 20 ms]
+      - title: Drift
+        text: Months later, fraudsters change their tricks. The live data no longer looks like the training data. Accuracy slowly falls, and nothing crashes, so only monitoring notices.
+        on: [api, app]
+        mark: {api: warn}
+        stats: [Drift, v7, "81 percent", silent decline]
+      - title: Retrain and roll out safely
+        text: Monitoring raises an alert. A new model, v8, is trained on recent data, tested, then sent 5 percent of traffic first. Its results look good, so it takes all traffic.
+        on: [fs, train, reg, api]
+        flow: [[fs, train, def], [train, reg, def], [reg, api, def]]
+        mark: {api: ok}
+        stats: [Retrain, v8, "93 percent", canary then full]
+
+terms:
+  - [Model, "A function learned from data that maps inputs to a prediction."]
+  - [Training, "Fitting the model to past examples."]
+  - [Inference, "Using a trained model to predict for new inputs."]
+  - [Feature, "An input value the model uses, such as account age or payments in the last hour."]
+  - [Label, "The right answer for a training example, such as fraud or not fraud."]
+  - [Feature store, "A system that computes and serves features the same way for training and live predictions."]
+  - [Model registry, "A store of model versions with their data, code, settings and test results."]
+  - [Training and serving skew, "Differences between features in training and in production."]
+  - [Drift, "Production data or the meaning of labels changing over time, so the model gets worse."]
+  - [MLOps, "Practices for building, deploying and running ML systems reliably, like DevOps for models."]
+
+how: |
+  ### The parts of an ML system
+
+  | Part | Job | Examples |
+  | --- | --- | --- |
+  | Data pipeline | Collect, clean and label data | Batch and stream jobs, lesson 5.2 |
+  | Feature store | Same features offline and online | Feast, Tecton, built in cloud stores |
+  | Training | Fit models, track experiments | Notebooks, MLflow, Kubeflow |
+  | Registry | Versions, approvals, lineage | MLflow Model Registry, cloud registries |
+  | Serving | Predictions behind an API | Online service, or batch scoring |
+  | Monitoring | Inputs, outputs, accuracy, drift | Dashboards and alerts |
+
+  ### Online or batch predictions
+
+  - **Online.** A request needs an answer now, such as a fraud score at checkout. Latency budget is tight.
+  - **Batch.** Score everything every night, such as "which customers may leave". Results go into a table. Cheap and simple.
+
+  Pick batch when the answer can be a few hours old.
+
+  ### Test a model honestly
+
+  Split data into **training** and **test** sets, and for data over time, test on a **later period** than training. Otherwise the model can look great by remembering answers or by seeing the future. Compare against a simple **baseline**, such as "block every payment over 50,000", to prove the model adds value.
+
+  ### Watch three things in production
+
+  1. **Inputs.** Are feature values shifting? Many nulls? A broken upstream field?
+  2. **Outputs.** Is the share of high scores suddenly different?
+  3. **Outcomes.** When true labels arrive, often days later, is accuracy falling?
+
+  ### Roll out models like code
+
+  Shadow mode first, where the new model scores live traffic but its answers are not used. Then a canary with a small share of traffic. Keep the old version ready for instant rollback.
+
+  !key Most ML failures are data failures. A missing field, a changed unit, or a feature computed differently online will hurt more than a weaker algorithm.
+
+diagrams:
+  - type: cycle
+    title: The ML life cycle
+    nodes: [["Collect and label data", "raised"], ["Build features", "def"], ["Train and test", "def"], ["Register and approve", "box"], ["Serve", "def"], ["Monitor drift", "atk"]]
+    center: Retrain when the world changes
+    caption: The loop never stops. Monitoring decides when to go round again.
+
+life:
+  - ["Uber's Michelangelo", "Uber described its ML platform, Michelangelo, in 2017. It popularized the feature store idea, so features were defined once and used the same way in training and in live predictions across many teams."]
+  - ["Zillow's home buying", "In 2021 Zillow closed its business of buying and reselling homes, which relied on price forecasts, after large losses in a fast changing housing market. It is often cited as a lesson in how models trained on the past can fail when conditions shift."]
+  - ["The changed unit", "A delivery app's ETA model suddenly predicted 60 times too long. An upstream team had changed a field from minutes to seconds. Input monitoring with range checks would have caught it within minutes."]
+
+tradeoffs:
+  - ["Online predictions", "Fresh answers per request.", "Tight latency, live features needed."]
+  - ["Batch predictions", "Simple and cheap.", "Answers can be hours old."]
+  - ["Frequent retraining", "Follows change quickly.", "More cost and more chances to ship a bad model."]
+  - ["Complex model", "Higher accuracy in tests.", "Harder to explain, serve and debug."]
+
+mistakes:
+  - Computing features one way in training and another way in production.
+  - Testing on random rows when the data is ordered by time.
+  - No baseline, so nobody knows if the model helps.
+  - Deploying a model with no monitoring of inputs and accuracy.
+  - No way to roll back to the previous model.
+
+security: |
+  Training data is an attack surface. If attackers can add or change examples, they can **poison** the model, for example by making their own fraud look normal. Control who can write to training data, track where data came from, and test new models on trusted held out sets. Models can also leak training data, so avoid training on secrets and personal data you do not need. See lesson 8.6.
+
+quiz:
+  - q: Training computes "payments in the last hour" from a daily batch, but the live service computes it in real time. What problem is this?
+    opts: ["Training and serving skew", "Overfitting", "Cache stampede"]
+    a: 0
+    why: The model sees different numbers online than it learned from.
+  - type: fill
+    q: Production data slowly changing so a model gets worse is called ____.
+    a: ["drift"]
+    why: Nothing crashes, so only monitoring catches it.
+  - type: sort
+    q: Online or batch prediction?
+    rows:
+      - ["Fraud score at checkout", "Online"]
+      - ["Which customers may cancel next month", "Batch"]
+      - ["Product recommendations refreshed every night", "Batch"]
+    opts: ["Online", "Batch"]
+    why: Use online only when the answer must be fresh for this request.
+  - q: A model trained on 2024 data is tested on random rows from 2024 and scores 99 percent. What is the risk?
+    opts: ["It may have seen patterns from the test period, so real results on 2025 data could be far worse", "99 percent is too low", "None"]
+    a: 0
+    why: Test on a later time period than training.
+  - q: What is the safest first step for a new model version?
+    opts: ["Shadow mode, scoring live traffic without using its answers", "Replace the old model for everyone at once", "Skip testing"]
+    a: 0
+    why: Shadow mode compares models on real traffic with no risk to users.
+
+interview:
+  - q: Design the system around a fraud detection model, from training to live predictions.
+    keys:
+      - ["Data pipeline with labels and a feature store used for both training and serving", [feature store, label, pipeline, same feature, skew]]
+      - ["Training with time based validation and a model registry", [train, registry, version, test, held out, time]]
+      - ["Online serving with low latency and fallbacks", [serving, latency, online, fallback, api]]
+      - ["Monitoring of inputs, outputs and drift with retraining", [monitor, drift, retrain, accuracy, alert]]
+      - ["Safe rollout with shadow, canary and rollback", [shadow, canary, rollback]]
+    a: |
+      Events from payments land in a data lake, and chargebacks arrive later as labels. A feature store computes features such as card velocity once, and serves them both to training jobs and to the live service, so there is no skew. Training uses older data and tests on a later period, compares with a rules baseline, and saves the model with its data and settings in a registry. The prediction service loads an approved version, reads online features and returns a score within about 30 ms, with a rules only fallback if the model is down. I monitor feature distributions, score distributions and accuracy when labels arrive, and retrain when drift crosses a threshold. New versions go through shadow mode, then a small canary, with one step rollback.
+    fb: Naming training and serving skew and time based validation shows ML system experience, not only modelling.
+  - q: A model's accuracy dropped slowly over three months, but no errors were logged. How do you find out why?
+    keys:
+      - ["Compare live feature distributions with training data", [distribution, feature, compare, shift, histogram]]
+      - ["Check upstream data changes, nulls, units", [upstream, null, unit, schema, pipeline]]
+      - ["Check label or concept change in the real world", [concept, behaviour, real world, label, pattern]]
+      - ["Retrain on recent data and add monitoring", [retrain, recent, monitor, alert]]
+    a: |
+      Silent decline usually means drift. I compare the distribution of each live feature with the training data to find what moved, and I look for upstream changes, such as a field that became null or changed unit. If inputs look the same but outcomes changed, the world changed, for example fraudsters use a new trick, which is concept drift. Then I retrain on recent labelled data, test on the newest period, and add alerts on feature shifts so the next drift is caught in days, not months.
+    fb: Separating data drift from concept drift is a strong signal.
+
+desk:
+  title: The ETA model that went wrong
+  lede: A delivery app's arrival times became wildly wrong overnight. Investigate the ML system.
+  situation: |
+    The ETA model reads "distance" and "prep time" features. Training uses a nightly batch table. The live service computes features in its own code. There are no input checks and no rollback.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What risk does each fact create?
+          rows:
+            - ["Live service computes features in its own code", "Training and serving skew"]
+            - ["No input checks", "A changed unit goes unnoticed"]
+            - ["No rollback", "A bad model stays live"]
+          opts: ["Training and serving skew", "A changed unit goes unnoticed", "A bad model stays live"]
+          why: Each is a common ML failure.
+        - q: Prep time went from minutes to seconds upstream. Which control would catch it fastest?
+          opts: ["Range checks on live feature values with alerts", "Retraining every month", "A bigger model"]
+          a: 0
+          why: Input monitoring flags impossible values at once.
+    - title: Round 2. Fix and work around
+      items:
+        - type: open
+          q: ETAs are wrong right now. What do you do in the next hour?
+          a: "Switch to a fallback, such as the previous model version or a simple distance based estimate, so customers see sane times. Find and fix the unit change, or convert it at the input. Add range checks and alerts. Then retest the current model on fixed data before switching back."
+        - q: What is the benefit of a feature store here?
+          opts: ["One feature definition for training and serving removes skew", "It makes the model larger", "It replaces monitoring"]
+          a: 0
+          why: Shared logic means the model sees the same numbers online as offline.
+  card: |
+    - Training offline, inference online. Keep features the same.
+    - Test on a later time period. Beat a baseline.
+    - Monitor inputs, outputs and outcomes. Drift is silent.
+    - Shadow, canary, rollback.
+
+refs:
+  - "Google. [Rules of Machine Learning](https://developers.google.com/machine-learning/guides/rules-of-ml)."
+  - "Sculley and others. [Hidden technical debt in machine learning systems, 2015](https://papers.nips.cc/paper/2015/hash/86df7dcfd896fcaf2674f757a2463eba-Abstract.html)."
+  - "Uber Engineering. [Meet Michelangelo, Uber's machine learning platform](https://www.uber.com/blog/michelangelo-machine-learning-platform/)."

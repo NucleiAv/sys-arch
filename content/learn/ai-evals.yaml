@@ -1,0 +1,222 @@
+short: Evals and guardrails
+title: Evaluating, observing and guarding AI systems
+time: about 50 minutes
+tags: [evals, LLM as judge, tracing, guardrails, rollout]
+lede: AI output changes when you change a prompt, a model or the data behind it, and normal unit tests cannot say whether an answer is good. Learn how to build evaluation sets, trace every step of an AI request, add guardrails on input and output, and roll out changes safely.
+
+idea: |
+  Normal code gives the same output for the same input. LLMs do not always, and "correct" is often a judgement, not an exact string. So AI systems need **evaluations**, or **evals**, a repeatable way to measure quality on a fixed set of test cases.
+
+  An eval set is a list of real looking inputs with what a good result looks like. You run it on every change, a new prompt, a new model, a new retrieval setting, and compare scores before you ship. Scores come from three kinds of grader.
+
+  1. **Code checks.** Is the output valid JSON? Does it cite a source? Is it under 200 words?
+  2. **Model graders**, also called **LLM as a judge**. A strong model scores answers against a rubric, such as "Is every claim supported by the passages?"
+  3. **People.** Experts review a sample, and check that the model graders agree with them.
+
+  In production you also need **tracing**, a record of every step of a request, retrieval, prompts, tool calls, tokens, cost and latency, and **guardrails**, checks before and after the model that block or fix unsafe inputs and outputs.
+
+  !eli5 Before a school changes its exam, teachers give the new exam to a few students whose level they already know. If those students suddenly score much worse, the new exam has a problem. Evals are that test run for your AI.
+
+scenes:
+  - title: A prompt change goes through evals and a canary
+    stats: [Step, Eval score, Live traffic on new prompt, Decision]
+    nodes:
+      dev: {label: Prompt change, x: 0, y: 1, kind: box}
+      eval: {label: Eval suite, x: 2, y: 0, kind: def, tag: 400 cases}
+      judge: {label: Graders, x: 4, y: 0, kind: raised, tag: "code, model, people"}
+      gw: {label: Gateway with guardrails, x: 2, y: 2, kind: def}
+      live: {label: Live users, x: 5, y: 2, kind: box}
+      trace: {label: Traces and metrics, x: 5, y: 4, kind: raised}
+    links: [[dev, eval], [eval, judge], [dev, gw], [gw, live], [gw, trace]]
+    steps:
+      - title: Run the eval set
+        text: An engineer shortens the system prompt to save tokens. CI runs 400 eval cases with the old and the new prompt.
+        on: [dev, eval]
+        flow: [[dev, eval, ink]]
+        stats: [Run evals, "-", "0 percent", "-"]
+      - title: Grade
+        text: Code checks pass. The model grader finds faithfulness fell from 94 to 86 percent on refund questions. Some answers now invent policy details.
+        on: [eval, judge]
+        flow: [[eval, judge, def]]
+        mark: {judge: bad}
+        stats: [Grade, "86 vs 94", "0 percent", blocked]
+      - title: Fix and rerun
+        text: The engineer restores one instruction about citing the policy. The rerun scores 95 percent with 30 percent fewer tokens. The change passes.
+        on: [dev, eval, judge]
+        flow: [[dev, eval, ink], [eval, judge, def]]
+        mark: {judge: ok}
+        stats: [Rerun, "95 vs 94", "0 percent", approved]
+      - title: Canary in production
+        text: The gateway sends 5 percent of real traffic to the new prompt. Traces record each request. Thumbs down rate, guardrail blocks and cost are compared with the old prompt.
+        on: [gw, live, trace]
+        flow: [[gw, live, def], [gw, trace, def]]
+        stats: [Canary, "95", "5 percent", watching]
+      - title: Full rollout
+        text: After two days with no worse signals, the new prompt takes all traffic. The old prompt stays saved for an instant rollback.
+        on: [gw, live]
+        flow: [[gw, live, def]]
+        mark: {live: ok}
+        stats: [Rollout, "95", "100 percent", shipped]
+
+terms:
+  - [Eval, "A repeatable test of AI quality on a fixed set of cases."]
+  - [Golden set, "A curated list of test cases with known good answers or rubrics."]
+  - [LLM as a judge, "Using a model to grade outputs against a rubric."]
+  - [Faithfulness, "Whether every claim in an answer is supported by the given sources."]
+  - [Hallucination, "A confident answer that is false or not supported by any source."]
+  - [Tracing, "Recording every step of a request, with timing, tokens and inputs and outputs."]
+  - [Guardrail, "A check before or after the model that blocks, changes or flags content or actions."]
+  - [Red teaming, "Trying on purpose to make the system misbehave, to find weaknesses before attackers do."]
+
+how: |
+  ### Build an eval set
+
+  1. Collect **real cases** from logs, with personal data removed, plus hard and adversarial cases.
+  2. Write what **good** looks like, an exact answer, required facts, or a rubric.
+  3. Cover each **feature and risk**, such as refunds, out of scope questions, prompt injection attempts and empty retrieval.
+  4. **Grow it** every time a bug is found in production. Each bug becomes a test.
+
+  ### Graders and their limits
+
+  | Grader | Good at | Watch out |
+  | --- | --- | --- |
+  | Code check | Format, length, citations present, forbidden words | Cannot judge meaning |
+  | Model grader | Meaning, faithfulness, tone, at scale | Bias, such as preferring longer answers. Check it against people |
+  | People | Hard and high stakes cases | Slow, costly, need clear rubrics |
+
+  ### What to trace
+
+  For every request, record the prompt version, model, retrieved document ids, each tool call and result, tokens, cost, latency and any guardrail decision. OpenTelemetry has semantic conventions for generative AI, so traces can flow into your normal observability tools, lesson 4.2. Redact personal data in traces.
+
+  ### Guardrails
+
+  - **Input.** Block or flag known jailbreak patterns, personal data the user should not send, and requests outside the product's purpose.
+  - **Output.** Check format, remove secrets and personal data, check claims against sources, and block unsafe content.
+  - **Action.** For agents, check every tool call against policy, see lesson 8.7.
+
+  Guardrails reduce risk but are not perfect. Classifiers can be fooled, so combine them with limits on what the system can do.
+
+  ### Roll out like code
+
+  Version prompts and models. Run evals in CI. Use shadow mode or canaries, compare live signals such as user feedback, guardrail blocks, cost and latency, and keep instant rollback.
+
+  !key If you cannot measure quality, you cannot safely change a prompt, a model or a retrieval setting. Evals come before optimization.
+
+diagrams:
+  - type: flow
+    title: The release path for a prompt or model change
+    nodes: [["Change", "box"], ["Eval suite in CI", "def", "code, model, people graders"], ["Canary", "raised", "5 percent live"], ["Compare live signals", "def"], ["Roll out or roll back", "box"]]
+    edges: ["", "pass", "", ""]
+    caption: Treat prompts and models as code. Every change is tested, measured and reversible.
+
+life:
+  - ["Air Canada's chatbot, 2024", "A customer relied on Air Canada's website chatbot, which wrongly said a bereavement discount could be claimed after travel. A Canadian tribunal ordered the airline to pay the difference and rejected the idea that the chatbot was responsible for its own words. Companies own what their AI says."]
+  - ["The one dollar car", "In December 2023 users got a car dealership's chatbot to agree to sell a new SUV for one dollar by telling it to agree with anything. No sale happened, but it showed why bots need scope limits and output checks."]
+  - ["Evals catch a model upgrade", "A team upgraded to a newer model expecting better answers. Their eval suite showed a drop in following the required JSON format. They adjusted the prompt before rollout instead of discovering the breakage in production."]
+
+tradeoffs:
+  - ["Large eval suite", "Catches more regressions.", "Slower and costlier to run on every change."]
+  - ["Model graders", "Cheap and scalable.", "Can be biased or wrong, need checks against people."]
+  - ["Strict guardrails", "Fewer harmful outputs.", "More false blocks of valid requests."]
+  - ["Full prompt and output logging", "Easy debugging.", "Privacy risk and storage cost."]
+
+mistakes:
+  - Changing prompts or models with no eval set.
+  - Trusting a model grader without checking it against people.
+  - Logging full prompts with personal data and no retention limit.
+  - Relying on guardrails alone, with no limits on what the system can do.
+  - Not turning production bugs into new eval cases.
+
+security: |
+  Evals are also a security tool. Include red team cases, such as prompt injection inside documents, attempts to extract the system prompt and requests for other users' data, and run them on every change. Keep traces in a restricted store, because they may contain secrets and personal data, and set short retention. Monitor for spikes in guardrail blocks, which can signal an active attack.
+
+quiz:
+  - q: Why are normal unit tests not enough for an LLM feature?
+    opts: ["Outputs vary and quality is often a judgement, not an exact match", "LLMs cannot be called from tests", "Unit tests are too fast"]
+    a: 0
+    why: Evals score outputs against rubrics on many cases.
+  - type: fill
+    q: Using a strong model to score outputs against a rubric is called LLM as a ____.
+    a: ["judge"]
+    why: Check its scores against human reviewers.
+  - type: sort
+    q: Which grader fits best?
+    rows:
+      - ["Is the output valid JSON with a source field?", "Code check"]
+      - ["Is every claim supported by the passages?", "Model grader, checked by people"]
+      - ["Is this medical advice safe for a patient?", "Expert human review"]
+    opts: ["Code check", "Model grader, checked by people", "Expert human review"]
+    why: Use the cheapest grader that is reliable for the question.
+  - q: A new prompt cuts tokens by 40 percent but faithfulness drops from 94 to 86 percent. What should happen?
+    opts: ["Block the release and fix the prompt", "Ship it, tokens matter most", "Remove the eval"]
+    a: 0
+    why: Quality regressions are caught before users see them.
+  - q: What should a trace of one AI request include?
+    opts: ["Prompt version, model, retrieved ids, tool calls, tokens, cost, latency and guardrail decisions", "Only the final answer", "Only the HTTP status"]
+    a: 0
+    why: Without every step, you cannot debug a bad answer.
+  - type: fill
+    q: A confident answer that is false or not supported by any source is called a ____.
+    a: ["hallucination"]
+    why: Grounding, citations and faithfulness evals reduce it.
+
+interview:
+  - q: How do you know a change to a prompt or model is safe to ship?
+    keys:
+      - ["Versioned prompts and an eval set of real and adversarial cases", [eval, golden, test set, version, cases]]
+      - ["Graders, code checks, model judges checked against people", [grader, judge, code check, human, rubric]]
+      - ["Run in CI and compare with the current version", [ci, compare, baseline, regression]]
+      - ["Canary or shadow with live signals and rollback", [canary, shadow, live, feedback, rollback]]
+    a: |
+      Prompts and model choices are versioned like code. Every change runs an eval suite in CI, real cases from logs with personal data removed, edge cases and red team cases, and is compared with the current version. Code checks cover format and citations, a model grader scores faithfulness and helpfulness against a rubric, and I regularly check the grader against expert reviewers. If scores hold or improve, the change goes to a 5 percent canary, where I compare user feedback, guardrail blocks, cost and latency with the old version. Then full rollout, with instant rollback available.
+    fb: Checking the judge model against people is the detail that shows you know evals can lie.
+  - q: What would you trace and monitor for an LLM feature in production?
+    keys:
+      - ["Every step, prompt version, model, retrieval, tool calls", [step, prompt, model, retriev, tool, trace]]
+      - ["Tokens, cost and latency, including time to first token", [token, cost, latency, first token]]
+      - ["Quality signals, feedback, guardrail blocks, sampled reviews", [feedback, guardrail, review, quality, sample]]
+      - ["Privacy, redaction and retention", [redact, privacy, retention, personal]]
+    a: |
+      I trace each request end to end. Prompt version, model, retrieved document ids, every tool call and result, tokens, cost, time to first token and total latency, and guardrail decisions, using OpenTelemetry so it joins our normal traces. Dashboards show cost per feature, latency percentiles, error and refusal rates, thumbs down rate and guardrail blocks. A daily sample of conversations is graded. Personal data is redacted before storage and traces expire after a short period.
+    fb: Including guardrail blocks as a signal for attacks shows a security mindset.
+
+desk:
+  title: Shipping a new model safely
+  lede: Leadership wants to switch the support assistant to a new, cheaper model next week.
+  situation: |
+    There is no eval set. Prompts live in code with no version. Logs keep only the final answer.
+  rounds:
+    - title: Round 1. Find the gaps
+      items:
+        - type: sort
+          q: What risk does each gap create?
+          rows:
+            - ["No eval set", "Quality drops are found by customers"]
+            - ["Prompts with no version", "No clean rollback or comparison"]
+            - ["Only final answers logged", "Bad answers cannot be debugged"]
+          opts: ["Quality drops are found by customers", "No clean rollback or comparison", "Bad answers cannot be debugged"]
+          why: Evals, versions and traces are the basics.
+        - q: What is the fastest way to start an eval set?
+          opts: ["Take 200 real questions from logs, remove personal data, and write the key facts a good answer needs", "Write 5 easy questions by hand", "Ask the new model to write its own tests"]
+          a: 0
+          why: Real traffic shows real needs. Grow the set as bugs appear.
+    - title: Round 2. Roll out
+      items:
+        - type: open
+          q: Write the rollout plan for the new model.
+          a: "Version the current prompt and model as the baseline. Build an eval set from real questions plus red team cases. Run both models and compare faithfulness, format and refusals. Fix prompt issues for the new model. Ship to 5 percent of traffic with tracing, compare feedback, guardrail blocks, cost and latency for a few days, then increase step by step, keeping the old model ready for instant rollback."
+        - q: What is a benefit of a canary over switching everyone at once?
+          opts: ["A problem affects only a small share of users and can be rolled back fast", "It is cheaper per token", "It removes the need for evals"]
+          a: 0
+          why: Canaries limit the blast radius of a bad change.
+  card: |
+    - Evals before changes. Grow them with every bug.
+    - Code checks, model graders, people. Check the graders.
+    - Trace every step. Redact personal data.
+    - Guardrails on input, output and actions.
+    - Version, canary, roll back.
+
+refs:
+  - "OpenTelemetry. [Semantic conventions for generative AI](https://opentelemetry.io/docs/specs/semconv/gen-ai/)."
+  - "Zheng and others. [Judging LLM-as-a-judge with MT-Bench and Chatbot Arena, 2023](https://arxiv.org/abs/2306.05685)."
+  - "CBC News. [Air Canada found liable for chatbot's bad advice](https://www.cbc.ca/news/canada/british-columbia/air-canada-chatbot-lawsuit-1.7116416)."

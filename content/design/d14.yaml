@@ -172,6 +172,8 @@ refs:
   - "Advent of System Design. [Day 28, serving an AI app](https://www.devmaxx.dev/advent)."
 
 security: |
+  Level 8 goes deep on this. See lesson 8.6 for prompt injection and the OWASP LLM Top 10, and lesson 8.7 for agents.
+
   AI chat apps add new kinds of risk.
 
   - **Prompt injection.** Text from users, files or web pages can tell the model to ignore its rules. Treat model output as untrusted and limit what tools it may call.

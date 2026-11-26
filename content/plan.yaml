@@ -1,4 +1,4 @@
-title: The plan, sixteen weeks from zero to interview ready
+title: The plan, seventeen weeks from zero to interview ready
 lede: About six hours a week. Each week mixes concept lessons, infra lessons, protocols and design tasks, and ends with a practice page. Tick tasks as you go. Your ticks stay in this browser.
 
 weeks:
@@ -148,6 +148,20 @@ weeks:
       - {k: Practice, time: 40 min, t: "Concepts level 7 practice.", page: learn/p7.html}
       - {k: Design, time: 1 hr, t: "Design a shopping cart and checkout.", page: design/d21.html}
   - n: 16
+    t: AI, LLM and agent systems
+    d: How AI fits into real systems, and how to keep models and agents safe.
+    tasks:
+      - {k: Learn, time: 55 min, t: "Concepts lesson 8.1.", page: learn/ai-ml.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 8.2.", page: learn/ai-serving.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 8.3.", page: learn/ai-rag.html}
+      - {k: Learn, time: 1 hr, t: "Concepts lesson 8.4.", page: learn/ai-agents.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 8.5.", page: learn/ai-evals.html}
+      - {k: Learn, time: 1 hr, t: "Concepts lesson 8.6. Try three prompt injections on any chatbot you use, then explain why each worked or failed.", page: learn/ai-threats.html}
+      - {k: Learn, time: 1 hr, t: "Concepts lesson 8.7.", page: learn/ai-agentsec.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 8.8.", page: learn/ai-grc.html}
+      - {k: Practice, time: 45 min, t: "Concepts level 8 practice.", page: learn/p8.html}
+      - {k: Design, time: 90 min, t: "Design a secure platform for autonomous AI agents.", page: design/d23.html}
+  - n: 17
     t: Interview ready
     d: Practice out loud, with a timer, and with a friend if you can.
     tasks:
