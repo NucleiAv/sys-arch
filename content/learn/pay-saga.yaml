@@ -1,0 +1,230 @@
+short: Sagas and inventory holds
+title: Sagas, compensations and inventory holds
+time: about 55 minutes
+tags: [saga, compensation, outbox, reservation, overselling]
+lede: Placing an order touches stock, payment and delivery, each owned by a different service with its own database. There is no single transaction across them. Learn how sagas undo finished steps when a later one fails, and how holds stop you selling the last phone twice.
+
+idea: |
+  In one database, a transaction makes many writes all or nothing, as in lesson 2.7. With microservices, each service has its own database. A single ACID transaction across them is not practical.
+
+  A **saga** is a chain of local transactions, one per service. Each step commits on its own. If a later step fails, the saga runs **compensating actions** for the steps that already finished, in **reverse order**. A compensation is a new action that undoes the business effect, such as a refund for a payment or a release for a stock hold.
+
+  Stock needs extra care. Ten phones and hundreds of buyers clicking at once is a race. If each buyer's request checks "is there stock?" and then writes "sold", two buyers can pass the check for the last phone. That is **overselling**. A **hold**, also called a reservation, takes a unit out of available stock the moment the buyer clicks Buy, for a short time. If the buyer pays, the hold becomes a sale. If not, the hold **expires** and the unit returns.
+
+  !eli5 You plan a trip. You book the train, then the hotel, then try to rent a car. No car is free. So you cancel the hotel and then the train, the newest booking first. That is a saga with compensations.
+
+scenes:
+  - title: An order saga where payment fails
+    stats: [Step, Stock, Payment, Order]
+    nodes:
+      orch: {label: Order saga, x: 0, y: 2, kind: def, tag: orchestrator}
+      inv: {label: Inventory service, x: 3, y: 0, kind: raised}
+      pay: {label: Payment service, x: 3, y: 2, kind: raised}
+      ship: {label: Courier service, x: 3, y: 4, kind: raised}
+      user: {label: Customer, x: 6, y: 2, kind: box}
+    links: [[orch, inv], [orch, pay], [orch, ship], [orch, user]]
+    steps:
+      - title: Hold stock
+        text: The saga asks inventory to hold 1 phone for 10 minutes. Available stock drops from 10 to 9. Inventory commits this in its own database.
+        on: [orch, inv]
+        flow: [[orch, inv, ink], [inv, orch, def]]
+        stats: [Step 1, "held, 9 left", "-", pending]
+      - title: Charge the card
+        text: The saga asks payment to charge 30,000 rupees, with an idempotency key. The card is declined.
+        on: [orch, pay]
+        flow: [[orch, pay, ink], [pay, orch, atk]]
+        mark: {pay: bad}
+        stats: [Step 2, "held, 9 left", declined, pending]
+      - title: Compensate in reverse order
+        text: Payment failed, so the saga undoes the finished steps, newest first. The only one is the stock hold, so it asks inventory to release it.
+        on: [orch, inv]
+        flow: [[orch, inv, pen]]
+        stats: [Compensate, "released, 10 left", declined, cancelling]
+      - title: Tell the customer
+        text: The order is marked cancelled and the customer is asked to try another card. No courier was ever booked.
+        on: [orch, user]
+        flow: [[orch, user, def]]
+        mark: {inv: ok}
+        stats: [Done, "10 left", declined, cancelled]
+      - title: The happy path
+        text: With a good card, payment succeeds, the courier is booked and the hold turns into a sale. If the courier step had failed, the saga would refund the payment, then release the stock.
+        on: [orch, inv, pay, ship]
+        flow: [[orch, pay, def], [orch, ship, def], [orch, inv, def]]
+        mark: {pay: ok, ship: ok}
+        stats: [Success, "sold, 9 left", captured, confirmed]
+
+terms:
+  - [Saga, "A sequence of local transactions in different services, with compensations if a step fails."]
+  - [Compensating action, "A new action that undoes the business effect of an earlier step, such as a refund."]
+  - [Orchestration, "One coordinator tells each service what to do next."]
+  - [Choreography, "Each service reacts to events from the others, with no central coordinator."]
+  - [Outbox pattern, "Write the event to an outbox table in the same transaction as the data, then publish it from there."]
+  - [Hold, "A short reservation of stock or money that expires if not confirmed."]
+  - [Overselling, "Selling more units than you have."]
+
+how: |
+  ### Orchestration or choreography
+
+  | | Orchestration | Choreography |
+  | --- | --- | --- |
+  | Who decides | A saga coordinator | Each service, by listening to events |
+  | Easy to see the flow | Yes, in one place | No, spread across services |
+  | Coupling | Coordinator knows every step | Services know each other's events |
+  | Good for | Long flows with many steps | Short flows with few services |
+
+  Workflow engines such as Temporal or AWS Step Functions help with orchestration, and keep the saga's state if a server crashes.
+
+  ### Rules for sagas
+
+  1. **Every step and every compensation must be idempotent**, because they can be retried.
+  2. **Compensations must not fail for good.** Retry them until they succeed, and alert a human if they keep failing.
+  3. **Compensate in reverse order** of the finished steps.
+  4. **Save the saga's state** after each step, so a crash can resume it.
+  5. **Publish events reliably** with the outbox pattern. Writing to the database and then to a queue as two separate actions can lose one of them in a crash.
+  6. **No isolation.** Others can see the in between states, such as a held phone. Design screens and rules for that.
+
+  ### Stop overselling with a conditional update
+
+  ```sql
+  UPDATE stock SET available = available - 1
+  WHERE sku = 'PHONE-128' AND available >= 1;
+  -- 1 row changed: hold placed. 0 rows: sold out.
+  ```
+
+  The check and the write happen in one atomic statement, so two buyers can never both take the last unit. Record the hold with an expiry time, and run a job that releases expired holds by adding the unit back.
+
+  ### Choosing the hold time
+
+  Too short, and buyers lose the item while typing their card. Too long, and abandoned holds block real buyers. Ticket sites often use 5 to 15 minutes and show a countdown.
+
+  !key A saga gives you all or nothing **eventually**, by undoing, not instantly. Plan for the moments in between.
+
+diagrams:
+  - type: flow
+    title: Forward steps and compensations
+    lanes:
+      - nodes: [["Hold stock", "def"], ["Charge card", "def"], ["Book courier", "def"]]
+        edges: ["", ""]
+        label: "Forward, one local transaction each"
+      - nodes: [["Release stock", "raised"], ["Refund card", "raised"], ["Courier failed", "atk"]]
+        edges: [["", "atk"], ["", "atk"]]
+        label: "If step 3 fails, undo newest first"
+        color: atk
+    caption: Read the bottom row from right to left. The failed step triggers the refund, then the stock release.
+
+life:
+  - ["The original saga paper", "Hector Garcia-Molina and Kenneth Salem described sagas in 1987, for long running database transactions that should not hold locks for hours. Microservices brought the idea back."]
+  - ["The flash sale that oversold", "A shop checked stock in one query and wrote the order in another. During a sale it sold 140 phones that did not exist. A single conditional update for each hold stopped it."]
+  - ["Holds that never expired", "A ticket site placed seat holds but its cleanup job crashed for a day. Thousands of seats looked sold but were never paid. The team added an alert on the age of the oldest hold, and the release job became idempotent and safe to run often."]
+
+tradeoffs:
+  - ["Saga", "Works across services and databases, no long locks.", "No isolation, more code for compensations."]
+  - ["Two phase commit", "Atomic across databases.", "Blocking if the coordinator fails, poor fit for microservices."]
+  - ["Short hold time", "Abandoned stock returns fast.", "Buyers may lose the item mid checkout."]
+  - ["Orchestration", "Flow is clear and easy to monitor.", "Coordinator becomes a central dependency."]
+
+mistakes:
+  - Check then write for stock, in two steps.
+  - Compensations that are not idempotent, such as refunding twice on retry.
+  - Forgetting to release expired holds.
+  - Writing to the database and the queue separately, without an outbox.
+  - Assuming a saga hides in between states from users.
+
+security: |
+  Holds can be abused. A bot can hold every item without paying, which denies stock to real customers. Limit holds per account, per card and per IP, require login for scarce items, and watch the ratio of holds to purchases. Compensations move money too, so log them, protect them with idempotency keys and alert on unusual refund volumes.
+
+quiz:
+  - q: In a saga, the third step fails after steps 1 and 2 succeeded. What happens?
+    opts: ["Compensate step 2, then step 1", "Compensate step 1, then step 2", "Retry step 3 forever and never compensate"]
+    a: 0
+    why: Undo finished steps in reverse order.
+  - type: fill
+    q: An action that undoes the business effect of an earlier saga step is a ____ action.
+    a: ["compensating", "compensation"]
+    why: A refund compensates a charge. A release compensates a hold.
+  - q: Spot the bug.
+    info: |
+      ```python
+      left = db.one("SELECT available FROM stock WHERE sku=%s", [sku])
+      if left > 0:
+          db.run("UPDATE stock SET available=%s WHERE sku=%s", [left - 1, sku])
+          create_order(sku)
+      ```
+    opts: ["Two buyers can both read 1 and both buy the last unit", "SELECT is slower than UPDATE", "sku should be an integer"]
+    a: 0
+    why: Use one conditional update, available = available - 1 WHERE available >= 1.
+  - type: sort
+    q: Orchestration or choreography?
+    rows:
+      - ["A coordinator calls inventory, then payment, then courier", "Orchestration"]
+      - ["Payment listens for StockHeld and publishes PaymentDone", "Choreography"]
+    opts: ["Orchestration", "Choreography"]
+    why: Who decides the next step tells you the style.
+  - q: What problem does the outbox pattern solve?
+    opts: ["Losing an event when the service crashes between the database write and the queue publish", "Slow queries", "Too many services"]
+    a: 0
+    why: The event is saved in the same transaction as the data, then published.
+  - q: Why must saga compensations be idempotent?
+    opts: ["They can be retried, and a retry must not refund or release twice", "They run only once ever", "So they are faster"]
+    a: 0
+    why: Retries are normal in distributed systems.
+
+interview:
+  - q: How do you keep data consistent across order, payment and inventory services without a distributed transaction?
+    keys:
+      - ["Use a saga of local transactions", [saga, local transaction]]
+      - ["Compensating actions in reverse order on failure", [compensat, reverse, undo, refund, release]]
+      - ["Orchestration or choreography choice", [orchestrat, choreograph, coordinator, events]]
+      - ["Idempotent steps, outbox, persisted state", [idempot, outbox, state, retry, persist]]
+    a: |
+      I use a saga. Each service commits its own local transaction, hold stock, charge payment, book the courier. If a step fails, the saga runs compensating actions for the completed steps in reverse order, such as refunding the charge and releasing the hold. For a checkout with several steps I prefer orchestration, a coordinator or a workflow engine that saves the saga state after each step, so it can resume after a crash. Every step and compensation is idempotent, and events are published with the outbox pattern. Users can see in between states, so the UI shows the order as pending until the saga finishes.
+    fb: Mentioning that sagas lack isolation, so users see in between states, shows depth.
+  - q: How do you avoid overselling the last items during a flash sale?
+    keys:
+      - ["Atomic conditional update, not check then write", [conditional, atomic, where available, single update, check then]]
+      - ["Hold with expiry that becomes a sale on payment", [hold, reserve, expire, ttl, timer]]
+      - ["Release expired holds with a job", [release, cleanup, expired, job]]
+      - ["Limit holds per user and bots", [limit, bot, per user, abuse]]
+    a: |
+      When a buyer clicks Buy, I place a hold with one atomic statement, UPDATE stock SET available = available - 1 WHERE sku = ? AND available >= 1, and record the hold with an expiry such as 10 minutes. If payment succeeds within that time, the hold becomes a sale. If not, an idempotent job releases it and returns the unit. Because the check and decrement happen in one statement, two buyers can never take the same last unit. I also limit holds per account to stop bots locking all the stock.
+    fb: The single conditional update is the answer interviewers listen for.
+
+desk:
+  title: The concert ticket checkout
+  lede: Fans complain about seats sold twice and seats that look sold but are empty.
+  situation: |
+    The site checks seat availability when the fan clicks Buy, then charges the card, then marks the seat sold. If payment fails, nothing is undone. Abandoned checkouts are never cleaned up.
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: Match each symptom to its cause.
+          rows:
+            - ["Two fans own the same seat", "Check then write race"]
+            - ["Seats look sold but nobody paid", "Holds never released"]
+            - ["A fan was charged but has no seat", "No compensation when a later step failed"]
+          opts: ["Check then write race", "Holds never released", "No compensation when a later step failed"]
+          why: Each needs its own fix.
+        - q: Which design fixes the first symptom?
+          opts: ["Hold the seat with a conditional update at Buy, with a 10 minute expiry", "Charge the card first", "Add more servers"]
+          a: 0
+          why: An atomic hold makes the seat unavailable to everyone else.
+    - title: Round 2. Compensate and work around
+      items:
+        - type: open
+          q: Write the saga steps and their compensations for buying a ticket.
+          a: "Step 1, hold seat, compensation release seat. Step 2, charge card with an idempotency key, compensation refund. Step 3, issue ticket and send email, compensation cancel ticket. If step 3 fails, refund the card, then release the seat. Every step and compensation is idempotent and the saga state is saved after each step."
+        - q: The refund service is down when a compensation must run. What should the saga do?
+          opts: ["Keep retrying with backoff and alert a human if it keeps failing", "Skip the refund", "Charge the card again"]
+          a: 0
+          why: Compensations must eventually succeed, so they are retried, never dropped.
+  card: |
+    - No global transaction. A saga of local ones.
+    - On failure, compensate finished steps, newest first.
+    - Idempotent steps, saved state, outbox events.
+    - Hold with one conditional update. Expire and release.
+
+refs:
+  - "Hector Garcia-Molina and Kenneth Salem. [Sagas, 1987](https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf)."
+  - "Chris Richardson. [Pattern, Saga](https://microservices.io/patterns/data/saga.html) and [Transactional outbox](https://microservices.io/patterns/data/transactional-outbox.html)."
+  - "Temporal. [Saga pattern made easy](https://temporal.io/blog/saga-pattern-made-easy)."

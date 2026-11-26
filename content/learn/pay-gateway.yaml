@@ -1,0 +1,236 @@
+short: Card payments and gateways
+title: How a card payment works, authorize, capture, refund
+time: about 55 minutes
+tags: [authorize, capture, webhooks, PCI DSS, 3-D Secure]
+lede: A card payment is not one step. The bank first holds the money, then the shop takes it later, and news arrives by webhook. Learn the life of a payment, what can go wrong at each step, and how a payment gateway hides the hard parts.
+
+idea: |
+  When you pay for shoes online, several companies take part.
+
+  - The **merchant**, the shop.
+  - The **payment gateway or processor**, such as Stripe, Adyen or Razorpay, which talks to the card networks for the shop.
+  - The **card network**, such as Visa, Mastercard or RuPay.
+  - The **issuer**, your bank, which gave you the card.
+  - The **acquirer**, the shop's bank, which receives the money.
+
+  A card payment usually has two main steps.
+
+  1. **Authorize.** The issuer checks the card and puts a **hold** on the amount. You see it as pending. No money has moved yet.
+  2. **Capture.** The shop says "I have shipped, take the money". The held amount is then **settled** to the shop, usually in a batch a day or two later.
+
+  Before capture, the shop can **void** the hold. After capture, it can **refund**. If a customer disputes the payment with their bank, the bank can force a **chargeback**.
+
+  !eli5 At a hotel, they swipe your card at check in to hold some money, in case you empty the minibar. At check out they take only what you owe and let the rest of the hold go. That is authorize, then capture.
+
+scenes:
+  - title: The life of one card payment
+    stats: [Step, Payment state, Money moved]
+    nodes:
+      cust: {label: Customer, x: 0, y: 1, kind: box}
+      shop: {label: Shop backend, x: 2, y: 1, kind: def}
+      gw: {label: Payment gateway, x: 4, y: 1, kind: def}
+      net: {label: Card network, x: 6, y: 0, kind: raised}
+      iss: {label: Issuer bank, x: 6, y: 2, kind: raised}
+    links: [[cust, shop], [shop, gw], [gw, net], [net, iss]]
+    steps:
+      - title: Customer pays
+        text: The browser sends the card details straight to the gateway's form and gets back a token. The shop never sees the card number.
+        on: [cust, gw]
+        flow: [[cust, shop, ink], [shop, gw, ink]]
+        stats: [Tokenize, created, none]
+      - title: Authorize
+        text: The gateway asks the issuer, through the card network, to approve 3,000 rupees. The issuer checks the balance and fraud rules and places a hold.
+        on: [gw, net, iss]
+        flow: [[gw, net, ink], [net, iss, ink], [iss, net, def], [net, gw, def]]
+        mark: {iss: ok}
+        stats: [Authorize, authorized, "none, held"]
+      - title: Ship, then capture
+        text: Two days later the shoes ship. The shop calls capture for 3,000. The gateway tells the issuer to take the held money.
+        on: [shop, gw, iss]
+        flow: [[shop, gw, def], [gw, net, def], [net, iss, def]]
+        stats: [Capture, captured, settles in a batch]
+      - title: Webhook with the result
+        text: The gateway sends a webhook, "payment captured", to the shop. The shop's server was down, so the gateway retries for hours until it gets a 200.
+        on: [gw, shop]
+        flow: [[gw, shop, pen]]
+        mark: {shop: warn}
+        stats: [Webhook, captured, settled next day]
+      - title: Refund or dispute
+        text: The customer returns the shoes. The shop calls refund and the money goes back in a few days. If the customer had disputed it with the bank instead, that would be a chargeback.
+        on: [shop, gw, cust]
+        flow: [[shop, gw, def], [shop, cust, def]]
+        mark: {cust: ok}
+        stats: [Refund, refunded, back to customer]
+
+terms:
+  - [Issuer, "The bank that gave the customer the card."]
+  - [Acquirer, "The bank that receives card payments for the merchant."]
+  - [Authorization, "The issuer approves an amount and places a hold."]
+  - [Capture, "The merchant asks to take an authorized amount."]
+  - [Void, "Cancelling an authorization before capture, which releases the hold."]
+  - [Settlement, "The actual transfer of money between banks, usually in daily batches."]
+  - [Chargeback, "A payment reversed by the customer's bank after a dispute."]
+  - [Tokenization, "Replacing the card number with a token that is useless to thieves."]
+  - [3-D Secure, "An extra check with the issuer, such as a one time password, before authorization."]
+  - [Webhook, "An HTTP call from the gateway to your server when something happens."]
+
+how: |
+  ### Payment states you must store
+
+  | State | Meaning | Next |
+  | --- | --- | --- |
+  | created | Checkout started | authorized or failed |
+  | authorized | Money held, not taken | captured, voided or expired |
+  | captured | Shop asked to take it | settled, refunded, disputed |
+  | refunded | Money sent back | done |
+  | failed | Declined or error | customer may retry |
+
+  Holds do not last forever. Many authorizations expire after about 7 days, but the limit depends on the card network, the card type and the kind of merchant. If you capture after the hold expires, the capture can fail. Shops that ship late either capture early or authorize again.
+
+  ### Webhooks are the source of truth for late events
+
+  Some results arrive later, such as a 3-D Secure check, a capture in a batch or a dispute. Gateways send **webhooks** for these. Rules.
+
+  1. **Verify the signature** on every webhook, so nobody can fake "payment succeeded".
+  2. **Reply 200 fast**, then process the event from a queue.
+  3. **Expect duplicates and odd order.** Store the event id with a unique rule and skip repeats. Use the payment's latest state from the gateway when in doubt.
+  4. **Reconcile.** Do not rely only on webhooks, see lesson 7.5.
+
+  ### Make every call idempotent
+
+  Send an idempotency key with every create, capture and refund call, as in lesson 3.7. A retried capture must never take money twice.
+
+  ### Keep card numbers out of your systems
+
+  **PCI DSS** sets rules for anyone who stores, processes or sends card data. Using the gateway's hosted fields or payment page means the card number goes straight to the gateway, and your servers only see a token. That shrinks your PCI scope a lot.
+
+  !key Never mark an order paid based on the browser saying "success". Confirm the payment state with the gateway, through its API or a verified webhook.
+
+diagrams:
+  - type: flow
+    title: The states of a card payment
+    nodes: [["Created", "box"], ["Authorized", "def", "money held"], ["Captured", "def", "money taken"], ["Settled", "raised", "money moved"]]
+    edges: ["issuer approves", "merchant captures", "daily batch"]
+    caption: Side exits are failed, voided, expired, refunded and disputed. Store the state and move it only forward.
+
+life:
+  - ["The hold that ran out", "A furniture shop authorized cards at checkout and captured when the sofa shipped, often three weeks later. Many captures failed because the holds had expired, and some customers no longer had the money. The shop moved to capturing at order time and refunding if an item could not be delivered."]
+  - ["Fake success page", "A small shop marked orders paid when the browser reached the thank you URL. Someone visited the URL directly and got free goods. Checking the payment state with the gateway closed the hole."]
+  - ["The webhook outage", "A shop's webhook endpoint was down for six hours during a sale. The gateway retried and the events arrived late, in a burst. Because the handler deduplicated by event id and processed from a queue, nothing was lost or doubled."]
+
+tradeoffs:
+  - ["Authorize then capture later", "Charge only what ships, easy cancel with a void.", "Holds can expire, more states to track."]
+  - ["Capture at once", "Simple, money is secured.", "Refunds for anything that cannot be delivered."]
+  - ["Hosted payment page", "Smallest PCI scope, gateway handles 3-D Secure.", "Less control over look and flow."]
+  - ["Your own card form posting to your server", "Full control.", "Large PCI scope and risk. Rarely worth it."]
+
+mistakes:
+  - Trusting the browser redirect instead of the gateway's verified state.
+  - Not verifying webhook signatures.
+  - Doing slow work inside the webhook request.
+  - Retrying capture or refund without an idempotency key.
+  - Storing raw card numbers.
+
+security: |
+  Payments attract attackers. Verify every webhook signature, use hosted fields so you never touch card numbers, keep API keys in a secrets manager with only the permissions each service needs, and log every state change for audit. Rate limit payment attempts per card and per account to slow card testing attacks, where criminals try many stolen numbers with small charges.
+
+quiz:
+  - q: A customer sees a pending charge, but the shop has not shipped. What state is the payment in?
+    opts: ["Authorized, the money is held", "Captured and settled", "Refunded"]
+    a: 0
+    why: An authorization places a hold. Capture takes the money.
+  - type: sort
+    q: Void, refund or chargeback?
+    rows:
+      - ["The shop cancels before capture", "Void"]
+      - ["The shop sends money back after capture", "Refund"]
+      - ["The customer's bank reverses it after a dispute", "Chargeback"]
+    opts: ["Void", "Refund", "Chargeback"]
+    why: Each one happens at a different point and has a different cost.
+  - type: fill
+    q: Replacing the card number with a value that is useless to thieves is called ____.
+    a: ["tokenization", "tokenisation"]
+    why: Tokens keep card numbers out of your systems.
+  - q: Spot the security bug.
+    info: |
+      ```python
+      @app.post("/webhooks/payments")
+      def hook():
+          event = request.json
+          if event["type"] == "payment.captured":
+              mark_order_paid(event["order_id"])
+          return "ok"
+      ```
+    opts: ["No signature check, so anyone can post a fake paid event", "It should be a GET", "JSON cannot hold order ids"]
+    a: 0
+    why: Verify the gateway's signature, dedupe by event id and process from a queue.
+  - q: Why should a webhook handler reply 200 quickly and process later?
+    opts: ["Slow replies cause timeouts and retries, which bring duplicates and delays", "Gateways do not wait for replies", "200 means refund"]
+    a: 0
+    why: Fast acknowledgement and queued processing keep things calm under load.
+  - q: Your shop captures 25 days after authorizing. What risk does this bring?
+    opts: ["The authorization may have expired, so capture can fail", "The card number changes", "Nothing, holds never expire"]
+    a: 0
+    why: Hold lifetimes are limited and vary by network and merchant type.
+
+interview:
+  - q: Walk me through the lifecycle of an online card payment.
+    keys:
+      - ["Tokenize card through gateway, merchant avoids raw card data", [token, hosted, pci, gateway]]
+      - ["Authorization by issuer places a hold", [authoriz, hold, issuer]]
+      - ["Capture later, settlement in batches", [capture, settle, batch]]
+      - ["Refunds, voids, chargebacks", [refund, void, chargeback, dispute]]
+      - ["Webhooks, idempotency and state machine", [webhook, idempot, state]]
+    a: |
+      The customer enters the card in the gateway's hosted fields, which return a token, so the merchant never handles the number. The merchant asks the gateway to authorize. The gateway routes through the card network to the issuer, which runs checks, maybe 3-D Secure, and places a hold. Later the merchant captures, usually on shipping, and the amount settles to the acquirer in a daily batch. Before capture the merchant can void. After capture it can refund, and the customer can dispute, which leads to a chargeback. The merchant stores a payment state machine, sends idempotency keys on every call, and listens to signed webhooks for late events, deduplicating by event id.
+    fb: Naming issuer, acquirer and the authorize then capture split shows you know how money really moves.
+  - q: How do you handle webhooks from a payment provider reliably?
+    keys:
+      - ["Verify signature", [signature, verify, hmac, sign]]
+      - ["Acknowledge fast, process async from a queue", [fast, 200, queue, async, background]]
+      - ["Dedupe by event id, handle out of order", [dedup, event id, duplicate, order, unique]]
+      - ["Reconcile or fetch state from the API", [reconcil, fetch, api, poll, source of truth]]
+    a: |
+      I verify the signature on every webhook with the provider's secret and reject anything that fails. I store the raw event with its id under a unique constraint, reply 200 at once and process it from a queue, so slow work never causes provider timeouts. Duplicates are skipped by event id. Because events can arrive out of order, I either fetch the current payment from the provider's API before acting or only move states forward. Finally I run a daily reconciliation against the provider's reports to catch any event that never arrived.
+    fb: Reconciliation as a safety net for missed webhooks is what separates good answers from great ones.
+
+desk:
+  title: Paid orders that were never paid
+  lede: A shop finds orders marked paid with no money from the gateway. Review the checkout.
+  situation: |
+    The shop marks an order paid when the browser lands on /thank-you?order=81. Webhooks are handled inside the request and take about 4 seconds each. Card details pass through the shop's own server to the gateway.
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: What kind of problem is each one?
+          rows:
+            - ["Paid when the browser reaches /thank-you", "Security bug, trust in the client"]
+            - ["Webhook work takes 4 s inside the request", "Reliability problem, timeouts and retries"]
+            - ["Card numbers pass through the shop server", "Compliance issue, PCI DSS scope"]
+          opts: ["Security bug, trust in the client", "Reliability problem, timeouts and retries", "Compliance issue, PCI DSS scope"]
+          why: One checkout, three different classes of problem.
+        - q: What should decide that an order is paid?
+          opts: ["The payment state from the gateway API or a verified webhook", "The thank you page", "The customer's email"]
+          a: 0
+          why: Only the gateway knows if money was authorized or captured.
+    - title: Round 2. Fix and work around
+      items:
+        - type: open
+          q: Gateway webhooks will be delayed for two hours tomorrow because of planned work. What is a safe workaround?
+          a: "Run a job every few minutes that lists recent payments from the gateway API and updates any order whose state changed. Keep the webhook handler as it is, deduplicated by event id, so the late burst of webhooks later is harmless."
+        - q: Which change shrinks the PCI scope the most?
+          opts: ["Use the gateway's hosted fields so card numbers never reach your server", "Encrypt the logs", "Use a longer password"]
+          a: 0
+          why: If you never touch card data, most PCI requirements no longer apply to your servers.
+  card: |
+    - Authorize holds. Capture takes. Settlement moves money later.
+    - Void before capture, refund after, chargeback by the bank.
+    - Trust the gateway, not the browser.
+    - Webhooks. Verify, ack fast, dedupe, reconcile.
+    - Tokens, not card numbers.
+
+refs:
+  - "Stripe. [Place a hold on a payment method](https://docs.stripe.com/payments/place-a-hold-on-a-payment-method)."
+  - "Stripe. [Receive events with webhooks](https://docs.stripe.com/webhooks)."
+  - "PCI Security Standards Council. [PCI DSS](https://www.pcisecuritystandards.org/standards/pci-dss/)."

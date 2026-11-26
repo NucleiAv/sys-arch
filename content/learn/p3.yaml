@@ -94,6 +94,35 @@ rounds:
         q: Your Raft cluster of 3 nodes loses 2 nodes. Writes stop. Why, and what is the workaround?
         a: "Raft needs a majority, 2 of 3, to commit writes. With one node left there is no majority, so it stops writes to stay consistent. Workaround. Bring a node back, or restore from a snapshot to a new cluster. Plan 5 nodes across zones if you must survive 2 failures."
 
+  - title: Round 6. Kafka, idempotency, locks and discovery
+    items:
+      - type: num
+        q: A Kafka topic has 6 partitions and one consumer group runs 9 consumers. How many are idle?
+        a: 3
+        tol: 0
+        why: Each partition goes to one consumer in the group.
+      - q: A payment API gets the same Idempotency-Key twice. The first request finished. What should it return?
+        opts: ["The saved response from the first request", "A new charge", "An error asking the user to wait a day"]
+        a: 0
+        why: Same key, same result, no second charge.
+      - q: Worker A's lock lease expired during a long pause and Worker B now holds it. What stops A from overwriting B's data?
+        opts: ["A fencing token checked by the storage", "A longer pause", "Nothing"]
+        a: 0
+        why: Storage rejects writes with an older token.
+      - type: num
+        q: Heartbeats every 4 s, removal after 3 misses, client cache of 10 s. For how many seconds can callers still pick a dead copy?
+        a: 22
+        tol: 0
+        why: 3 × 4 + 10 = 22 seconds.
+      - type: sort
+        q: Problem or fix?
+        rows:
+          - ["Keying events by country with one huge country", "Problem"]
+          - ["Committing offsets after processing, with idempotent consumers", "Fix"]
+          - ["A Redis lock with no expiry", "Problem"]
+        opts: ["Problem", "Fix"]
+        why: Spot the design smell before it hurts.
+
 card: |
   - Pick consistency per feature.
   - Ack after the work, consumers idempotent.

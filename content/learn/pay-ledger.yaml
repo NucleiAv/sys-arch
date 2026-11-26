@@ -1,0 +1,237 @@
+short: Wallets and ledgers
+title: Digital wallets and the double-entry ledger
+time: about 55 minutes
+tags: [wallet, ledger, double entry, concurrency]
+lede: A wallet balance looks like one number, but a good wallet never just edits that number. Learn why money systems record every movement as balanced entries in a ledger, and how that stops concurrent transfers from creating or destroying money.
+
+idea: |
+  A naive wallet keeps one row per user with a `balance` column and changes it on every transfer. It works until two transfers touch the same account at the same moment. Both read the old balance, both write a new one, and one change is lost. Money is created or destroyed, and nobody can tell what happened.
+
+  Money systems use a **ledger** instead. A ledger is an **append only** list of **entries**. You never edit or delete an entry. To fix a mistake, you add a new entry that reverses it.
+
+  The ledger uses **double entry**, a method accountants have used for over 500 years. Every transaction has at least two entries, and they always add up to zero. Sending 100 rupees from Asha to Ben writes "Asha −100" and "Ben +100". If the entries of a transaction do not sum to zero, the system refuses it. So money can move, but it can never appear from nowhere or vanish.
+
+  A balance is then the **sum of an account's entries**. Many systems also keep a stored balance for speed, updated in the same transaction as the entries.
+
+  !eli5 Think of a class notebook where every swap of stickers is written on two lines. "Asha gave 3 stickers" and "Ben got 3 stickers". Nobody erases a line. If you want to know how many stickers Ben has, add up all his lines.
+
+scenes:
+  - title: Two transfers at once, with and without a ledger
+    stats: [Step, Asha, Ben, Chen, Total]
+    nodes:
+      t1: {label: Transfer 1, x: 0, y: 0, kind: box, tag: Asha to Ben 100}
+      t2: {label: Transfer 2, x: 0, y: 2, kind: box, tag: Asha to Chen 100}
+      db: {label: Wallet database, x: 3, y: 1, kind: def}
+      led: {label: Ledger entries, x: 6, y: 1, kind: raised, tag: append only}
+    links: [[t1, db], [t2, db], [db, led]]
+    steps:
+      - title: Start
+        text: Asha has 500, Ben 0, Chen 0. The total is 500.
+        on: [db]
+        stats: [Start, "500", "0", "0", "500"]
+      - title: Both read 500
+        text: Two transfers run at the same moment. Each reads Asha's balance as 500.
+        on: [t1, t2, db]
+        flow: [[db, t1, ink], [db, t2, ink]]
+        stats: [Read, "500", "0", "0", "500"]
+      - title: Both write 400
+        text: Each subtracts 100 and writes 400. Ben and Chen each get 100. Asha should have 300, but has 400. The total is now 600. Money was created.
+        on: [t1, t2, db]
+        flow: [[t1, db, atk], [t2, db, atk]]
+        mark: {db: bad}
+        stats: [Lost update, "400", "100", "100", "600, wrong"]
+      - title: With a ledger and a row lock
+        text: Each transfer locks Asha's account row, checks the balance from the ledger, and inserts two entries that sum to zero, all in one transaction. The second waits for the first.
+        on: [t1, db, led]
+        flow: [[t1, db, def], [db, led, def]]
+        stats: [Transfer 1, "400", "100", "0", "500"]
+      - title: Books stay balanced
+        text: Transfer 2 then runs on the new balance. Asha 300, Ben 100, Chen 100. Every transaction's entries sum to zero, so the total is still 500.
+        on: [t2, db, led]
+        flow: [[t2, db, def], [db, led, def]]
+        mark: {led: ok}
+        stats: [Transfer 2, "300", "100", "100", "500"]
+
+terms:
+  - [Ledger, "An append only record of every money movement."]
+  - [Entry, "One line in the ledger, an amount added to or taken from one account."]
+  - [Double entry, "Every transaction has entries that sum to zero, so money is never created or lost."]
+  - [Debit and credit, "Accounting words for the two sides of an entry. Which one increases a balance depends on the account type."]
+  - [Balance, "The sum of all entries of an account."]
+  - [Reversal, "A new transaction that undoes an earlier one, instead of editing it."]
+  - [System account, "An account owned by the company, such as fees or money in transit."]
+
+how: |
+  ### A minimal ledger schema
+
+  ```sql
+  CREATE TABLE ledger_entries (
+    id          bigserial PRIMARY KEY,
+    txn_id      uuid NOT NULL,
+    account_id  bigint NOT NULL,
+    amount      bigint NOT NULL,       -- in paise, never floats
+    created_at  timestamptz NOT NULL DEFAULT now()
+  );
+  -- every txn_id must sum to 0, checked in the same transaction
+  ```
+
+  ### Rules that keep money safe
+
+  1. **Integer amounts in the smallest unit**, such as paise or cents. Never floating point. 0.1 + 0.2 is not exactly 0.3 in floats.
+  2. **Append only.** No UPDATE or DELETE on entries. Mistakes get a reversal.
+  3. **Every transaction sums to zero**, checked before commit.
+  4. **One database transaction** writes all entries of a money transaction, plus any stored balances.
+  5. **Serialize per account.** Lock the account rows, in a fixed order such as account id, or use a conditional update on the stored balance. This stops the lost update and avoids deadlocks, see lesson 2.7.
+  6. **Idempotency key** on every transfer request, see lesson 3.7.
+
+  ### Fees and money in flight
+
+  Real transfers touch more than two accounts. A 1,000 rupee top up with a 20 rupee fee could be.
+
+  | Account | Amount |
+  | --- | --- |
+  | Bank clearing, system | −1,000 |
+  | Asha wallet | +980 |
+  | Fees revenue, system | +20 |
+  | Sum | 0 |
+
+  ### Checking the books
+
+  Because entries never change, you can always check. The sum of all entries across all accounts must be zero. Each stored balance must equal the sum of its entries. A job that runs these checks every night finds bugs before customers do.
+
+  ### Hot accounts
+
+  A popular merchant account can receive thousands of payments a second, and every one locks the same row. Common fixes are to split it into several sub accounts and sum them, or to write entries without locking the receiving side and update its stored balance in batches. Only the paying side needs a balance check.
+
+  !key Store movements, not just balances. A balance is a summary you can always recompute. Movements are the truth.
+
+diagrams:
+  - type: layers
+    title: What a ledger protects you from
+    attack: a buggy or concurrent transfer
+    layers:
+      - ["Idempotency key", "Retries do not post twice", "stop"]
+      - ["Row lock in a fixed order", "No lost updates, no deadlocks", "stop"]
+      - ["Entries must sum to zero", "Money cannot appear or vanish", "stop"]
+      - ["Append only with reversals", "Full history for audit", "partial"]
+      - ["Nightly balance checks", "Finds any remaining bug fast", "partial"]
+    caption: Each layer is simple. Together they make a wallet that auditors and customers can trust.
+
+life:
+  - ["500 years of double entry", "Luca Pacioli described double entry bookkeeping in a book printed in Venice in 1494. Modern payment companies still use the same rule in code, because it makes errors visible instead of silent."]
+  - ["The float bug", "A wallet stored balances as floating point numbers. After millions of small cashback credits, totals drifted by a few rupees, and auditors could not match them. Moving to integers in paise ended the drift."]
+  - ["A hot merchant", "A food delivery company's main merchant account was updated on every order and became the slowest row in the database at dinner time. Splitting it into 16 sub accounts and summing them for reports removed the bottleneck."]
+
+tradeoffs:
+  - ["Ledger only, balance computed by summing", "Simplest truth, nothing to drift.", "Slow for accounts with millions of entries."]
+  - ["Ledger plus stored balance", "Fast reads.", "Must update both in one transaction and check they match."]
+  - ["Row locks per account", "Correct and simple.", "Hot accounts become a bottleneck."]
+  - ["Sub accounts for hot accounts", "Spreads the load.", "Balances need a sum across sub accounts."]
+
+mistakes:
+  - Updating a balance column with no history of movements.
+  - Using floating point for money.
+  - Editing or deleting ledger entries to fix mistakes.
+  - Reading a balance into the app and writing it back without a lock.
+  - Locking accounts in different orders in different code paths.
+
+security: |
+  Insiders and attackers both target ledgers. Make entries append only at the database level, for example by revoking UPDATE and DELETE from the application user. Require two people to approve manual adjustments, log who did what, and alert when the nightly sum check is not zero. Race conditions in transfers are real attack paths, so test with many parallel requests.
+
+quiz:
+  - type: fill
+    q: In double entry bookkeeping, the entries of every transaction must sum to ____.
+    a: ["zero", "0"]
+    why: That is what stops money appearing or vanishing.
+  - q: A transfer was posted with the wrong amount. What is the right fix in a ledger?
+    opts: ["Add a reversal transaction and post the correct one", "Edit the old entry", "Delete the old entry"]
+    a: 0
+    why: Ledgers are append only, so history stays complete.
+  - q: Why store money as integer paise instead of floating point rupees?
+    opts: ["Floats cannot represent many decimal values exactly, so totals drift", "Integers use more memory", "Floats are not allowed in SQL"]
+    a: 0
+    why: 0.1 + 0.2 is not exactly 0.3 in binary floating point.
+  - type: num
+    q: A 2,000 rupee top up has a 2 percent fee. How many rupees go to the customer's wallet if the fee is taken from the top up?
+    a: 1960
+    tol: 0
+    why: 2 percent of 2,000 is 40. 2,000 − 40 = 1,960. The entries are −2,000, +1,960 and +40, which sum to zero.
+  - q: Spot the bug.
+    info: |
+      ```python
+      a = get_balance(from_id); b = get_balance(to_id)
+      set_balance(from_id, a - amt)
+      set_balance(to_id, b + amt)
+      ```
+    opts: ["No transaction and no lock, so parallel transfers lose updates and a crash leaves half a transfer", "The variable names are too short", "amt should be a string"]
+    a: 0
+    why: Insert balanced entries in one transaction with the paying account locked.
+  - type: sort
+    q: Which fix fits each problem?
+    rows:
+      - ["Two transfers from one account at once", "Lock the account row or use a conditional update"]
+      - ["A retried request posts twice", "Idempotency key"]
+      - ["One merchant row is updated thousands of times a second", "Split into sub accounts"]
+    opts: ["Lock the account row or use a conditional update", "Idempotency key", "Split into sub accounts"]
+    why: Each problem has its own tool.
+
+interview:
+  - q: Design the data model for a digital wallet that supports transfers between users.
+    keys:
+      - ["Append only ledger of entries", [ledger, entries, append only, journal]]
+      - ["Double entry, every transaction sums to zero", [double entry, sum to zero, balanced, debit, credit]]
+      - ["Integer minor units, no floats", [integer, paise, cents, minor unit, no float]]
+      - ["Concurrency control with locks or conditional updates in one transaction", [lock, transaction, for update, conditional, serializ]]
+      - ["Idempotency and reconciliation checks", [idempot, reconcil, check, audit]]
+    a: |
+      I keep an accounts table and an append only ledger_entries table with txn_id, account_id and a signed integer amount in paise. Every transfer inserts at least two entries that sum to zero, checked in the same database transaction, so money cannot be created or lost. Balances are the sum of entries, and I also keep a stored balance per account, updated in that same transaction, for fast reads. To stop concurrent overspending I lock the paying account row, locking rows in a fixed order to avoid deadlocks, and check the balance before inserting. Each request carries an idempotency key. Mistakes are fixed with reversals, and a nightly job checks that all entries sum to zero and every stored balance matches its entries.
+    fb: Saying "store movements, not just balances" and "sum to zero" in the first breath is ideal.
+  - q: How do you handle a merchant account that receives thousands of credits a second?
+    keys:
+      - ["Identify it as a hot row lock contention problem", [hot, contention, lock, bottleneck]]
+      - ["Split into sub accounts or shards", [sub account, shard, split, bucket]]
+      - ["Only debits need balance checks, credits can be batched", [credit, batch, no check, only debit]]
+    a: |
+      Every credit locking the same row makes that row a bottleneck. Credits do not need a balance check, so I can insert their ledger entries without locking and update the stored balance in batches. Or I split the merchant into several sub accounts, choose one at random for each credit and sum them when reporting or paying out. Debits from the merchant still go through a locked, checked path.
+    fb: Noticing that only the paying side needs a check is the insight that unlocks the design.
+
+desk:
+  title: The wallet audit
+  lede: Auditors cannot match the wallet's total balances to the bank. Review the design.
+  situation: |
+    Each user row has a balance stored as a decimal float. Transfers read both balances, compute new values in the app and write them back. Support staff fix mistakes by editing balances directly.
+  rounds:
+    - title: Round 1. Identify the issues
+      items:
+        - type: sort
+          q: What kind of issue is each one?
+          rows:
+            - ["Floats for money", "Rounding drift"]
+            - ["Read in app, write back", "Lost updates under concurrency"]
+            - ["Support edits balances", "No audit trail, a GRC issue"]
+          opts: ["Rounding drift", "Lost updates under concurrency", "No audit trail, a GRC issue"]
+          why: Three different failures in one design.
+        - q: What is the single biggest change?
+          opts: ["Move to an append only double entry ledger in integer paise", "Add more servers", "Cache balances"]
+          a: 0
+          why: It fixes drift, gives history and makes checks possible.
+    - title: Round 2. Benefits and controls
+      items:
+        - q: What is a benefit of append only entries for auditors?
+          opts: ["Every movement and correction stays visible", "They use less disk", "They are faster to edit"]
+          a: 0
+          why: Nothing disappears, so every balance can be explained.
+        - type: open
+          q: Support still needs to fix real mistakes. Describe a safe process.
+          a: "Support raises an adjustment request with the reason and the ticket id. A second person approves it. The system posts a balanced reversal or adjustment transaction, against a system account such as corrections, with the approver's id. Nobody edits entries. Daily reports list all adjustments for review."
+  card: |
+    - Store movements, not just balances.
+    - Every transaction sums to zero.
+    - Integers in paise. Append only. Reverse, never edit.
+    - Lock the paying account in a fixed order. Idempotency key.
+    - Check the books every night.
+
+refs:
+  - "Martin Fowler. [Accounting patterns](https://martinfowler.com/eaaDev/AccountingNarrative.html)."
+  - "Modern Treasury. [Accounting for developers](https://www.moderntreasury.com/journal/accounting-for-developers-part-i)."
+  - "Square Engineering. [Books, an immutable double-entry accounting database service](https://developer.squareup.com/blog/books-an-immutable-double-entry-accounting-database-service/)."

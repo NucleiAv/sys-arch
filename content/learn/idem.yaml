@@ -1,0 +1,212 @@
+short: Idempotency
+title: Idempotency, making retries safe
+time: about 45 minutes
+tags: [idempotency key, retries, exactly once, dedup]
+lede: Networks lose replies, not only requests. When a client cannot tell whether a payment went through, it retries, and the customer may pay twice. Learn how idempotency keys turn "at least once" into "exactly once in effect".
+
+idea: |
+  An operation is **idempotent** if doing it twice has the same effect as doing it once. Setting your phone number to 98765 is idempotent. Adding 100 rupees to a balance is not.
+
+  Retries are everywhere. A mobile app on a weak network sends "pay 500", the server charges the card, and the reply is lost on the way back. The app sees a timeout and sends the request again. Without protection, the card is charged twice.
+
+  The fix is an **idempotency key**. The client makes a unique id, such as a UUID, for each intended action and sends it with every retry. The server remembers each key and the result. When the same key comes again, it returns the saved result instead of doing the work again.
+
+  !eli5 You post a letter with a tracking number. If you are not sure it arrived and post a copy with the same tracking number, the post office sees it already delivered that number and throws the copy away.
+
+scenes:
+  - title: A lost reply and a retry
+    stats: [Step, Charges made, Customer sees]
+    nodes:
+      app: {label: Mobile app, x: 0, y: 1, kind: box}
+      api: {label: Payment API, x: 3, y: 1, kind: def}
+      keys: {label: Idempotency store, x: 3, y: 3, kind: raised, tag: key to result}
+      psp: {label: Card network, x: 6, y: 1, kind: raised}
+    links: [[app, api], [api, keys], [api, psp]]
+    steps:
+      - title: First request
+        text: "The app sends pay 500 with Idempotency-Key 7f3a. The API saves the key as in progress, then charges the card."
+        on: [app, api, keys, psp]
+        flow: [[app, api, ink], [api, keys, def], [api, psp, ink]]
+        stats: [Request, "1", spinner]
+      - title: The reply is lost
+        text: The charge worked and the API saved the result under key 7f3a. But the phone's network dropped, so the reply never arrived.
+        on: [api, app]
+        flow: [[api, app, atk]]
+        mark: {app: warn}
+        stats: [Lost reply, "1", timeout]
+      - title: Retry with the same key
+        text: The app retries with the same key 7f3a. The API finds the key with a finished result.
+        on: [app, api, keys]
+        flow: [[app, api, ink], [api, keys, def]]
+        stats: [Retry, "1", spinner]
+      - title: Return the saved result
+        text: The API returns the saved reply, "paid, receipt R-881". No second charge happens.
+        on: [api, app]
+        flow: [[api, app, def]]
+        mark: {app: ok, psp: ok}
+        stats: [Same answer, "1", paid once]
+      - title: Without the key
+        text: If the app had no key, the retry would look like a new payment, and the card network would charge 500 again.
+        on: [api, psp]
+        flow: [[api, psp, atk]]
+        mark: {psp: bad}
+        stats: [No key, "2", charged twice]
+
+terms:
+  - [Idempotent, "Doing it twice has the same effect as doing it once."]
+  - [Idempotency key, "A unique id the client sends with a request, reused on every retry of the same intended action."]
+  - [At least once, "Every message or request is delivered, maybe more than once."]
+  - [Exactly once effect, "Repeats are possible, but the result happens only once, thanks to dedup."]
+  - [Dedup table, "A table of keys already processed, often with a unique constraint."]
+  - [Safe method, "An HTTP method that does not change state, such as GET."]
+
+how: |
+  ### Which HTTP methods are idempotent
+
+  | Method | Idempotent by the HTTP standard? | Why |
+  | --- | --- | --- |
+  | GET, HEAD, OPTIONS | Yes | They only read. |
+  | PUT | Yes | It sets a resource to a value. Twice gives the same state. |
+  | DELETE | Yes | Deleting twice leaves it deleted. The second reply may be 404. |
+  | POST | No | It usually creates something new each time. |
+  | PATCH | Not guaranteed | Depends on the change, "add 1" is not idempotent. |
+
+  POST is where you need idempotency keys most. Stripe and many other payment APIs accept an `Idempotency-Key` header, and the IETF is writing a standard for that header.
+
+  ### How to build it on the server
+
+  1. **Store the key first**, inside the same transaction as the work if you can, in a table with a **unique** constraint on the key.
+  2. If the insert fails because the key exists, look at the saved state.
+     - **Finished.** Return the saved response.
+     - **In progress.** Return 409 Conflict, so the client waits and retries later.
+  3. Also save a **hash of the request body**. If the same key comes with a different body, reject it with an error. That is a client bug.
+  4. Keep keys for a set time, for example 24 hours, then delete them.
+
+  ### Idempotent consumers
+
+  Queues and Kafka deliver at least once. Make consumers safe by recording each processed message id in a dedup table, in the same transaction as the work. Or make the work naturally idempotent, for example `UPDATE orders SET status = 'paid' WHERE id = 81`, which is safe to repeat. "Add 500 to balance" is not.
+
+  ### Where the key comes from
+
+  The key must be made by the **client**, once per user intention, and reused on retries. If the server made it, a retry would get a new key. Use a random UUID, or something tied to the action, such as the order id.
+
+  !key Exactly once delivery across a network is not possible in general. Exactly once **effect** is. It is at least once delivery plus idempotent processing.
+
+diagrams:
+  - type: flow
+    title: Server side idempotency check
+    nodes: [["Request with key", "box"], ["Insert key, unique", "def"], ["New key, do the work", "raised", "save result"], ["Return result", "def"]]
+    edges: ["", "inserted", ""]
+    caption: If the insert hits the unique rule, skip the work and return the saved result, or 409 while the first try is still running.
+
+life:
+  - ["Stripe's idempotency keys", "Stripe lets clients send an Idempotency-Key header on POST requests. Retries with the same key return the first result, including errors. Its engineers have written about building this on top of PostgreSQL transactions."]
+  - ["Double orders on a slow network", "A food app saw some customers charged twice on trains and in lifts. The app retried on timeout with a new request each time. Adding a key per checkout tap stopped it."]
+  - ["The webhook that fired twice", "A payment provider sent the same paid webhook twice after a timeout. The shop shipped two parcels. Storing the event id with a unique rule and skipping repeats fixed it."]
+
+tradeoffs:
+  - ["Idempotency keys", "Safe retries for non idempotent actions.", "A table of keys to store, expire and look up."]
+  - ["Naturally idempotent operations", "No extra storage.", "Not every action can be written that way."]
+  - ["Dedup in consumers", "Makes at least once delivery safe.", "Must keep ids at least as long as redelivery can happen."]
+
+mistakes:
+  - Retrying POST requests without a key.
+  - Making a new key on every retry.
+  - Checking for the key, then inserting it later, so two parallel retries both pass.
+  - Saving the key outside the transaction that does the work.
+  - Treating the same key with a different body as a normal request.
+
+security: |
+  Idempotency keys are not secrets, but scope them per user or per API account. Otherwise one customer could guess another's key and read a saved response. Also rate limit retries. A retry storm from a buggy client can look like an attack and overload the payment provider.
+
+quiz:
+  - q: Which request is idempotent as written?
+    opts: ["PUT /users/9/phone with 98765", "POST /payments with 500", "PATCH /accounts/9 add 100 to balance"]
+    a: 0
+    why: Setting a value twice leaves the same state.
+  - q: Who should create the idempotency key?
+    opts: ["The client, once per user action, reused on retries", "The server, on each request", "The database, on each insert"]
+    a: 0
+    why: Only the client knows which requests are retries of the same action.
+  - type: fill
+    q: Exactly once effect is at least once delivery plus ____ processing.
+    a: ["idempotent"]
+    why: Repeats arrive, but they do not repeat the effect.
+  - q: Spot the bug.
+    info: |
+      ```python
+      if not db.exists("SELECT 1 FROM idem WHERE key=%s", [key]):
+          charge_card(amount)
+          db.run("INSERT INTO idem(key) VALUES (%s)", [key])
+      ```
+    opts: ["Two parallel retries can both pass the check and both charge", "exists is too slow", "The key should be an integer"]
+    a: 0
+    why: Insert the key first with a unique constraint, and act only if the insert succeeds.
+  - type: sort
+    q: How should the server answer each case?
+    rows:
+      - ["Same key, first request finished", "Return the saved response"]
+      - ["Same key, first request still running", "409 Conflict, retry later"]
+      - ["Same key, different request body", "Reject as a client error"]
+    opts: ["Return the saved response", "409 Conflict, retry later", "Reject as a client error"]
+    why: Each case needs its own clear reply.
+
+interview:
+  - q: How do you make a payment API safe to retry?
+    keys:
+      - ["Client sends an idempotency key per intended action", [idempotency key, idempotency-key, unique key, uuid, client]]
+      - ["Server stores key with unique constraint and the result", [unique, store, table, save, result]]
+      - ["Return saved response on repeat, 409 if in progress", [saved response, same response, 409, in progress, conflict]]
+      - ["Check request body hash and expire keys", [hash, body, expire, ttl, 24]]
+    a: |
+      The client generates a unique key for each payment the user intends, and sends it as an Idempotency-Key header on the first try and every retry. The server inserts the key into a table with a unique constraint, together with a hash of the request body, ideally in the same transaction as the payment record. If the insert succeeds it does the work and saves the response. If the key exists and the work is done, it returns the saved response. If the work is still running, it returns 409 so the client retries later. If the body differs, it rejects the request. Keys expire after about a day.
+    fb: The unique constraint, not a check then insert, is the detail that shows you thought about races.
+  - q: Kafka delivers a message twice to your consumer. How do you avoid double processing?
+    keys:
+      - ["At least once delivery is normal", [at least once, redeliver, duplicate, normal]]
+      - ["Dedup with processed ids in a unique table", [dedup, processed, message id, unique, seen]]
+      - ["Same transaction as the work", [same transaction, atomic, together]]
+      - ["Or make the operation naturally idempotent", [naturally, set status, upsert, idempotent operation]]
+    a: |
+      Duplicates are expected with at least once delivery, so the consumer must be idempotent. I either write the operation so repeating it is harmless, such as setting a status or an upsert by id, or I record each processed message id in a dedup table with a unique constraint, in the same transaction as the work. On a duplicate the insert fails and I skip the work but still commit the offset.
+    fb: Putting the dedup insert in the same transaction is the key point.
+
+desk:
+  title: Double charges on the train
+  lede: Customers on slow networks report being charged twice. Review the checkout design.
+  situation: |
+    The app retries POST /payments up to 3 times after a 10 second timeout. Each retry makes a new request id. The payment service calls the card provider and returns the result.
+  rounds:
+    - title: Round 1. Find the cause
+      items:
+        - q: Why are some customers charged twice?
+          opts: ["The first charge worked but the reply was lost, and the retry looked like a new payment", "The card provider is broken", "The timeout is too long"]
+          a: 0
+          why: A lost reply makes a successful charge look like a failure to the app.
+        - type: sort
+          q: Benefit or risk?
+          rows:
+            - ["One key per checkout tap, reused on retries", "Benefit"]
+            - ["A new request id on each retry", "Risk"]
+            - ["Unique constraint on the key column", "Benefit"]
+          opts: ["Benefit", "Risk"]
+          why: The key must stay the same across retries.
+    - title: Round 2. Fix it
+      items:
+        - type: open
+          q: Describe the full fix, client and server.
+          a: "Client. Create one UUID when the user taps Pay, store it with the cart, and send it as Idempotency-Key on every retry. Server. Insert the key with a unique constraint and a hash of the body before calling the card provider, also pass the key to the provider if it supports one. On a repeat, return the saved result, or 409 if still in progress. Expire keys after 24 hours."
+        - q: The card provider also supports idempotency keys. Should you pass yours through?
+          opts: ["Yes, so a retry from your server to the provider is also safe", "No, one layer is enough", "Only for refunds"]
+          a: 0
+          why: Every hop that can retry needs protection.
+  card: |
+    - Twice has the same effect as once.
+    - Client makes one key per action, reuses it on retries.
+    - Insert key first, unique constraint, save the result.
+    - Exactly once effect = at least once + idempotent.
+
+refs:
+  - "Stripe. [Idempotent requests](https://docs.stripe.com/api/idempotent_requests)."
+  - "IETF. [The Idempotency-Key HTTP header field, draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)."
+  - "Brandur Leach. [Implementing Stripe-like idempotency keys in Postgres](https://brandur.org/idempotency-keys)."

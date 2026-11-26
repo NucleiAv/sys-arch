@@ -1,0 +1,210 @@
+short: Query plans and search
+title: Query plans, composite indexes and search engines
+time: about 55 minutes
+tags: [EXPLAIN, composite index, inverted index, Elasticsearch]
+lede: The same query can read 20 rows or 20 million. Learn to read a query plan, design an index that matches the query, and see why a search engine finds "running shoes" when SQL LIKE cannot.
+
+idea: |
+  When you send SQL, the database does not run it word by word. A part called the **planner** looks at your query, the indexes and some statistics about the data, and picks a **plan**. The plan is the list of steps, such as "scan the whole table" or "walk this index".
+
+  You can see the plan with `EXPLAIN`. `EXPLAIN ANALYZE` runs the query and also shows the real times and row counts. Reading a plan is the fastest way to find out why a query is slow.
+
+  Search boxes are a different problem. A user types "running shoe" and expects to find "Shoes for runners". SQL `LIKE '%running shoe%'` cannot use a normal index and misses that match. A **search engine** such as Elasticsearch or OpenSearch builds an **inverted index**, a map from each word to the documents that contain it, and ranks the results.
+
+  !eli5 A query plan is a route for a delivery driver. The driver can visit every house on every street, or look up the right street in a map first. The planner picks the route. EXPLAIN shows you the route it picked.
+
+scenes:
+  - title: One query, three plans
+    stats: [Plan, Rows read, Sort needed, Time]
+    nodes:
+      q: {label: Latest 20 orders of user 42, x: 0, y: 1, kind: box}
+      seq: {label: Full table scan, x: 3, y: 0, kind: atk, tag: 50 million rows}
+      idx1: {label: Index on user_id, x: 3, y: 2, kind: def}
+      idx2: {label: "Index on user_id, created_at", x: 3, y: 4, kind: def}
+      out: {label: 20 rows, x: 6, y: 2, kind: raised}
+    links: [[q, seq], [q, idx1], [q, idx2], [seq, out], [idx1, out], [idx2, out]]
+    steps:
+      - title: The query
+        text: "SELECT * FROM orders WHERE user_id = 42 ORDER BY created_at DESC LIMIT 20. User 42 has 3,000 orders in a table of 50 million."
+        on: [q]
+        stats: [Query, "0", "-", "-"]
+      - title: No index
+        text: The plan says Seq Scan. The database reads all 50 million rows, keeps 3,000, sorts them and returns 20.
+        on: [q, seq, out]
+        flow: [[q, seq, atk], [seq, out, atk]]
+        mark: {seq: bad}
+        stats: [Seq Scan, "50,000,000", "yes", "8 s"]
+      - title: Index on user_id only
+        text: The plan says Index Scan. It finds the 3,000 rows of user 42 quickly, but must still sort all 3,000 by date to get the newest 20.
+        on: [q, idx1, out]
+        flow: [[q, idx1, def], [idx1, out, def]]
+        mark: {idx1: warn}
+        stats: [Index Scan, "3,000", "yes", "15 ms"]
+      - title: Index on user_id, then created_at
+        text: The index keeps each user's rows already sorted by date. The database walks it backwards and stops after 20 rows. No sort step at all.
+        on: [q, idx2, out]
+        flow: [[q, idx2, def], [idx2, out, def]]
+        mark: {idx2: ok, out: ok}
+        stats: [Index Scan Backward, "20", "no", "0.3 ms"]
+
+terms:
+  - [Planner, "The part of the database that chooses how to run a query."]
+  - [EXPLAIN, "Shows the plan. EXPLAIN ANALYZE also runs the query and shows real times and row counts."]
+  - [Seq Scan, "Reads every row of a table. Fine for small tables or when most rows match."]
+  - [Index Scan, "Walks an index to find matching rows, then reads them."]
+  - [Index only scan, "Answers from the index alone because it holds every column the query needs."]
+  - [Composite index, "One index over several columns, in a set order."]
+  - [Selectivity, "The share of rows a filter keeps. Indexes help most when it is small."]
+  - [Inverted index, "A map from each word to the list of documents that contain it."]
+  - [Stemming, "Cutting words to a root so that running, runs and run match each other."]
+  - [BM25, "A common formula for ranking search results by how well they match the words."]
+
+how: |
+  ### How to read a plan
+
+  - Read from the **innermost** step outwards. That runs first.
+  - Compare **estimated rows** with **actual rows**. A big gap means the statistics are old. Run `ANALYZE` on the table.
+  - Look for **Seq Scan** on big tables, **Sort** steps on many rows, and **nested loops** that run thousands of times.
+
+  ### Design a composite index for the query
+
+  A composite index on `(user_id, created_at)` is sorted by user first, then by date inside each user. Rules of thumb.
+
+  1. Put columns you test with **equals** first.
+  2. Then the column you **sort** by or filter by **range**.
+  3. The index helps only queries that use its **leftmost** columns. `(user_id, created_at)` helps `WHERE user_id = 42` but not `WHERE created_at > '2026-01-01'` alone.
+
+  Add only indexes that real queries need. Each index slows every insert and update and uses disk.
+
+  ### Why LIKE is not search
+
+  `WHERE name LIKE '%shoe%'` with a wildcard at the start cannot use a B-tree index, so it scans. It also has no idea that "shoes" and "shoe" are related, and no ranking.
+
+  ### How a search engine works
+
+  1. **Analyze.** Split text into words, make them lowercase, remove very common words if you choose, and **stem** them. "Shoes for Runners" becomes `shoe`, `runner`.
+  2. **Index.** For each word, keep a **posting list** of document ids, like `shoe → 4, 18, 77`.
+  3. **Query.** Analyze the search text the same way, fetch the posting lists and combine them.
+  4. **Rank.** Score each document. Elasticsearch uses **BM25** by default. Rare words that appear often in a short document score high.
+
+  Search engines are built for finding and ranking, not for being the source of truth. Keep the real data in your database and copy changes into the search index, often with change data capture. New documents appear after a **refresh**, about once a second by default in Elasticsearch, so search is near real time, not instant.
+
+  !key Use the database for exact lookups and transactions. Use a search engine for free text, typo tolerance, filters and ranking over many fields.
+
+diagrams:
+  - type: flow
+    title: From product text to a search hit
+    nodes: [["Shoes for Runners", "box"], ["Analyze", "def", "lowercase, split, stem"], ["shoe, runner", "raised"], ["Posting lists", "def", "word to doc ids"], ["Rank with BM25", "raised"]]
+    edges: ["", "", "", ""]
+    caption: The search text "running shoe" goes through the same analyzer, so both sides meet at the same words.
+
+life:
+  - ["A missing index in a growing app", "An order history page took 40 ms with 10,000 orders and 9 seconds two years later with 30 million. EXPLAIN showed a Seq Scan and a Sort. One composite index on user and date brought it under 1 ms."]
+  - ["The wrong column order", "A team built an index on (created_at, user_id) for the same query. The planner could not use it well, because the first column was the date. Swapping the order fixed it."]
+  - ["Search on LIKE", "A shop searched products with LIKE '%term%'. It was slow and missed plurals and typos. Moving search to OpenSearch, synced from the database, made it fast and found far more matches."]
+
+tradeoffs:
+  - ["More indexes", "Faster reads for those queries.", "Slower writes, more disk, more to maintain."]
+  - ["Composite index", "Serves filter and sort together.", "Only helps queries that use its leftmost columns."]
+  - ["Search engine", "Text search, ranking, typo tolerance.", "Another system to run and keep in sync, results a little behind."]
+  - ["SQL full text search", "No extra system, good for modest needs.", "Fewer ranking and scaling features than a search engine."]
+
+mistakes:
+  - Guessing why a query is slow instead of running EXPLAIN ANALYZE.
+  - Putting the range or sort column before the equals column in a composite index.
+  - Adding an index for every column.
+  - Using LIKE with a leading wildcard for user search.
+  - Treating the search engine as the main database.
+
+security: |
+  Never build SQL by joining strings with user input. Use parameters, even for search terms, or you open the door to SQL injection. Search engines need care too. Do not expose the search cluster directly to the internet, and apply the user's permissions to search results, so a search never returns documents the user may not see.
+
+quiz:
+  - q: A plan shows "Seq Scan on orders, rows 50000000" for a query that returns 20 rows. What is the most likely fix?
+    opts: ["Add an index that matches the filter and sort", "Add more RAM to the client", "Rewrite the query as a subquery"]
+    a: 0
+    why: A full scan of 50 million rows to return 20 means no useful index exists.
+  - type: sort
+    q: Which index helps each query most?
+    rows:
+      - ["WHERE user_id = 42 ORDER BY created_at DESC LIMIT 20", "(user_id, created_at)"]
+      - ["WHERE email = 'a@b.com'", "(email)"]
+      - ["Free text search for running shoes", "Inverted index in a search engine"]
+    opts: ["(user_id, created_at)", "(email)", "Inverted index in a search engine"]
+    why: Match the index to how the query filters and sorts.
+  - type: fill
+    q: A map from each word to the documents that contain it is called an ____ index.
+    a: ["inverted"]
+    why: It inverts the document to words relation.
+  - q: EXPLAIN ANALYZE shows the planner expected 10 rows but got 2 million. What should you try first?
+    opts: ["Run ANALYZE to refresh the table statistics", "Drop all indexes", "Restart the database"]
+    a: 0
+    why: Old statistics lead to bad plans.
+  - q: Why does "running shoe" match "Shoes for Runners" in a search engine but not with LIKE?
+    opts: ["The analyzer lowercases and stems both sides to the same words", "Search engines guess randomly", "LIKE is case sensitive only"]
+    a: 0
+    why: Both texts become shoe and runner after analysis.
+  - q: An index exists on (created_at, user_id). Is it good for WHERE user_id = 42?
+    opts: ["Not really, user_id is not the leftmost column", "Yes, column order does not matter", "Only on Sundays"]
+    a: 0
+    why: Composite indexes work from the leftmost column.
+
+interview:
+  - q: A page that lists a user's latest orders got slow as the table grew. How do you investigate and fix it?
+    keys:
+      - ["Run EXPLAIN ANALYZE and read the plan", [explain, plan, analyze]]
+      - ["Spot seq scan or sort on many rows", [seq scan, full scan, sort, scan]]
+      - ["Add a composite index matching filter then sort", [composite, user_id, created_at, order]]
+      - ["Check estimates and statistics, verify after", [statistic, estimate, analyze, verify, measure]]
+    a: |
+      I run EXPLAIN ANALYZE on the exact query. If I see a Seq Scan over the whole table, or an index scan followed by a big Sort, the index does not match the query. For WHERE user_id = ? ORDER BY created_at DESC LIMIT 20, I add a composite index on (user_id, created_at), so the database walks one user's rows already sorted and stops after 20. I also check that estimated and actual rows are close, and run ANALYZE if they are not. Then I measure again and watch write latency, since each index costs on writes.
+    fb: Saying the order of columns and why the sort disappears shows real understanding.
+  - q: When would you add a search engine like Elasticsearch, and how do you keep it in sync?
+    keys:
+      - ["Free text, ranking, typo tolerance, facets", [free text, rank, relevan, typo, fuzzy, facet]]
+      - ["Inverted index and analyzers", [inverted, analyz, stem, token]]
+      - ["Database stays the source of truth", [source of truth, primary, database stays]]
+      - ["Sync with change data capture or events, near real time", [cdc, change data, event, queue, sync, refresh, near real]]
+    a: |
+      When users need free text search, relevance ranking, typo tolerance or filters across many fields, which SQL LIKE cannot do well. The search engine builds an inverted index with analyzers that lowercase and stem words, and ranks with BM25. I keep the database as the source of truth and stream changes into the index with change data capture or events from a queue. Results are near real time, about a second behind, and I can rebuild the index from the database if it breaks.
+    fb: Calling the database the source of truth and planning a rebuild path are signs of experience.
+
+desk:
+  title: Speed up the product catalog
+  lede: An online shop's product pages and search are slow. Use plans and the right tools.
+  situation: |
+    The products table has 8 million rows. The category page runs WHERE category_id = 12 AND in_stock = true ORDER BY price LIMIT 40. Search runs WHERE title LIKE '%term%'.
+  rounds:
+    - title: Round 1. Read the plan
+      items:
+        - q: The category query plan shows Seq Scan then Sort. Which index fits best?
+          opts: ["(category_id, in_stock, price)", "(price, category_id)", "(title)"]
+          a: 0
+          why: Equals columns first, then the sort column.
+        - q: What does the plan look like after the right index?
+          opts: ["An index scan that returns 40 rows with no Sort step", "A bigger Seq Scan", "Two full scans"]
+          a: 0
+          why: The index already gives rows in price order.
+    - title: Round 2. Fix search
+      items:
+        - type: sort
+          q: Problem or fix?
+          rows:
+            - ["LIKE with a leading wildcard scans the table", "Problem"]
+            - ["Copy products into OpenSearch with change data capture", "Fix"]
+            - ["shoes does not match shoe", "Problem"]
+          opts: ["Problem", "Fix"]
+          why: The search engine solves speed and matching together.
+        - type: open
+          q: The search index is down for an hour. What is a workaround so users can still find products?
+          a: "Fall back to a simpler database search, such as PostgreSQL full text search or prefix matches on an indexed title column, with a lower result limit. Show a small notice that results may be less complete. Rebuild the search index from the database when it is back."
+  card: |
+    - EXPLAIN ANALYZE first. Read inside out.
+    - Composite index. Equals columns, then sort or range.
+    - Leftmost columns only.
+    - Search engine for text. Database for truth.
+
+refs:
+  - "PostgreSQL. [Using EXPLAIN](https://www.postgresql.org/docs/current/using-explain.html)."
+  - "Use The Index, Luke. [A guide to database indexing](https://use-the-index-luke.com/)."
+  - "Elastic. [How full text search works, text analysis](https://www.elastic.co/guide/en/elasticsearch/reference/current/analysis-overview.html)."

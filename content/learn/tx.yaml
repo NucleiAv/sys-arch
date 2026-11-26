@@ -1,0 +1,233 @@
+short: Transactions and deadlocks
+title: Transactions, isolation and deadlocks
+time: about 55 minutes
+tags: [ACID, isolation, locks, deadlock]
+lede: Moving money takes two writes. If the server dies between them, money vanishes. Learn how transactions make many writes act as one, what isolation levels really promise, and why two transactions can wait for each other forever.
+
+idea: |
+  A **transaction** is a group of writes that the database treats as one. Either all of them happen, or none of them do.
+
+  Think of a transfer of 100 rupees from Asha to Ben. That is two writes. Take 100 from Asha. Add 100 to Ben. If the server crashes after the first write, Asha lost money and Ben got nothing. Inside a transaction, the crash undoes the first write. Nothing is lost.
+
+  Databases describe this promise with four letters, **ACID**.
+
+  1. **Atomicity.** All or nothing.
+  2. **Consistency.** Rules you set, like "balance can never be negative", hold before and after.
+  3. **Isolation.** Transactions running at the same time do not see each other's half done work.
+  4. **Durability.** Once the database says "committed", the data survives a crash.
+
+  !eli5 A transaction is like a parcel. You put several things in the box and seal it. The courier delivers the whole box or returns the whole box. It never delivers half.
+
+scenes:
+  - title: A transfer with and without a transaction
+    stats: [Step, Asha, Ben, Total money]
+    nodes:
+      app: {label: Transfer service, x: 0, y: 1, kind: box}
+      db: {label: Database, x: 3, y: 1, kind: def, tag: accounts}
+      wal: {label: Write-ahead log, x: 3, y: 3, kind: raised, tag: on disk}
+      a: {label: Asha row, x: 6, y: 0, kind: raised}
+      b: {label: Ben row, x: 6, y: 2, kind: raised}
+    links: [[app, db], [db, wal], [db, a], [db, b]]
+    steps:
+      - title: Start
+        text: Asha has 500. Ben has 200. The bank holds 700 in total.
+        on: [a, b]
+        stats: [Start, "500", "200", "700"]
+      - title: No transaction, first write
+        text: The service takes 100 from Asha. Her row now says 400.
+        on: [app, db, a]
+        flow: [[app, db, ink], [db, a, ink]]
+        stats: [Debit, "400", "200", "600"]
+      - title: Crash before the second write
+        text: The server dies. Ben never gets the 100. The bank now holds 600. Money has vanished.
+        on: [db, b]
+        mark: {b: bad}
+        stats: [Crash, "400", "200", "600, wrong"]
+      - title: With a transaction
+        text: "BEGIN, debit Asha, credit Ben, COMMIT. The database writes both changes to the write-ahead log first."
+        on: [app, db, wal]
+        flow: [[app, db, def], [db, wal, def]]
+        stats: [Log first, "500", "200", "700"]
+      - title: Crash again, recover
+        text: If the crash comes before COMMIT reaches the log on disk, recovery throws the half done work away. If it comes after, recovery replays both writes. Either way the total stays 700.
+        on: [wal, a, b]
+        flow: [[db, a, def], [db, b, def]]
+        mark: {a: ok, b: ok}
+        stats: [Recovered, "400", "300", "700"]
+
+terms:
+  - [Transaction, "A group of reads and writes that succeed or fail as one unit."]
+  - [Commit, "The moment a transaction becomes permanent."]
+  - [Rollback, "Undoing every change of a transaction that did not commit."]
+  - [Write-ahead log, "An append-only file where the database records changes before applying them, so it can recover after a crash."]
+  - [fsync, "A call that forces data from memory to the disk. A commit is only durable after this."]
+  - [Isolation level, "How much one transaction can see of others running at the same time."]
+  - [Lock, "A mark on a row or table that stops other transactions from changing it until the lock is released."]
+  - [Deadlock, "Two or more transactions each waiting for a lock the other holds. None can continue."]
+  - [Lost update, "Two transactions read the same value, both change it, and one change overwrites the other."]
+
+how: |
+  ### Isolation levels
+
+  Full isolation is slow, so databases let you choose. The SQL standard names four levels. Each level stops more problems.
+
+  | Level | Dirty read | Non-repeatable read | Phantom read |
+  | --- | --- | --- | --- |
+  | Read uncommitted | Possible | Possible | Possible |
+  | Read committed | Stopped | Possible | Possible |
+  | Repeatable read | Stopped | Stopped | Possible in the standard |
+  | Serializable | Stopped | Stopped | Stopped |
+
+  - A **dirty read** sees data that another transaction has not committed yet.
+  - A **non-repeatable read** reads the same row twice and gets two values.
+  - A **phantom read** runs the same search twice and gets new rows.
+
+  PostgreSQL uses read committed by default. MySQL with InnoDB uses repeatable read by default. Real databases differ in details, so read your database's documentation.
+
+  ### The lost update, the bug you will meet first
+
+  ```sql
+  -- two requests at the same time, both read balance = 500
+  SELECT balance FROM accounts WHERE id = 1;      -- 500
+  UPDATE accounts SET balance = 400 WHERE id = 1; -- each subtracts 100 in app code
+  ```
+
+  Both write 400. One withdrawal is lost. Three fixes.
+
+  1. **Do the math in the database.** `UPDATE accounts SET balance = balance - 100 WHERE id = 1 AND balance >= 100`.
+  2. **Lock the row while you read it.** `SELECT ... FOR UPDATE`.
+  3. **Optimistic check.** Add a `version` column and update only `WHERE version = 7`. If no row changed, read again and retry.
+
+  ### Deadlocks
+
+  Transaction A locks Asha's row, then wants Ben's. Transaction B locks Ben's row, then wants Asha's. Each waits for the other forever. That is a **deadlock**.
+
+  Databases find these cycles. PostgreSQL checks after a waiting transaction has waited for `deadlock_timeout`, 1 second by default. InnoDB checks right away by default. Both kill one transaction, the **victim**, with an error. Your code must catch that error and retry.
+
+  The best fix is to stop deadlocks from forming. **Always lock rows in the same order**, for example by account id. Then two transfers between the same accounts lock in the same order, and no cycle can form.
+
+  !key Keep transactions short. Never wait for a user, an email or an HTTP call while a transaction holds locks.
+
+diagrams:
+  - type: cycle
+    title: A deadlock is a cycle of waiting
+    nodes: [["Tx A holds Asha", "def"], ["Tx A wants Ben", "atk"], ["Tx B holds Ben", "def"], ["Tx B wants Asha", "atk"]]
+    center: Nobody can move
+    caption: Lock rows in one fixed order, such as lowest account id first, and the cycle cannot form.
+
+life:
+  - ["A crash during a transfer", "A wallet app first wrote the debit, then called a second service for the credit, with no transaction around them. During a deploy, a few hundred transfers lost money in the middle. Moving both writes into one database transaction, and a nightly check that totals match, fixed it."]
+  - ["Deadlocks after a new feature", "A shop added a job that updated stock in alphabetical order of product name, while checkout updated stock in cart order. Deadlocks appeared at peak times. Sorting both by product id removed them."]
+  - ["Durability turned off", "Some teams switch off waiting for fsync to make commits faster. A power cut then loses the last second of committed orders. It is a valid trade for logs or caches, not for money."]
+
+tradeoffs:
+  - ["Serializable isolation", "No anomalies, easiest to reason about.", "Slower, more retries under load."]
+  - ["Read committed", "Fast and the common default.", "You must handle lost updates yourself."]
+  - ["Pessimistic locks, FOR UPDATE", "Simple when conflicts are common.", "Waiting, and deadlocks if the order differs."]
+  - ["Optimistic version checks", "No waiting when conflicts are rare.", "Retries when conflicts are common."]
+
+mistakes:
+  - Reading a value into the app, changing it and writing it back without a lock or a version check.
+  - Calling another service or waiting for a user while a transaction is open.
+  - Locking rows in a different order in different code paths.
+  - Not retrying a transaction that the database chose as a deadlock victim.
+  - Assuming every database means the same thing by "repeatable read".
+
+security: |
+  Race conditions are security bugs too. If two withdrawal requests arrive at once, a lost update can let a user spend the same money twice. Attackers send many requests in parallel on purpose. Protect balances, coupons and stock with conditional updates or locks, and test with concurrent requests.
+
+quiz:
+  - q: A transfer debits Asha, then the server crashes before crediting Ben. Which ACID property, if used, stops money vanishing?
+    opts: ["Atomicity", "Isolation", "Durability"]
+    a: 0
+    why: Atomicity means all the writes happen or none do.
+  - type: fill
+    q: A database writes every change to a write-____ log before applying it, so it can recover after a crash.
+    a: ["ahead"]
+    why: The WAL is how both atomicity and durability survive crashes.
+  - type: sort
+    q: Which anomaly is each one?
+    rows:
+      - ["You read a row that another transaction later rolls back", "Dirty read"]
+      - ["You read the same row twice and get two values", "Non-repeatable read"]
+      - ["Two withdrawals both read 500 and both write 400", "Lost update"]
+    opts: ["Dirty read", "Non-repeatable read", "Lost update"]
+    why: Name the anomaly, then pick the fix.
+  - q: Find the bug.
+    info: |
+      ```python
+      bal = db.one("SELECT balance FROM accounts WHERE id=%s", [uid])
+      if bal >= amount:
+          db.run("UPDATE accounts SET balance=%s WHERE id=%s", [bal - amount, uid])
+      ```
+    opts: ["Two parallel requests can both pass the check, so a user can spend the same money twice", "SELECT must come after UPDATE", "The query should use LIKE"]
+    a: 0
+    why: Use one conditional update, `SET balance = balance - %s WHERE id = %s AND balance >= %s`, and check that one row changed.
+  - q: Two transfer jobs deadlock now and then. What is the best long term fix?
+    opts: ["Lock accounts in the same order, such as lowest id first", "Turn off deadlock detection", "Make the transactions longer"]
+    a: 0
+    why: A fixed lock order makes a waiting cycle impossible.
+  - q: What should your code do when the database kills its transaction as a deadlock victim?
+    opts: ["Retry the whole transaction, a few times with a short random wait", "Ignore the error", "Commit anyway"]
+    a: 0
+    why: The victim's work was rolled back. Running it again usually succeeds.
+
+interview:
+  - q: How do you stop a user from spending the same balance twice when two requests arrive at the same moment?
+    keys:
+      - ["Explain the race, both read then both write", [race, both read, concurrent, lost update, same time]]
+      - ["Conditional atomic update in the database", [balance - , conditional, where balance, atomic update, single update]]
+      - ["Or row lock with SELECT FOR UPDATE", [for update, row lock, lock the row, pessimistic]]
+      - ["Or optimistic version check and retry", [version, optimistic, compare and set, retry]]
+    a: |
+      The bug is a lost update. Both requests read 500, both decide there is enough, and both write. I avoid reading into the app and writing back. The simplest fix is one conditional update, `UPDATE accounts SET balance = balance - 100 WHERE id = 1 AND balance >= 100`, and I check that exactly one row changed. If I need more logic, I lock the row with `SELECT ... FOR UPDATE` inside a short transaction, or use a version column and retry when the version changed. For money I also keep a ledger of every movement, so balances can be checked.
+    fb: Naming the anomaly, lost update, and giving the one line conditional update are what interviewers look for.
+  - q: What is a deadlock and how do you prevent one?
+    keys:
+      - ["Two transactions each wait for a lock the other holds", [wait, each other, cycle, holds]]
+      - ["Database detects and kills a victim, app retries", [detect, victim, abort, retry, kill]]
+      - ["Consistent lock order prevents it", [order, same order, sort, consistent]]
+      - ["Keep transactions short", [short, small, quick, no network]]
+    a: |
+      A deadlock is a cycle of waiting. Transaction A holds row 1 and wants row 2, and transaction B holds row 2 and wants row 1. Databases detect the cycle and abort one transaction as the victim, so the application must catch that error and retry. To prevent it, I acquire locks in a consistent order, for example by primary key, keep transactions short and avoid calling slow services while holding locks.
+    fb: Prevention by lock order is the strongest part of the answer.
+
+desk:
+  title: The wallet that loses money
+  lede: A small wallet app reports that total balances drift by a few hundred rupees each week. Find out why.
+  situation: |
+    Transfers run as two separate updates with no transaction. Under load, support also sees errors that say "deadlock detected". Peak load is 300 transfers a second.
+  rounds:
+    - title: Round 1. Spot the problems
+      items:
+        - type: sort
+          q: Match each symptom to its cause.
+          rows:
+            - ["Money disappears after deploys", "No transaction around debit and credit"]
+            - ["A user withdrew twice from the same 500", "Lost update from read then write"]
+            - ["Deadlock errors at peak", "Rows locked in different orders"]
+          opts: ["No transaction around debit and credit", "Lost update from read then write", "Rows locked in different orders"]
+          why: Three separate bugs with three separate fixes.
+        - q: Which change fixes the vanishing money?
+          opts: ["Wrap debit and credit in one transaction", "Add more servers", "Cache balances in Redis"]
+          a: 0
+          why: Atomicity makes the pair succeed or fail together.
+    - title: Round 2. Fix and defend
+      items:
+        - type: open
+          q: Write the SQL for a safe debit, and say how the app knows it worked.
+          a: "UPDATE accounts SET balance = balance - 100 WHERE id = 7 AND balance >= 100. The database returns the number of rows changed. One row means the debit worked. Zero rows means not enough money, so the transfer is refused."
+        - q: The team wants to keep the transaction open while calling the fraud service, which takes 800 ms. What is the risk?
+          opts: ["Locks are held for 800 ms, so other transfers wait and deadlocks rise", "Nothing, 800 ms is fast", "The fraud service will crash"]
+          a: 0
+          why: Call slow services before or after the transaction, never inside it.
+  card: |
+    - ACID. All or nothing, rules hold, no half done views, survives crashes.
+    - Log first, then apply. Commit means on disk.
+    - Lost update. Use a conditional update, a lock or a version.
+    - Deadlock. Same lock order, short transactions, retry the victim.
+
+refs:
+  - "PostgreSQL. [Transaction isolation](https://www.postgresql.org/docs/current/transaction-iso.html)."
+  - "MySQL. [InnoDB deadlocks](https://dev.mysql.com/doc/refman/8.0/en/innodb-deadlocks.html)."
+  - "Martin Kleppmann. [Designing Data-Intensive Applications](https://dataintensive.net/), chapter 7 on transactions."

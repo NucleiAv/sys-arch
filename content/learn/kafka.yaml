@@ -1,0 +1,226 @@
+short: Kafka in depth
+title: Kafka in depth, partitions, offsets, lag and replay
+time: about 60 minutes
+tags: [Kafka, partitions, consumer groups, lag, replication]
+lede: Lesson 3.2 showed what an event stream is. Now look inside Kafka, the most used one. Learn how partitions, keys and offsets work, how consumer groups share work, what lag tells you, and how Kafka keeps data safe when a broker dies.
+
+idea: |
+  Kafka stores events in **topics**. A topic is split into **partitions**. Each partition is an append only log, a list where new events go at the end and old events are never changed. Every event in a partition has a number called its **offset**: 0, 1, 2 and so on.
+
+  A **producer** writes events. If the event has a **key**, like an order id, Kafka sends every event with that key to the same partition. So all events for order 81 stay in order.
+
+  A **consumer group** is a team of consumers that share the work. Kafka gives each partition to exactly one consumer in the group. Each consumer remembers how far it got by **committing** its offset. If it restarts, it continues from there.
+
+  Because Kafka keeps events for days, a new service can start at offset 0 and **replay** the whole history.
+
+  !eli5 A partition is a long notebook where you only ever write on the next empty line, and every line has a number. Readers keep a bookmark. Two readers can be on different pages of the same notebook, and a new reader can start from page one.
+
+scenes:
+  - title: A topic with 3 partitions and one consumer group
+    stats: [Step, Consumers, Lag, What changed]
+    nodes:
+      prod: {label: Order service, x: 0, y: 2, kind: box, tag: producer}
+      p0: {label: Partition 0, x: 3, y: 0, kind: raised}
+      p1: {label: Partition 1, x: 3, y: 2, kind: raised}
+      p2: {label: Partition 2, x: 3, y: 4, kind: raised}
+      c1: {label: Consumer A, x: 6, y: 1, kind: def}
+      c2: {label: Consumer B, x: 6, y: 3, kind: def}
+    links: [[prod, p0], [prod, p1], [prod, p2], [p0, c1], [p1, c1], [p0, c2], [p1, c2], [p2, c2]]
+    steps:
+      - title: Keys pick the partition
+        text: The producer hashes the key. Order 81 always lands in partition 1, so its created, paid and shipped events stay in order.
+        on: [prod, p1]
+        flow: [[prod, p1, ink]]
+        stats: [Write, "2", "0", key order 81 to P1]
+      - title: The group shares partitions
+        text: Consumer A reads partitions 0 and 1. Consumer B reads partition 2. Each partition has one owner in the group.
+        on: [p0, p1, p2, c1, c2]
+        flow: [[p0, c1, def], [p1, c1, def], [p2, c2, def]]
+        stats: [Read, "2", "0", "A has P0, P1. B has P2"]
+      - title: A spike builds lag
+        text: Events arrive faster than A can process them. The gap between the newest offset and A's committed offset grows. That gap is consumer lag.
+        on: [prod, p0, p1, c1]
+        flow: [[prod, p0, atk], [prod, p1, atk]]
+        mark: {c1: warn}
+        stats: [Spike, "2", "45,000", A falls behind]
+      - title: Consumer A crashes
+        text: A stops sending heartbeats. The group rebalances and gives partitions 0 and 1 to B. B starts from A's last committed offsets, so some events may be processed twice.
+        on: [p0, p1, c2]
+        flow: [[p0, c2, def], [p1, c2, def]]
+        mark: {c1: bad}
+        stats: [Rebalance, "1", "60,000", B owns all 3]
+      - title: Scale out, catch up
+        text: A comes back and a third consumer joins. With 3 partitions, at most 3 consumers in the group can work at once. Lag falls back to zero.
+        on: [p0, p1, p2, c1, c2]
+        flow: [[p0, c1, def], [p1, c2, def], [p2, c2, def]]
+        mark: {c1: ok, c2: ok}
+        stats: [Catch up, "3", "0", one consumer per partition]
+
+terms:
+  - [Topic, "A named stream of events, like orders."]
+  - [Partition, "One ordered, append only log inside a topic. The unit of order and of parallel work."]
+  - [Offset, "The position of an event inside a partition."]
+  - [Key, "A value that decides the partition. Same key, same partition, same order."]
+  - [Consumer group, "Consumers that share a topic's partitions. Each partition goes to one member."]
+  - [Consumer lag, "How many events a group still has to read, newest offset minus committed offset."]
+  - [Rebalance, "Moving partitions between consumers when one joins, leaves or fails."]
+  - [Replication factor, "How many brokers keep a copy of each partition. Three is common."]
+  - [In sync replicas, "Copies that are fully caught up with the partition leader."]
+  - [Retention, "How long Kafka keeps events. The default is 7 days."]
+  - [Log compaction, "Keeping only the latest event for each key, so a topic works like a table of current values."]
+
+how: |
+  ### Parallelism comes from partitions
+
+  The number of partitions caps how many consumers in one group can work at once. 12 partitions allow up to 12 busy consumers. A 13th would sit idle. You can add partitions later, but that changes which partition each key maps to, so order per key breaks across the change. Pick a sensible number at the start.
+
+  ### Order is per partition, not per topic
+
+  Kafka keeps order inside a partition only. If you need all events of one order in sequence, use the order id as the key. Do not expect order across different keys.
+
+  ### When to commit the offset
+
+  | Commit | Risk |
+  | --- | --- |
+  | Before processing | A crash loses events. At most once. |
+  | After processing | A crash repeats events. At least once. |
+
+  Most teams commit after processing and make consumers **idempotent**, see lesson 3.7.
+
+  ### Keeping data safe
+
+  Each partition has a **leader** broker and **followers** that copy it. With a replication factor of 3 and a producer setting of `acks=all`, a write is confirmed only when all in sync replicas have it. Set `min.insync.replicas=2`, so writes stop instead of risking loss if only one copy is left. If the leader dies, an in sync follower takes over.
+
+  Since Kafka 3.0, producers are **idempotent** by default, so a retried send does not create a duplicate in the log. Kafka **transactions** can write to several partitions and commit offsets together, which gives exactly once processing for jobs that read from Kafka and write back to Kafka.
+
+  Recent Kafka versions manage the cluster with **KRaft**, a built in Raft based controller. Kafka 4.0 removed the older ZooKeeper mode.
+
+  ### Retention and compaction
+
+  - **Time or size retention.** Delete events older than 7 days, or when a partition passes a size. Good for event history.
+  - **Compaction.** Keep the newest event per key. Good for "current address of each user".
+
+  !key Watch consumer lag. Rising lag means consumers cannot keep up. Add consumers up to the partition count, make processing faster, or batch work.
+
+diagrams:
+  - type: split
+    title: One topic, many independent readers
+    source: ["orders topic", "def"]
+    targets:
+      - ["Email group", "box", "own offsets"]
+      - ["Analytics group", "box", "own offsets"]
+      - ["Search index group", "box", "own offsets"]
+      - ["New fraud service", "raised", "replays from offset 0"]
+    caption: Each consumer group reads the same events at its own pace. Adding a reader does not slow the others.
+
+life:
+  - ["Kafka at Uber", "Uber has written that its Kafka platform handles trillions of messages a day across many clusters, carrying trip events, logs and data pipeline traffic. Partitions and consumer groups let thousands of services read the same streams."]
+  - ["A hot partition", "A team keyed events by country. One country sent 70 percent of all events, so one partition and one consumer did most of the work while others were idle. Keying by user id spread the load."]
+  - ["Replay saves a bug fix", "A billing consumer had a bug for two days. Because Kafka kept 7 days of events, the team fixed the code, reset the group's offsets to two days ago and replayed. Idempotent writes made the replay safe."]
+
+tradeoffs:
+  - ["More partitions", "More parallel consumers.", "More files and leaders to manage, slower rebalances."]
+  - ["acks=all with min.insync.replicas=2", "No loss when one broker dies.", "Slightly higher write latency, writes stop if too few copies."]
+  - ["Long retention", "Replay and new consumers can read history.", "More disk."]
+  - ["Compacted topic", "Small, keeps the latest value per key.", "Old history is gone."]
+
+mistakes:
+  - Expecting order across a whole topic.
+  - Running more consumers than partitions and wondering why some are idle.
+  - Committing offsets before the work is done.
+  - Using a key with very few values, which makes hot partitions.
+  - Not alerting on consumer lag.
+
+security: |
+  Turn on TLS between clients and brokers, and authenticate clients with SASL or mutual TLS. Use ACLs so each service can only write to and read from its own topics. Do not put secrets or full card numbers in events, because they stay on disk for the whole retention period and every consumer group can read them.
+
+quiz:
+  - q: You need all events for one shopping cart in order. What do you do?
+    opts: ["Use the cart id as the message key", "Use one topic per cart", "Use a random key"]
+    a: 0
+    why: Same key, same partition, same order.
+  - type: num
+    q: A topic has 8 partitions. You start 12 consumers in one group. How many sit idle?
+    a: 4
+    tol: 0
+    why: Each partition goes to one consumer in the group. 12 - 8 = 4 idle.
+  - type: fill
+    q: The newest offset minus the group's committed offset is called consumer ____.
+    a: ["lag"]
+    why: Rising lag means consumers are falling behind.
+  - type: sort
+    q: What does each commit choice lead to?
+    rows:
+      - ["Commit offset, then process", "At most once, can lose events"]
+      - ["Process, then commit offset", "At least once, can repeat events"]
+    opts: ["At most once, can lose events", "At least once, can repeat events"]
+    why: Commit after processing and make the consumer idempotent.
+  - q: Which settings stop data loss when one of three brokers dies?
+    opts: ["Replication factor 3, acks=all, min.insync.replicas=2", "Replication factor 1, acks=0", "Retention of 30 days"]
+    a: 0
+    why: A write is confirmed only when enough copies have it.
+  - q: Spot the problem. "We keyed all click events by browser name."
+    opts: ["Very few distinct keys, so a few partitions get almost all the traffic", "Browser names are too long", "Kafka cannot use strings as keys"]
+    a: 0
+    why: Pick a key with many values, like user id, to spread load.
+
+interview:
+  - q: How does Kafka give you ordering and parallelism at the same time?
+    keys:
+      - ["Topics split into partitions, each an ordered log", [partition, log, ordered]]
+      - ["Keys map to partitions, so order is per key", [key, same partition, per key, hash]]
+      - ["Consumer groups, one consumer per partition", [consumer group, one consumer, assign]]
+      - ["Partition count limits parallelism", [limit, number of partitions, cap, idle]]
+    a: |
+      A topic is split into partitions, and each partition is an ordered append only log. The producer hashes the key to choose a partition, so all events with the same key keep their order. Different partitions are processed in parallel. In a consumer group each partition is owned by exactly one consumer, so order per partition holds while the group scales out. The partition count is the ceiling on parallel consumers in a group, so I choose it with growth in mind and pick keys with many distinct values to avoid hot partitions.
+    fb: The phrase "order per key, parallel across keys" sums it up.
+  - q: Consumer lag on a critical topic keeps growing. What do you do?
+    keys:
+      - ["Check consumer health, errors, rebalances", [error, crash, rebalanc, health, stuck]]
+      - ["Scale consumers up to the partition count", [scale, more consumers, add consumers, partition count]]
+      - ["Speed up processing, batch, async IO, slow dependencies", [batch, faster, slow, dependency, database, optimi]]
+      - ["Hot partitions and key choice", [hot partition, skew, key]]
+    a: |
+      First I check that consumers are healthy and not stuck in rebalances or failing on one poison message. Then I look at lag per partition. If one partition is behind, it is a hot key problem and I rethink the key. If all are behind, I add consumers up to the number of partitions, and speed up processing, for example by batching database writes or fixing a slow downstream call. If we are at the partition limit, I add partitions, knowing that it changes key placement for new events.
+    fb: Looking at lag per partition, not only the total, shows real operating experience.
+
+desk:
+  title: The order pipeline is behind
+  lede: Emails about orders arrive an hour late during a sale. Diagnose the Kafka setup.
+  situation: |
+    Topic orders has 6 partitions and replication factor 1. The email service runs 10 consumers in one group. Events are keyed by store id, and one store sells 60 percent of all orders.
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: What problem does each fact cause?
+          rows:
+            - ["10 consumers, 6 partitions", "4 consumers do nothing"]
+            - ["Key is store id, one store is 60 percent", "One hot partition"]
+            - ["Replication factor 1", "Data loss if a broker dies"]
+          opts: ["4 consumers do nothing", "One hot partition", "Data loss if a broker dies"]
+          why: Each fact is a separate problem.
+        - q: Which key spreads load and still keeps each order's events in order?
+          opts: ["Order id", "Store id", "Event type"]
+          a: 0
+          why: Order id has many values and groups each order's events together.
+    - title: Round 2. Fix and work around
+      items:
+        - type: open
+          q: The sale is happening now. What can you do in the next hour, and what later?
+          a: "Now. Speed up the slow part of the email consumer, for example send emails in batches, and make sure no consumer is stuck on a bad message, sending it to a dead letter topic. Later. Create a new topic with more partitions keyed by order id, replication factor 3 with acks=all and min.insync.replicas=2, and move producers to it."
+        - q: After fixing a bug, you want to process the last 6 hours again. What makes this safe?
+          opts: ["Idempotent consumers, then reset the group's offsets back 6 hours", "Delete the topic", "Turn off replication"]
+          a: 0
+          why: Replay repeats events, so processing must be safe to repeat.
+  card: |
+    - Partitions give order and parallel work.
+    - Same key, same partition. Pick keys with many values.
+    - One consumer per partition per group.
+    - Commit after work. Watch lag.
+    - RF 3, acks=all, min.insync.replicas=2.
+
+refs:
+  - "Apache Kafka. [Documentation, design](https://kafka.apache.org/documentation/#design)."
+  - "Confluent. [Kafka consumer design, consumer groups and offsets](https://docs.confluent.io/platform/current/clients/consumer.html)."
+  - "Uber Engineering. [Disaster recovery for multi-region Kafka at Uber](https://www.uber.com/blog/kafka/)."

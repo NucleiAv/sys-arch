@@ -1,4 +1,4 @@
-title: The plan, fourteen weeks from zero to interview ready
+title: The plan, sixteen weeks from zero to interview ready
 lede: About six hours a week. Each week mixes concept lessons, infra lessons, protocols and design tasks, and ends with a practice page. Tick tasks as you go. Your ticks stay in this browser.
 
 weeks:
@@ -123,12 +123,39 @@ weeks:
       - {k: Design, time: 1 hr, t: "Design a discussion forum.", page: design/d16.html}
       - {k: Design, time: 85 min, t: "Design a secure platform for connected medical devices.", page: design/d17.html}
   - n: 14
+    t: Deeper data and coordination
+    d: The parts that break first at scale. Transactions, connection pools, query plans, Kafka, retries, locks and discovery.
+    tasks:
+      - {k: Learn, time: 55 min, t: "Concepts lesson 2.7.", page: learn/tx.html}
+      - {k: Learn, time: 40 min, t: "Concepts lesson 2.8.", page: learn/pool.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 2.9. Run EXPLAIN ANALYZE on a query in any database you have.", page: learn/search.html}
+      - {k: Learn, time: 1 hr, t: "Concepts lesson 3.6.", page: learn/kafka.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 3.7.", page: learn/idem.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 3.8.", page: learn/locks.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 3.9.", page: learn/discovery.html}
+      - {k: Design, time: 75 min, t: "Design a distributed job scheduler.", page: design/d18.html}
+  - n: 15
+    t: Payments and money
+    d: How money really moves, and the designs that use it.
+    tasks:
+      - {k: Learn, time: 55 min, t: "Concepts lesson 7.1.", page: learn/pay-gateway.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 7.2.", page: learn/pay-ledger.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 7.3.", page: learn/pay-upi.html}
+      - {k: Learn, time: 55 min, t: "Concepts lesson 7.4.", page: learn/pay-saga.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 7.5.", page: learn/pay-recon.html}
+      - {k: Learn, time: 45 min, t: "Concepts lesson 7.6.", page: learn/pay-offline.html}
+      - {k: Learn, time: 50 min, t: "Concepts lesson 7.7.", page: learn/pay-fraud.html}
+      - {k: Practice, time: 40 min, t: "Concepts level 7 practice.", page: learn/p7.html}
+      - {k: Design, time: 1 hr, t: "Design a shopping cart and checkout.", page: design/d21.html}
+  - n: 16
     t: Interview ready
     d: Practice out loud, with a timer, and with a friend if you can.
     tasks:
       - {k: Design, time: 1 hr, t: "Design video streaming.", page: design/d06.html}
       - {k: Design, time: 1 hr, t: "Design a payment system.", page: design/d10.html}
       - {k: Design, time: 1 hr, t: "Design an AI chat app.", page: design/d14.html}
+      - {k: Design, time: 75 min, t: "Design photo sharing, then maps and routing.", page: design/d19.html, label: "Photo sharing, then d20 maps"}
+      - {k: Design, time: 70 min, t: "Design a central logging system.", page: design/d22.html}
       - {k: Mock, time: 45 min, t: "Explain the secure medical device platform to a friend as if they were the hospital security team.", page: design/d17.html}
       - {k: Design, time: 2 hrs, t: "Pick any two other designs and do them in 45 minutes each.", page: design/index.html, label: All designs, done: {extra_designs: 2}}
       - {k: Mock, time: 1 hr, t: "Press Give me a random question five times. Answer each out loud in under 5 minutes, then get feedback.", page: interview.html, done: {feedback: 5}}

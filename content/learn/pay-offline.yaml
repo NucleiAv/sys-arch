@@ -1,0 +1,194 @@
+short: Offline payments
+title: Offline payments, store and forward with limits
+time: about 45 minutes
+tags: [offline, store and forward, limits, double spend]
+lede: A bus in a tunnel, a stall at a village fair, a shop during a network outage. They still want to take payments. Learn how systems accept payments without a connection, sync them later, and cap the loss when some of them turn out to be bad.
+
+idea: |
+  Most digital payments ask a server "is there enough money?" before saying yes. Without a network, nobody can ask. An offline payment system must decide **locally**, on the shop's terminal or on the customer's device, and send the record to the server **later**. This is called **store and forward**.
+
+  Deciding without the server brings risk. The customer may not have the money, or may spend the same money twice on two offline terminals. That is a **double spend**. You cannot remove this risk, so you **limit** it.
+
+  - A **per payment limit**, such as a small maximum amount.
+  - A **total offline limit**, the most that can be spent before the device must go online again.
+  - **Signed records** with a counter, so nobody can fake or replay a payment.
+
+  The worst case loss becomes easy to calculate, at most the total offline limit per device, and the business can decide if that is acceptable.
+
+  !eli5 A school canteen lets children buy on credit when the card machine is down, but only up to 50 rupees each, written in a book. When the machine works again, the book is entered. Even if some children never pay, the canteen knows it cannot lose more than 50 rupees per child.
+
+scenes:
+  - title: A shop takes payments during an outage
+    stats: [Step, Offline payments, Amount at risk, Synced]
+    nodes:
+      cust: {label: Customer phone, x: 0, y: 1, kind: box, tag: offline wallet}
+      pos: {label: Shop terminal, x: 3, y: 1, kind: def, tag: stores records}
+      net: {label: Network, x: 5, y: 3, kind: atk, tag: down}
+      srv: {label: Payment server, x: 6, y: 1, kind: raised}
+    links: [[cust, pos], [pos, net], [net, srv]]
+    steps:
+      - title: The network goes down
+        text: The terminal cannot reach the server. It switches to offline mode with a limit of 200 rupees per payment and 2,000 rupees in total.
+        on: [pos, net]
+        mark: {net: bad}
+        stats: [Offline, "0", "0", "-"]
+      - title: Pay 150 offline
+        text: The customer's phone signs a record with the amount, a counter number and the time, using a key in its secure chip. The terminal checks the signature and the limits and accepts.
+        on: [cust, pos]
+        flow: [[cust, pos, def]]
+        stats: [Pay, "1", "150", "no"]
+      - title: More payments, up to the cap
+        text: The terminal takes more small payments. When its total reaches 2,000 rupees, it refuses new offline payments until it syncs.
+        on: [cust, pos]
+        flow: [[cust, pos, def]]
+        mark: {pos: warn}
+        stats: [Cap reached, "14", "2,000", "no"]
+      - title: Back online, forward the records
+        text: The network returns. The terminal sends all 14 signed records. The server checks signatures and counters, rejects any replay, and debits each customer.
+        on: [pos, net, srv]
+        flow: [[pos, net, ink], [net, srv, ink]]
+        mark: {net: ok}
+        stats: [Sync, "14", "2,000", "yes"]
+      - title: One payment fails
+        text: One customer had already spent their money on another offline terminal. That 180 rupee payment fails. It is a known, capped loss, handled by collections or written off.
+        on: [srv]
+        mark: {srv: warn}
+        stats: [Result, "13 good", "180 lost", "yes"]
+
+terms:
+  - [Offline payment, "A payment approved without contacting the server at that moment."]
+  - [Store and forward, "Keep the payment record locally and send it when the network returns."]
+  - [Double spend, "Spending the same money twice, possible when two places cannot check each other."]
+  - [Per payment limit, "The largest single offline payment allowed."]
+  - [Cumulative limit, "The total that can be spent offline before the device must go online."]
+  - [Secure element, "A tamper resistant chip that stores keys and counters."]
+  - [Monotonic counter, "A number that only goes up, used so that every record is unique and replays are caught."]
+
+how: |
+  ### Where the money lives
+
+  | Model | How it works | Example |
+  | --- | --- | --- |
+  | Stored value on the device | The balance is kept in the card or phone's secure chip and reduced locally | Transit cards, some offline wallets |
+  | Account with offline approval | The terminal approves small amounts using limits and the card's own counters, the bank decides later | Chip cards with offline floor limits |
+  | Shop trusts the customer | The shop records an IOU and collects later | Paper credit books |
+
+  ### Rules that make offline safe enough
+
+  1. **Small limits.** Keep the per payment limit and the total offline limit low. In 2022 the Reserve Bank of India's framework for offline digital payments set 200 rupees per payment and 2,000 rupees in total before the customer must go online. Rules change, so check the current ones.
+  2. **Sign every record** with a key inside a secure chip, and include a **counter** that only goes up. The server rejects records with a counter it has already seen.
+  3. **Sync often.** As soon as the network is back, forward records and refresh limits and block lists.
+  4. **Keep a local block list** of stolen cards or devices, updated at each sync.
+  5. **Reconcile** offline records like any other payment, lesson 7.5.
+  6. **Know your worst case.** Maximum loss is about the cumulative limit times the number of devices that could be abused.
+
+  ### Telling the user the truth
+
+  Show clearly that a payment was taken offline and will be confirmed later. For the shop, keep offline totals visible, so staff know when the cap is close.
+
+  !key Offline payments trade certainty for availability. You accept a small, bounded risk so that selling never stops.
+
+diagrams:
+  - type: flow
+    title: Store and forward
+    nodes: [["Pay offline", "box", "signed record"], ["Check limits locally", "def"], ["Store on device", "raised"], ["Forward when online", "def"], ["Server settles", "raised", "rejects replays"]]
+    edges: ["", "", "", ""]
+    caption: The limits are checked twice, locally at payment time and again by the server when the records arrive.
+
+life:
+  - ["Card payments in a plane", "Airlines have long sold food and duty free goods with card machines that work offline in the air and upload the payments after landing. Low limits per card keep the risk small."]
+  - ["Transit cards", "Many city transit cards keep a balance or a pass on the card itself, so gates can let people through in a fraction of a second without asking a server. The system settles in the background."]
+  - ["The festival outage", "A music festival's mobile network failed for two hours. Stalls with offline mode kept selling with low limits. Stalls without it lost a large part of the evening's sales."]
+
+tradeoffs:
+  - ["Offline mode on", "Sales continue during outages.", "Some payments fail later, known capped loss."]
+  - ["Online only", "No risk of unpaid sales.", "No sales at all when the network is down."]
+  - ["Higher offline limits", "Fewer refused payments.", "Larger worst case loss."]
+  - ["Stored value on device", "Very fast, works fully offline.", "Lost device can mean lost money, needs secure hardware."]
+
+mistakes:
+  - Offline mode with no limits.
+  - Records that are not signed, so they can be faked or edited.
+  - No counter, so one record can be replayed many times.
+  - Never forcing a sync, so offline totals grow forever.
+  - Telling the customer "paid" with no hint that it is provisional.
+
+security: |
+  Offline devices are in attackers' hands. Keep keys in secure hardware, sign every record, use counters to stop replays, and limit amounts. Push block lists of stolen cards and compromised terminals at every sync. Treat a terminal that sends a large batch of failed offline payments as a sign of fraud and lock it.
+
+quiz:
+  - q: What is the main risk of accepting payments offline?
+    opts: ["The money may not be there, or may be spent twice, and you learn only later", "Payments become slower", "Receipts cannot be printed"]
+    a: 0
+    why: Without the server, nobody can check the balance at that moment.
+  - type: fill
+    q: Keeping payment records locally and sending them when the network returns is called store and ____.
+    a: ["forward"]
+    why: Records travel to the server later.
+  - type: num
+    q: A chain has 500 terminals. Each allows at most 2,000 rupees of offline payments before it must sync. In the worst case, how many rupees could be unpaid at once?
+    a: 1000000
+    tol: 0
+    why: 500 × 2,000 = 10 lakh rupees. Limits make the worst case a number you can plan for.
+  - q: What stops a customer replaying the same signed record twice?
+    opts: ["A counter in each record that the server checks for repeats", "A longer receipt", "A bigger screen"]
+    a: 0
+    why: The server rejects any counter value it has already seen.
+  - type: sort
+    q: Benefit or risk of raising the offline limit?
+    rows:
+      - ["Fewer customers refused during outages", "Benefit"]
+      - ["A larger worst case loss per device", "Risk"]
+    opts: ["Benefit", "Risk"]
+    why: Every limit is a trade between sales and risk.
+
+interview:
+  - q: Design a way for shops to keep taking digital payments when the internet is down.
+    keys:
+      - ["Store and forward signed records", [store and forward, sign, record, sync, later]]
+      - ["Per payment and cumulative offline limits", [limit, cap, per payment, cumulative, total]]
+      - ["Counters or nonces to prevent replay and double spend", [counter, nonce, replay, double spend, duplicate]]
+      - ["Secure hardware for keys, block lists, reconciliation", [secure element, chip, hardware, block list, reconcil]]
+    a: |
+      The terminal switches to offline mode when the server is unreachable. The customer's card or phone signs each payment with a key held in a secure chip, including the amount, time and a counter that only goes up. The terminal checks the signature, a small per payment limit and a cumulative offline limit, and stores the record. When the network returns it forwards all records, and the server verifies signatures, rejects repeated counters, debits accounts and refreshes block lists on the terminal. Some payments may fail later, but the limits cap the worst case loss to a known amount, which the business accepts in return for never stopping sales. Offline records are reconciled like any other payments.
+    fb: Saying that limits turn an unknown risk into a known, capped loss is the key idea.
+
+desk:
+  title: The stadium food stalls
+  lede: A stadium's stalls want to keep selling when the crowd overloads the mobile network.
+  situation: |
+    60 stalls, peak sales of 300 rupees per order, 90 minute matches. The finance team will accept up to 1.5 lakh rupees of possible unpaid orders per match.
+  rounds:
+    - title: Round 1. Set the limits
+      items:
+        - type: num
+          q: If each stall gets the same cumulative offline limit, what is the most each can have to stay within 1.5 lakh rupees, that is 150,000?
+          a: 2500
+          tol: 0
+          why: 150,000 ÷ 60 = 2,500 rupees per stall.
+        - q: Orders are up to 300 rupees, and offline orders are capped at 200. What should staff do for a 300 rupee order while offline?
+          opts: ["Split it into two payments, each under 200, or ask for another method", "Accept 300 offline anyway", "Refuse every sale"]
+          a: 0
+          why: Splitting keeps each payment under the per payment limit, while the stall total still respects the cap.
+    - title: Round 2. Spot the gaps
+      items:
+        - type: sort
+          q: Problem or control?
+          rows:
+            - ["Records are plain text files on the terminal", "Problem"]
+            - ["Each record signed with a counter", "Control"]
+            - ["Terminals never forced to sync", "Problem"]
+          opts: ["Problem", "Control"]
+          why: Unsigned, unsynced records turn a small risk into a big one.
+        - type: open
+          q: After the match, 40 offline payments failed. What happens next?
+          a: "The server lists the failed payments with the customer accounts and amounts. Customers with a linked account are charged again when funds are available or contacted. Remaining amounts are written off within the accepted loss budget. The stall totals and failed counts are reviewed, and any stall or device with an unusual share of failures is checked for fraud."
+  card: |
+    - Decide locally, settle later. Store and forward.
+    - Per payment limit and total offline limit.
+    - Signed records with counters stop fakes and replays.
+    - Worst case loss = limit × devices. Make it a number.
+
+refs:
+  - "Reserve Bank of India. [Framework for facilitating small value digital payments in offline mode, 2022](https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=12215)."
+  - "EMVCo. [EMV chip specifications](https://www.emvco.com/specifications/)."

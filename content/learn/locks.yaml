@@ -1,0 +1,206 @@
+short: Distributed locks
+title: Distributed locks, leases and fencing tokens
+time: about 50 minutes
+tags: [locks, leases, fencing, Redis, etcd]
+lede: Sometimes only one machine may do a job at a time, such as running the nightly invoice batch. Learn how distributed locks work, why every lock must expire, and why a lock alone cannot stop a paused worker from doing damage.
+
+idea: |
+  On one machine, a lock is simple. A thread takes it, does the work and lets it go. Across many machines it is harder. The machines share no memory, they can pause, and the network can fail.
+
+  A **distributed lock** lives in a shared service, such as Redis, etcd, ZooKeeper or a database row. A worker asks for the lock. If it gets it, it does the job.
+
+  Every distributed lock needs a **lease**, a time limit. If the worker crashes while holding the lock, the lease runs out and someone else can take over. Without a lease, a crashed worker would hold the lock forever.
+
+  Leases bring a new danger. A worker can **pause**, for example during a long garbage collection, while its lease runs out. Another worker takes the lock and starts writing. Then the first worker wakes up, still believes it holds the lock, and writes too. The fix is a **fencing token**, a number that goes up every time the lock is granted. The storage refuses any write with a token older than the newest it has seen.
+
+  !eli5 A shared meeting room has a booking that ends at 3 pm. If you fall asleep inside, someone else books it at 3. Fencing is a door code that changes with each booking. When you wake up at 3:10, your old code no longer opens the door.
+
+scenes:
+  - title: A paused worker and a fencing token
+    stats: [Step, Lock holder, Token, Storage accepts]
+    nodes:
+      w1: {label: Worker 1, x: 0, y: 0, kind: box}
+      w2: {label: Worker 2, x: 0, y: 2, kind: box}
+      lock: {label: Lock service, x: 3, y: 1, kind: def, tag: lease 10 s}
+      store: {label: File storage, x: 6, y: 1, kind: raised, tag: checks token}
+    links: [[w1, lock], [w2, lock], [w1, store], [w2, store]]
+    steps:
+      - title: Worker 1 gets the lock
+        text: Worker 1 asks for the lock. It gets it with a 10 second lease and fencing token 33.
+        on: [w1, lock]
+        flow: [[w1, lock, ink], [lock, w1, def]]
+        stats: [Grant, Worker 1, "33", "-"]
+      - title: Worker 1 pauses
+        text: A long garbage collection freezes Worker 1 for 15 seconds. It cannot renew its lease.
+        on: [w1]
+        mark: {w1: warn}
+        stats: [Pause, Worker 1, "33", "-"]
+      - title: The lease expires, Worker 2 takes over
+        text: After 10 seconds the lease ends. Worker 2 gets the lock with token 34 and writes the file. Storage records 34 as the newest token.
+        on: [w2, lock, store]
+        flow: [[w2, lock, ink], [lock, w2, def], [w2, store, def]]
+        stats: [Grant, Worker 2, "34", "34"]
+      - title: Worker 1 wakes up and writes
+        text: Worker 1 does not know time passed. It sends its write with token 33.
+        on: [w1, store]
+        flow: [[w1, store, atk]]
+        stats: [Late write, Worker 2, "34", "?"]
+      - title: Storage refuses the old token
+        text: 33 is older than 34, so storage rejects the write. Worker 2's data is safe. Without the token, Worker 1 would have overwritten it.
+        on: [w1, store]
+        mark: {w1: bad, store: ok}
+        stats: [Fenced, Worker 2, "34", "only 34"]
+
+terms:
+  - [Distributed lock, "A lock held in a shared service, so only one of many machines does a task."]
+  - [Lease, "A lock that expires after a set time unless renewed."]
+  - [Fencing token, "A number that grows with every lock grant. Storage rejects writes with older tokens."]
+  - [Process pause, "A time when a program stops running, such as garbage collection, swapping or a paused VM."]
+  - [Leader election, "Choosing one node to act as leader, often done with the same tools as locks."]
+  - [Ephemeral node, "In ZooKeeper, a node that disappears when the session that made it ends."]
+
+how: |
+  ### Ways to build a lock
+
+  | Tool | How | Fencing token |
+  | --- | --- | --- |
+  | Redis | `SET lock:invoices worker1 NX PX 10000` sets the key only if it does not exist, with a 10 second expiry | Not built in, you add a counter |
+  | etcd | A lease with a TTL and a key bound to it | Use the key's revision number |
+  | ZooKeeper | An ephemeral sequential node | Use the transaction id or sequence number |
+  | Database | A row with an owner and an expiry, or a database advisory lock | A version column that grows |
+
+  ### Rules for using a lock safely
+
+  1. **Always set a lease.** Pick it longer than the normal job, and renew it while you work.
+  2. **Release only your own lock.** Store a unique value, and delete the key only if it still holds your value. In Redis, do the check and delete in one Lua script.
+  3. **Use fencing for anything that writes data.** Pass the token to the storage, and have storage reject older tokens.
+  4. **Make the work idempotent anyway.** A job can still run twice in rare cases.
+
+  ### Do you need a lock at all?
+
+  Often a lock is the wrong tool.
+
+  - To stop two writers changing the same row, use a database transaction or a conditional update.
+  - To run a job once, give it a unique id and let a queue deliver it to one worker.
+  - To pick one leader, use an election in etcd, ZooKeeper or your platform. Kubernetes has a built in Lease object for this.
+
+  !warn A lock that is only "for efficiency", to avoid doing the same work twice, can be simple. A lock that protects **correctness**, so data is not corrupted, needs fencing and a strongly consistent lock service. Know which one you are building.
+
+diagrams:
+  - type: flow
+    title: The fencing check in storage
+    nodes: [["Write with token 33", "atk"], ["Storage", "def", "newest seen 34"], ["33 < 34", "raised"], ["Reject", "atk"]]
+    edges: ["", "compare", ""]
+    caption: The lock service hands out growing numbers. The storage, not the worker, makes the final decision.
+
+life:
+  - ["The Redlock debate, 2016", "Martin Kleppmann wrote that the Redlock algorithm for locks across several Redis servers is unsafe for correctness, because it depends on timing and has no fencing. Redis's creator Salvatore Sanfilippo replied with a defence. The debate is a good lesson in what locks can and cannot promise."]
+  - ["The cron job that ran twice", "Two servers both ran the nightly invoice job after a failover, and some customers got two invoices. A lease based lock plus an invoice table with a unique rule per customer and month stopped repeats."]
+  - ["HBase and a long pause", "Kleppmann's article points out that HBase once had exactly this problem. A server paused for garbage collection, its lease ran out, and it could still write after it woke up. Fencing is the standard defence."]
+
+tradeoffs:
+  - ["Redis single node lock", "Fast and simple.", "Lost on failover, no built in fencing."]
+  - ["etcd or ZooKeeper lock", "Strongly consistent, revisions work as fencing tokens.", "Another system to run, slower than Redis."]
+  - ["Database row lock", "No new system, works with transactions.", "Load on the main database."]
+  - ["No lock, idempotent work", "Nothing to fail or expire.", "Not every task can be made idempotent."]
+
+mistakes:
+  - A lock with no expiry.
+  - Deleting a lock without checking that you still own it.
+  - Trusting the lock alone to protect data, with no fencing.
+  - A lease shorter than the job, with no renewal.
+  - Using a distributed lock where a database transaction would do.
+
+security: |
+  Lock services are shared infrastructure. Require authentication, so a buggy or hostile client cannot take or delete every lock and freeze all jobs. Limit who can write lock keys, and alert when a lock is held much longer than normal.
+
+quiz:
+  - q: Why must every distributed lock have a lease?
+    opts: ["So a crashed worker does not hold it forever", "To make the lock faster", "So two workers can hold it at once"]
+    a: 0
+    why: The lease lets the system recover from crashes.
+  - type: fill
+    q: A growing number given with each lock grant, checked by storage, is a ____ token.
+    a: ["fencing"]
+    why: It stops a worker with an old lease from writing.
+  - q: Worker A's lease expired during a 20 second pause. Worker B now holds the lock. A wakes up and writes. What stops the damage?
+    opts: ["Storage rejects A's write because its fencing token is older", "A's lease magically renews", "Nothing can stop it"]
+    a: 0
+    why: Fencing moves the final check into the storage.
+  - q: Spot the bug.
+    info: |
+      ```python
+      if redis.set("lock:job", "w1", nx=True, px=10000):
+          run_job()          # may take 30 seconds
+          redis.delete("lock:job")
+      ```
+    opts: ["The job can outlast the 10 s lease, and delete may remove another worker's lock", "nx should be False", "px is in hours"]
+    a: 0
+    why: Renew the lease while working, and delete only if the value is still yours, in one script.
+  - type: sort
+    q: Pick the right tool for each need.
+    rows:
+      - ["Stop two requests overselling the last item", "Conditional update in the database"]
+      - ["Run the nightly report on exactly one server", "Lease based lock or leader election"]
+      - ["Write files safely even if a worker pauses", "Lock with fencing token checked by storage"]
+    opts: ["Conditional update in the database", "Lease based lock or leader election", "Lock with fencing token checked by storage"]
+    why: Choose the lightest tool that is correct.
+
+interview:
+  - q: How would you make sure a scheduled job runs on only one of ten servers?
+    keys:
+      - ["Lease based lock or leader election in a shared service", [lease, lock, leader election, etcd, zookeeper, redis]]
+      - ["Lease expires if holder crashes, renew while working", [expire, ttl, renew, crash]]
+      - ["Fencing or idempotency against double runs", [fencing, token, idempot, unique]]
+      - ["Or use a queue or scheduler that hands one job to one worker", [queue, scheduler, single worker, one worker]]
+    a: |
+      I would have the servers compete for a lease based lock, for example a key in etcd bound to a lease, or a Kubernetes Lease for leader election. The holder renews the lease while the job runs, and if it crashes the lease expires so another server can take over. Because a paused server could wake up after losing the lease, I make the job idempotent, for example by recording each run in a table with a unique key per date, and if it writes shared data I pass a fencing token that storage checks. A simpler option is a scheduler that puts one job message on a queue so that only one worker receives it.
+    fb: Mentioning the pause problem and fencing shows you know where locks break.
+  - q: What is a fencing token and why do you need one?
+    keys:
+      - ["Leases can expire while a holder is paused", [pause, gc, garbage, expire, stall]]
+      - ["A number that grows with every lock grant", [number, increas, monoton, grows]]
+      - ["Storage rejects writes with older tokens", [storage, reject, older, compare, check]]
+    a: |
+      A lease based lock can expire while its holder is paused, for example by garbage collection, so two clients may believe they hold the lock at the same time. A fencing token is a number that grows each time the lock service grants the lock. The client sends it with every write, and the storage remembers the highest token it has seen and rejects any write with a smaller one. That way a client that woke up late cannot overwrite newer data.
+    fb: Saying that the storage, not the client, enforces it is the heart of the answer.
+
+desk:
+  title: Two workers, one report
+  lede: The monthly billing report was generated twice and the second run overwrote corrected numbers. Investigate.
+  situation: |
+    Workers take a Redis lock with SET NX and a 30 second expiry. The report usually takes 20 seconds, but last night it took 70 seconds because the database was slow. Workers write the final CSV to object storage.
+  rounds:
+    - title: Round 1. Find the issue
+      items:
+        - q: What went wrong?
+          opts: ["The job outlived the 30 s lease, a second worker took the lock, and both wrote", "Redis lost data", "Object storage is slow"]
+          a: 0
+          why: A lease shorter than the job, with no renewal, lets two holders overlap.
+        - type: sort
+          q: Mitigation or workaround?
+          rows:
+            - ["Renew the lease every 10 seconds while running", "Mitigation"]
+            - ["Pass a fencing token and reject older writes", "Mitigation"]
+            - ["Tonight, run the report by hand on one server", "Workaround"]
+          opts: ["Mitigation", "Workaround"]
+          why: Fix the design, and keep the business running meanwhile.
+    - title: Round 2. Make it robust
+      items:
+        - type: open
+          q: Object storage cannot check fencing tokens. How else can you stop the old worker overwriting?
+          a: "Write each run to a new file named with the run's token or a unique run id, then switch a small pointer record to the newest file with a conditional update that only succeeds if the stored token is lower. Readers follow the pointer. An old worker's file is ignored because its token is lower."
+        - q: Which property should the report job also have?
+          opts: ["Idempotent, so running it twice gives the same output", "Random output", "Different output each minute"]
+          a: 0
+          why: Idempotency limits the damage of any double run.
+  card: |
+    - Every lock needs a lease. Renew while working.
+    - Release only your own lock.
+    - Pauses break leases. Fencing tokens protect data.
+    - Prefer transactions, queues or idempotency when they fit.
+
+refs:
+  - "Martin Kleppmann. [How to do distributed locking](https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html)."
+  - "Redis. [Distributed locks with Redis](https://redis.io/docs/latest/develop/use/patterns/distributed-locks/)."
+  - "Kubernetes. [Leases](https://kubernetes.io/docs/concepts/architecture/leases/)."

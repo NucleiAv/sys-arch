@@ -108,6 +108,35 @@ rounds:
         q: You shard users by country. One country has 60 percent of users and its shard is overloaded. What went wrong, and what is a workaround until you re shard?
         a: "The shard key is skewed, so load is not even. Workaround. Add read replicas and caching for that shard, move its heaviest tenants to a new shard, and plan to re shard by a hash of the user id."
 
+  - title: Round 6. Transactions, pools and search
+    items:
+      - q: Find the bug.
+        info: |
+          ```python
+          stock = db.one("SELECT qty FROM items WHERE id=%s", [iid])
+          db.run("UPDATE items SET qty=%s WHERE id=%s", [stock - 1, iid])
+          ```
+        opts: ["Lost update, two buyers can both read the same qty", "UPDATE needs a LIMIT", "qty should be text"]
+        a: 0
+        why: Use one statement, qty = qty - 1 WHERE id = %s AND qty >= 1.
+      - type: num
+        q: An API runs 3,000 queries a second, each taking 2 ms. How many connections are busy at once on average?
+        a: 6
+        tol: 0.1
+        why: 3,000 × 0.002 = 6, by Little's law.
+      - q: Which composite index serves WHERE shop_id = 9 ORDER BY created_at DESC LIMIT 50 best?
+        opts: ["(shop_id, created_at)", "(created_at, shop_id)", "(created_at)"]
+        a: 0
+        why: Equals column first, then the sort column.
+      - type: sort
+        q: Which tool fits each need?
+        rows:
+          - ["Debit and credit must succeed together", "Database transaction"]
+          - ["Find shoes when users type running shoe", "Search engine with stemming"]
+          - ["200 pods must not exceed 100 database connections", "External pooler such as PgBouncer"]
+        opts: ["Database transaction", "Search engine with stemming", "External pooler such as PgBouncer"]
+        why: Pick the tool for the problem.
+
 card: |
   - SQL by default, other stores for clear reasons.
   - Filter column first in composite indexes.

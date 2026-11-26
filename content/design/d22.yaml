@@ -1,0 +1,211 @@
+slug: d22
+num: "22"
+short: Logging system
+title: Design a central logging system
+time: about 70 minutes
+tags: [logs, agents, Kafka buffer, indexing, retention]
+lede: Thousands of servers write log lines every second. During an incident, engineers need to search them in seconds, exactly when traffic and errors are highest. Design a pipeline that never drops logs at the worst moment and does not cost a fortune.
+
+ask: |
+  Every service writes logs. Engineers want to search all logs from the last two weeks in seconds, filter by service, level and request id, and keep older logs cheaply for audits. The system must keep working during incidents, when log volume jumps.
+
+reqs:
+  func:
+    - Collect logs from every server and container.
+    - Search and filter recent logs in seconds.
+    - Keep some logs for a year for audit, cheaply.
+    - Alert on patterns, such as a burst of errors.
+  nonfunc:
+    - Do not lose logs during traffic spikes or when the index is slow.
+    - New logs searchable within about a minute.
+    - Control cost, logs grow faster than most data.
+  out:
+    - Metrics and traces, which are separate systems, see lesson 4.2.
+
+estimate:
+  intro: |
+    5,000 servers each write 200 log lines a second on a normal day. A line is about 500 bytes. During an incident, volume can jump 5 times.
+  items:
+    - type: num
+      q: Lines a second on a normal day, in millions?
+      a: 1
+      tol: 0.05
+      unit: million
+      why: 5,000 × 200 = 1 million lines a second.
+    - type: num
+      q: Raw data a day, in TB? Use 86,400 seconds in a day.
+      a: 43.2
+      tol: 1
+      unit: TB
+      why: 1 million × 500 bytes = 500 MB a second. × 86,400 is about 43 TB a day before compression and indexing.
+    - type: num
+      q: During an incident at 5 times normal volume, how many MB a second arrive?
+      a: 2500
+      tol: 50
+      unit: MB/s
+      why: 500 MB × 5 = 2,500 MB a second, about 2.5 GB a second. The pipeline must buffer this, not drop it.
+  after: |
+    !key The busiest moment for logs is also the moment you need them most. A durable buffer between collection and indexing is the core of the design.
+
+api: |
+  ```
+  Structured log line, one JSON object per line
+  {"ts":"2026-11-26T10:15:03.120Z","level":"ERROR","service":"checkout",
+   "request_id":"r-81f2","msg":"payment timeout","duration_ms":3012}
+
+  GET /v1/logs/search?q=level:ERROR AND service:checkout&from=-15m
+  POST /v1/alerts   { "query": "level:ERROR service:checkout", "threshold": 100, "window": "1m" }
+  ```
+
+data: |
+  | Tier | Store | Keeps | Cost |
+  | --- | --- | --- | --- |
+  | Buffer | Kafka | A few days of raw lines | Medium |
+  | Hot | Search index, such as OpenSearch or Elasticsearch, or a label index such as Loki | 7 to 14 days, fast search | High |
+  | Cold | Object storage, compressed | Up to a year or more | Low |
+
+scenes:
+  - title: An incident floods the pipeline
+    stats: [Step, Lines a second, Buffer backlog, Lines lost]
+    nodes:
+      svc: {label: Services, x: 0, y: 1, kind: box, tag: write to stdout}
+      agent: {label: Log agents, x: 2, y: 1, kind: def, tag: one per node}
+      kafka: {label: Kafka buffer, x: 4, y: 1, kind: raised, tag: days of retention}
+      idx: {label: Search index, x: 6, y: 0, kind: def, tag: hot 14 days}
+      cold: {label: Object storage, x: 6, y: 2, kind: raised, tag: cold 1 year}
+    links: [[svc, agent], [agent, kafka], [kafka, idx], [kafka, cold]]
+    steps:
+      - title: Normal day
+        text: Services write JSON lines to standard output. An agent on each node, such as Fluent Bit or Vector, reads them, adds the host and service name and sends them to Kafka.
+        on: [svc, agent, kafka]
+        flow: [[svc, agent, ink], [agent, kafka, ink]]
+        stats: [Normal, "1 million", "0", "0"]
+      - title: Index and archive
+        text: One consumer group indexes lines for search. Another compresses them into files in object storage. Each reads Kafka at its own pace.
+        on: [kafka, idx, cold]
+        flow: [[kafka, idx, def], [kafka, cold, def]]
+        stats: [Steady, "1 million", "0", "0"]
+      - title: An incident starts
+        text: A failing dependency makes every service log errors. Volume jumps to 5 million lines a second. The search index cannot keep up.
+        on: [svc, agent, kafka, idx]
+        flow: [[svc, agent, atk], [agent, kafka, atk]]
+        mark: {idx: warn}
+        stats: [Spike, "5 million", growing, "0"]
+      - title: Kafka absorbs the spike
+        text: Kafka keeps every line on disk. The indexers fall a few minutes behind but lose nothing. Without the buffer, agents would have dropped lines or slowed the services.
+        on: [kafka]
+        mark: {kafka: ok}
+        stats: [Buffer, "5 million", 12 minutes, "0"]
+      - title: Catch up
+        text: The team adds indexer capacity, and sampling drops repeated DEBUG lines. Lag falls back to seconds. Engineers search the incident's errors by request id.
+        on: [kafka, idx]
+        flow: [[kafka, idx, def]]
+        mark: {idx: ok}
+        stats: [Recovered, "1 million", "0", "0"]
+
+hld: |
+  1. **Structured logs.** JSON with a timestamp, level, service and request id on every line.
+  2. **Agents** on each node collect, add metadata, redact secrets and batch lines. They keep a small disk buffer for short network problems.
+  3. **Kafka buffer.** Partitioned by service, with days of retention, so slow consumers never cause loss.
+  4. **Indexers** consume from Kafka into the hot search store. Indexes are split by day, so old days are dropped cheaply.
+  5. **Archivers** write compressed files to object storage, partitioned by date and service, for cheap long term keeping and occasional queries.
+  6. **Alerting** runs queries on the stream or the index and pages on thresholds.
+  7. **Controls on volume.** Per service quotas, log levels set to INFO in production, sampling of noisy lines.
+
+diagrams:
+  - type: flow
+    title: The log pipeline
+    nodes: [["Services", "box", "JSON to stdout"], ["Agents", "def", "collect, redact"], ["Kafka", "raised", "durable buffer"], ["Index", "def", "hot, 14 days"], ["Object storage", "raised", "cold, 1 year"]]
+    edges: ["", "", "", ""]
+    caption: The index and the archive are two consumer groups on the same buffer. If one is slow, the other is not affected.
+
+deep:
+  - ["Why a buffer", "Agents that send straight to the index must either drop lines or block when the index is slow. A durable buffer like Kafka separates the speed of producing logs from the speed of indexing them, which is exactly what an incident needs."]
+  - ["Full text index or labels", "Elasticsearch and OpenSearch index the words of every line, so any word is searchable, but the index is large. Grafana Loki indexes only a few labels, such as service and level, stores the text compressed, and scans it at query time. It is much cheaper, but free text search over long periods is slower."]
+  - ["Retention tiers", "Most searches look at the last few hours. Keep 7 to 14 days hot, then only in object storage. Indexes split by day make deletion a quick drop of a whole index instead of deleting billions of rows."]
+  - ["Cost control", "Logs grow with traffic and with every new log line a developer adds. Use quotas per team, drop or sample DEBUG in production, and count bytes per service on a dashboard, so each team sees its own cost."]
+  - ["Request ids", "Put a request id on every line and pass it between services. During an incident, searching one id shows the whole path of a failing request, much like a trace."]
+
+tradeoffs:
+  - ["Kafka buffer", "No loss during spikes, many consumers.", "Another system to run and pay for."]
+  - ["Full text index", "Search any word fast.", "Large indexes, high cost."]
+  - ["Label index such as Loki", "Cheap storage.", "Slower free text search."]
+  - ["Sampling noisy logs", "Big savings.", "Some lines are not kept."]
+
+security: |
+  Logs leak secrets more often than databases do. Redact passwords, tokens, card numbers and personal data in the agent, before lines leave the host, and test the redaction rules. Limit who can search production logs, log those searches, and encrypt logs in transit and at rest. Some laws limit how long personal data may be kept, so set retention by data type, and make audit logs append only so attackers cannot erase their tracks.
+
+task:
+  intro: |
+    Present the pipeline and explain what happens during an incident.
+  items:
+    - q: Explain how your logging system collects logs from thousands of servers, keeps them searchable, and does not lose them when volume spikes.
+      keys:
+        - ["Structured JSON logs with request ids", [structured, json, request id, field]]
+        - ["Agents on each node collect, enrich and redact", [agent, fluent, vector, collect, redact]]
+        - ["Durable buffer like Kafka absorbs spikes", [kafka, buffer, queue, spike, absorb]]
+        - ["Hot index for recent logs and cold object storage for long retention", [hot, cold, index, object storage, retention, tier]]
+        - ["Cost control with sampling, levels and quotas", [sampl, quota, level, debug, cost]]
+      a: |
+        Services write structured JSON logs with a timestamp, level, service and request id. An agent on each node collects them, adds host and service metadata, redacts secrets and sends batches to Kafka, which buffers days of logs on disk. Two consumer groups read from Kafka. Indexers load the last 14 days into a search store split into daily indexes, and archivers write compressed files to object storage for a year. During an incident the volume jumps, but Kafka absorbs it and indexers simply lag a few minutes and catch up, so nothing is lost. Alerts run on the stream or index. Costs stay under control with INFO level in production, sampling of noisy lines, per team quotas and quick deletion of old daily indexes.
+      fb: The buffer and the hot and cold tiers are the two design decisions to state clearly.
+
+interview:
+  - q: Your logging bill doubled in three months. What do you do?
+    keys:
+      - ["Measure bytes per service and find top sources", [measure, per service, top, dashboard, which team]]
+      - ["Reduce levels, sample, drop noisy lines", [debug, level, sampl, drop, noisy]]
+      - ["Shorter hot retention, move to cold tier", [retention, cold, tier, archive]]
+      - ["Quotas or chargeback to teams", [quota, budget, charge, limit]]
+    a: |
+      I first measure bytes per service and per log message pattern, because a few sources usually cause most of the volume, such as a DEBUG line inside a loop. I set production to INFO, sample repetitive lines, and drop health check logs. I shorten hot retention for noisy services and move older data to cheap object storage. Then I set per team quotas with a dashboard showing each team's cost, so new noisy logs are caught early.
+    fb: Measuring first and making cost visible per team is what makes savings stick.
+  - q: How do you stop passwords and card numbers from ending up in logs?
+    keys:
+      - ["Do not log sensitive fields, structured logging with allow lists", [structured, allow list, field, do not log]]
+      - ["Redact in the agent before data leaves the host", [redact, mask, agent, filter]]
+      - ["Test and scan for leaks, alert", [scan, test, detect, alert]]
+    a: |
+      Prevention starts in code. With structured logging, developers log named fields, and libraries mask known sensitive fields such as password or card_number. The agent applies redaction rules again, for example patterns for card numbers and tokens, before lines leave the host. A scheduled job scans samples of stored logs for secrets and alerts if any appear, and any leak is treated as an incident with rotation of the exposed secret.
+    fb: Defence in depth, code, agent and scanning, is the expected shape of the answer.
+
+desk:
+  title: Logs disappear during outages
+  lede: Every time there is an outage, engineers find the logs for the worst minutes missing.
+  situation: |
+    Agents send logs straight to Elasticsearch. When it is slow, agents drop lines after a 5 second buffer fills. Production runs at DEBUG level. Logs are kept hot for 90 days.
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: What does each choice cause?
+          rows:
+            - ["Agents send straight to the index", "Lines dropped when the index is slow"]
+            - ["DEBUG level in production", "Huge volume and cost"]
+            - ["90 days of hot retention", "Very large, expensive indexes"]
+          opts: ["Lines dropped when the index is slow", "Huge volume and cost", "Very large, expensive indexes"]
+          why: Each is a separate fix.
+        - q: Which change stops losing logs during outages?
+          opts: ["Put a durable buffer such as Kafka between agents and the index", "Make the agent buffer 10 seconds", "Log less during outages"]
+          a: 0
+          why: A buffer with days of retention lets indexing lag without loss.
+    - title: Round 2. Benefits and workarounds
+      items:
+        - q: What is the benefit of daily indexes?
+          opts: ["Old data is removed by dropping a whole index, which is fast and cheap", "Searches become exact", "Logs become smaller"]
+          a: 0
+          why: Deleting billions of single records is slow. Dropping an index is instant.
+        - type: open
+          q: The Kafka buffer is not ready yet and an incident is starting. What can you do right now?
+          a: "Raise agent disk buffers so they spool to local disk instead of dropping, switch noisy services from DEBUG to WARN for the incident, and sample repeated identical errors. Scale up the index's ingest nodes if possible. Afterwards, prioritize the Kafka buffer."
+  card: |
+    - Structured JSON with request ids.
+    - Agents collect and redact. Kafka buffers.
+    - Hot index for days, cold object storage for months.
+    - Control volume. Levels, sampling, quotas.
+    - Never log secrets.
+
+refs:
+  - "Grafana. [Loki architecture](https://grafana.com/docs/loki/latest/get-started/architecture/)."
+  - "Fluent Bit. [Documentation](https://docs.fluentbit.io/manual)."
+  - "Elastic. [Index lifecycle management](https://www.elastic.co/guide/en/elasticsearch/reference/current/index-lifecycle-management.html)."

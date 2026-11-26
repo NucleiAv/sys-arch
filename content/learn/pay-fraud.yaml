@@ -1,0 +1,211 @@
+short: Fraud detection
+title: Fraud detection, risk scores and the cost of saying no
+time: about 50 minutes
+tags: [fraud, risk score, rules, false positives, review]
+lede: Every payment system attracts fraud. Block too little and you pay for stolen cards. Block too much and you turn away honest customers. Learn how risk scoring works, how to set block and review lines, and how fraud systems fit into the payment flow.
+
+idea: |
+  For each payment, a fraud system gives a **risk score**, for example from 0 to 100. Higher means more likely to be fraud. The score comes from **signals**, facts about the payment.
+
+  - Is this a new account or a new card?
+  - How many payments has this card made in the last hour, called **velocity**?
+  - Does the shipping country match the card's country?
+  - Is the device or IP address linked to past fraud?
+  - Is the amount much larger than this customer usually spends?
+
+  Then two lines turn the score into a decision. Below the **review line**, approve. Above the **block line**, decline. In between, send the payment to **manual review**, or ask for extra proof such as 3-D Secure.
+
+  Moving the lines is a trade-off. A low block line catches more fraud but also blocks more honest customers, which are **false positives**. A high line lets more fraud through, the **false negatives**. There is no perfect setting, only the right cost balance for your business.
+
+  !eli5 A shop guard watches the door. If he stops everyone in a hoodie, he catches some thieves but also annoys many good customers. If he stops nobody, thieves walk out. He has to pick which signs are worth a second look.
+
+scenes:
+  - title: Scoring three payments
+    stats: [Step, Score, Decision, Why]
+    nodes:
+      pay: {label: Payment request, x: 0, y: 2, kind: box}
+      feat: {label: Signal service, x: 2, y: 0, kind: raised, tag: velocity and history}
+      score: {label: Risk scorer, x: 3, y: 2, kind: def, tag: rules plus model}
+      ok: {label: Approve, x: 6, y: 0, kind: raised}
+      rev: {label: Review queue, x: 6, y: 2, kind: raised}
+      blk: {label: Block, x: 6, y: 4, kind: atk}
+    links: [[pay, score], [feat, score], [score, ok], [score, rev], [score, blk]]
+    steps:
+      - title: Gather signals
+        text: For each payment the scorer pulls signals in a few milliseconds. Account age, card velocity, country match, device history and amount.
+        on: [pay, feat, score]
+        flow: [[pay, score, ink], [feat, score, def]]
+        stats: [Signals, "-", "-", "-"]
+      - title: A regular customer
+        text: A two year old account, usual device, usual amount. Score 8, below the review line of 60. Approved in 40 ms.
+        on: [score, ok]
+        flow: [[score, ok, def]]
+        mark: {ok: ok}
+        stats: [Payment 1, "8", approve, known customer]
+      - title: Something unusual
+        text: A new account buys a 40,000 rupee phone, shipping to a different city than the card's billing city. Score 72, between the lines. Ask for 3-D Secure or send to review.
+        on: [score, rev]
+        flow: [[score, rev, pen]]
+        mark: {rev: warn}
+        stats: [Payment 2, "72", review, "new account, big amount"]
+      - title: A card testing attack
+        text: The same device tried 30 different cards in 5 minutes, each for 10 rupees. Score 97, above the block line of 90. Declined, and the device is blocked.
+        on: [score, blk]
+        flow: [[score, blk, atk]]
+        mark: {blk: bad}
+        stats: [Payment 3, "97", block, card velocity on one device]
+      - title: Learn from outcomes
+        text: Weeks later, chargebacks and review results come back as labels. They train the model and tune the rules and lines.
+        on: [rev, blk, feat]
+        flow: [[rev, score, def], [blk, score, def]]
+        stats: [Feedback, "-", "-", labels improve the model]
+
+terms:
+  - [Risk score, "A number that estimates how likely a payment is fraud."]
+  - [Signal, "A fact used to score a payment, such as account age or velocity."]
+  - [Velocity, "How many actions happen in a time window, such as payments per card per hour."]
+  - [False positive, "An honest payment that was blocked."]
+  - [False negative, "A fraudulent payment that was approved."]
+  - [Manual review, "A person checks a payment the system was unsure about."]
+  - [Card testing, "Criminals try many stolen card numbers with small payments to find which ones work."]
+  - [Chargeback rate, "Share of payments that end in a dispute. Card networks watch it, and high rates bring fines."]
+
+how: |
+  ### Rules and models together
+
+  | | Rules | Machine learning model |
+  | --- | --- | --- |
+  | Example | Block if more than 5 cards on one device in 10 minutes | A model trained on past fraud gives a probability |
+  | Good at | Clear, known attacks, fast to change | Subtle patterns across many signals |
+  | Weakness | Attackers learn the rules, many rules conflict | Needs labelled data, harder to explain |
+
+  Most systems use both. Rules catch obvious attacks and enforce policy. The model handles the grey zone.
+
+  ### Where it sits in the payment flow
+
+  The score must be ready **before authorization**, so it has a tight time budget, often tens of milliseconds. Signals like velocity come from fast counters, for example in Redis, updated as payments arrive. Slower checks can run after approval and before shipping.
+
+  ### Choosing the lines
+
+  Think in money, not only in accuracy.
+
+  - Cost of a false negative, the fraud amount plus fees plus the chargeback.
+  - Cost of a false positive, the lost sale and an unhappy customer who may not return.
+  - Cost of review, staff time and slower delivery.
+
+  Move the block and review lines and measure all three. Shops that sell digital goods with instant delivery usually set stricter lines than shops that ship physical goods slowly, because they have no time to review.
+
+  ### Labels arrive late
+
+  You only learn that a payment was fraud when a chargeback arrives, weeks later. So model training always looks at the past, and new attack patterns get through at first. Rules let you respond to a new attack the same day.
+
+  !key Fraud prevention is a cost trade, not a search for zero fraud. Blocking every risky payment can cost more than the fraud itself.
+
+diagrams:
+  - type: split
+    title: One score, three outcomes
+    source: ["Risk score 0 to 100", "def"]
+    targets:
+      - ["Below 60, approve", "raised", "most payments"]
+      - ["60 to 90, review or 3-D Secure", "box", "a small share"]
+      - ["Above 90, block", "atk", "clear attacks"]
+    caption: Lower the lines to catch more fraud and refuse more honest customers. Raise them for the opposite.
+
+life:
+  - ["Card testing on a donation page", "A charity's donation page let anyone pay 1 rupee. Criminals used it to test thousands of stolen cards in a night. Velocity rules per IP and device, a CAPTCHA and a minimum amount stopped it."]
+  - ["Too strict at launch", "A new shop blocked every order where the shipping and billing addresses differed. It also blocked gifts, which were a quarter of its orders around festivals. Sending those orders to review instead of blocking won them back."]
+  - ["The slow signal", "A fraud model needed a call to a slow external service and sometimes took 2 seconds, so checkouts timed out. Moving the signal to a cache refreshed in the background brought scoring under 50 ms."]
+
+tradeoffs:
+  - ["Strict lines", "Less fraud loss.", "More honest customers refused."]
+  - ["Loose lines", "More sales, happier customers.", "More fraud and chargebacks."]
+  - ["Manual review", "Good decisions on hard cases.", "Staff cost and slower orders."]
+  - ["Step up with 3-D Secure", "Shifts some liability to the issuer and stops many fraudsters.", "Some honest customers drop out at the extra step."]
+
+mistakes:
+  - Measuring only fraud caught, never honest customers blocked.
+  - A scorer that is too slow for the checkout.
+  - Only machine learning, no rules for fast response.
+  - Never updating rules after attackers adapt.
+  - Treating review as a black hole with no feedback to the model.
+
+security: |
+  Fraud systems hold sensitive data, such as device fingerprints and behaviour, so they fall under privacy law. Tell users how data is used, keep it only as long as needed, and restrict access. Protect the rules too. If attackers learn the exact thresholds, they will stay just below them.
+
+quiz:
+  - q: An honest customer's payment is blocked. What is that called?
+    opts: ["A false positive", "A false negative", "A chargeback"]
+    a: 0
+    why: The system flagged something that was actually fine.
+  - type: fill
+    q: The number of payments per card in a short time window is called ____.
+    a: ["velocity"]
+    why: High velocity is a classic sign of card testing.
+  - q: You lower the block line from 90 to 70. What happens?
+    opts: ["More fraud is blocked, and more honest customers are refused", "Only fraud drops, nothing else changes", "Nothing changes"]
+    a: 0
+    why: Every line move trades one error for the other.
+  - type: sort
+    q: Which signal or tool fits each attack?
+    rows:
+      - ["30 cards tried from one device in 5 minutes", "Velocity rule per device"]
+      - ["A new account buys an expensive phone to a new address", "Review or 3-D Secure"]
+      - ["A subtle pattern across many signals", "Machine learning model"]
+    opts: ["Velocity rule per device", "Review or 3-D Secure", "Machine learning model"]
+    why: Use rules for clear attacks and models for the grey zone.
+  - q: Why does a fraud model always lag behind new attacks?
+    opts: ["Labels come from chargebacks, which arrive weeks after the payment", "Models cannot learn", "Fraud never changes"]
+    a: 0
+    why: Rules help you react the same day while labels arrive.
+
+interview:
+  - q: Design a fraud check for an online checkout.
+    keys:
+      - ["Real time scoring before authorization with a tight latency budget", [real time, before, latency, millisecond, fast]]
+      - ["Signals like velocity, account age, device, geography", [velocity, device, account age, country, ip, signal]]
+      - ["Rules plus a model", [rule, model, machine learning]]
+      - ["Approve, review or step up, block thresholds and the trade-off", [threshold, review, block, 3-d secure, false positive, line]]
+      - ["Feedback from chargebacks and reviews", [feedback, label, chargeback, retrain]]
+    a: |
+      At checkout, before authorization, the service calls a risk scorer with a budget of about 50 ms. The scorer reads precomputed signals from fast stores, such as payments per card, device and IP in the last hour, account age, address match and past fraud on the device. Rules catch clear attacks like card testing, and a model scores the rest. Two thresholds turn the score into approve, step up with 3-D Secure or manual review, or block. I choose the thresholds by the cost of fraud versus the cost of refusing honest customers and track both. Chargebacks and review outcomes flow back as labels to retrain the model, and analysts can add rules the same day when a new attack appears.
+    fb: Talking about the cost of false positives, not only fraud caught, shows business sense.
+
+desk:
+  title: Card testing on a gift card shop
+  lede: A shop that sells digital gift cards sees a wave of small payments and a spike in chargebacks.
+  situation: |
+    Gift cards are delivered instantly by email. There is no velocity limit. The fraud model was trained a year ago. The block line is 95.
+  rounds:
+    - title: Round 1. Identify the risk
+      items:
+        - type: sort
+          q: Why is each fact risky?
+          rows:
+            - ["Instant digital delivery", "No time to review before the goods are gone"]
+            - ["No velocity limit", "Card testing runs freely"]
+            - ["Model trained a year ago", "New attack patterns are missed"]
+          opts: ["No time to review before the goods are gone", "Card testing runs freely", "New attack patterns are missed"]
+          why: Each fact widens a different hole.
+        - q: What is the fastest useful control today?
+          opts: ["A velocity rule per device, IP and card, plus a CAPTCHA after failures", "Retrain the model next quarter", "Remove the payment page"]
+          a: 0
+          why: Rules can go live the same day.
+    - title: Round 2. Tune and work around
+      items:
+        - q: Gift cards are high risk and instant. How should the lines change compared with a slow shipping shop?
+          opts: ["Stricter, with more step up checks, since there is no time to review", "Looser, since gift cards are cheap", "No lines at all"]
+          a: 0
+          why: Instant, resellable goods are what fraudsters want.
+        - type: open
+          q: Honest customers complain about being blocked after the new rules. What do you do?
+          a: "Measure the false positive rate per rule. Move rules that block many honest customers from block to step up, such as 3-D Secure, instead of a hard decline. Add an allow list for long standing customers with good history. Keep the strict velocity rule, which hits attackers far more than real people."
+  card: |
+    - Signals, score, then two lines. Approve, review or step up, block.
+    - Velocity catches card testing.
+    - Rules for fast response, models for the grey zone.
+    - Count fraud loss and honest customers refused.
+    - Labels arrive late. Feed them back.
+
+refs:
+  - "Stripe. [Radar, how it works](https://docs.stripe.com/radar)."
+  - "Stripe. [Protect yourself from card testing](https://docs.stripe.com/disputes/prevention/card-testing)."

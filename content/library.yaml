@@ -10,6 +10,7 @@ groups:
       - {t: Designed to Scale, u: "https://designed-to-scale.vercel.app/", type: course, n: "An interactive system design course with visual explanations."}
       - {t: Advent of System Design, u: "https://www.devmaxx.dev/advent", type: puzzles, n: "One design puzzle a day through December. Great for daily practice once you finish the designs here."}
       - {t: ByteByteGo blog, u: "https://blog.bytebytego.com/", type: articles, n: "Short visual explainers on single topics."}
+      - {t: SimuVeda System Design Simulator, u: "https://sysdesign.simuveda.in/", type: simulator, n: "Free live simulations you can break on purpose, such as caching, sharding, Raft, Kafka, idempotency, payments and design interview systems. Pairs with every level here, especially 2, 3 and 7."}
   - t: Books
     d: Read one properly instead of skimming three.
     items:

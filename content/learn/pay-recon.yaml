@@ -1,0 +1,207 @@
+short: Reconciliation
+title: Reconciliation, matching your books with the bank's
+time: about 45 minutes
+tags: [reconciliation, settlement, breaks, matching]
+lede: Your database says 10,000 payments succeeded yesterday. The bank's settlement file says 9,996, and the total is a little lower. Learn how reconciliation finds every difference, which ones fix themselves, and which ones are real money problems.
+
+idea: |
+  Your system records payments as they happen. The bank or payment provider later sends a **settlement file** that lists what actually moved. These two views are made by different systems at different times, so they never match perfectly at first.
+
+  **Reconciliation** is the daily job of matching the two lists, item by item, and explaining every difference. A difference is called a **break**.
+
+  Some breaks are only **timing**. A payment made at 11:58 pm may appear in tomorrow's file. It clears itself. Others are **real**. A webhook was lost so you never recorded a success, a fee was higher than expected, or a payment was settled twice. Those need action.
+
+  Without reconciliation, small errors pile up silently. With it, every rupee is explained.
+
+  !eli5 At the end of the day, a shopkeeper counts the cash in the drawer and compares it with the receipts. If they differ, they look for the reason, maybe change given wrongly, maybe a receipt in tomorrow's pile. That is reconciliation.
+
+scenes:
+  - title: Matching yesterday's payments
+    stats: [Step, Matched, Timing breaks, Real breaks]
+    nodes:
+      ours: {label: Our payments table, x: 0, y: 1, kind: def, tag: "10,000 rows"}
+      file: {label: Settlement file, x: 0, y: 3, kind: raised, tag: "9,996 rows"}
+      job: {label: Recon job, x: 3, y: 2, kind: def}
+      ok: {label: Matched, x: 6, y: 0, kind: raised}
+      brk: {label: Breaks queue, x: 6, y: 3, kind: atk}
+    links: [[ours, job], [file, job], [job, ok], [job, brk]]
+    steps:
+      - title: Load both sides
+        text: The job loads our 10,000 successful payments and the provider's file of 9,996 settled items, each with the provider's payment id and amount.
+        on: [ours, file, job]
+        flow: [[ours, job, ink], [file, job, ink]]
+        stats: [Load, "0", "0", "0"]
+      - title: Match by id and amount
+        text: It matches rows by provider payment id. 9,990 rows match exactly, the same id, amount, currency and status.
+        on: [job, ok]
+        flow: [[job, ok, def]]
+        mark: {ok: ok}
+        stats: [Match, "9,990", "0", "0"]
+      - title: Timing differences
+        text: 8 of our payments are missing from the file. All were made after 11:50 pm. They are marked as timing breaks and checked again tomorrow.
+        on: [job, brk]
+        flow: [[job, brk, pen]]
+        stats: [Timing, "9,990", "8", "0"]
+      - title: Real breaks
+        text: 2 of our payments match by id but the file shows a fee 10 rupees higher. 4 items in the file are missing from our table, because their webhooks were lost.
+        on: [job, brk]
+        flow: [[job, brk, atk]]
+        mark: {brk: warn}
+        stats: [Real, "9,990", "8", "6"]
+      - title: Fix and close
+        text: The 4 missing payments are fetched from the provider's API and recorded, so those orders ship. The fee issue goes to finance to check the contract. Everything is explained.
+        on: [brk, ours]
+        flow: [[brk, job, def], [job, ours, def]]
+        mark: {brk: ok}
+        stats: [Close, "9,994", "8", "2 with finance"]
+
+terms:
+  - [Reconciliation, "Matching two records of the same money and explaining every difference."]
+  - [Settlement file, "A report from the bank or provider listing what money actually moved, usually daily."]
+  - [Break, "A difference between the two records."]
+  - [Timing break, "A difference caused only by a cut off time, which clears itself later."]
+  - [Matching key, "The field used to pair records, such as the provider's payment id."]
+  - [Three way match, "Matching three sources, such as orders, payment provider and bank account."]
+  - [Ageing, "How long a break has stayed open. Old breaks get escalated."]
+
+how: |
+  ### Steps of a daily reconciliation
+
+  1. **Get the files.** Download settlement reports from each provider and bank statements, often through SFTP or an API.
+  2. **Normalize.** Convert dates to one time zone, amounts to integers in the smallest unit, and statuses to your own names.
+  3. **Match.** Pair records by a strong key, such as the provider's payment id. For bank deposits, which are batches, match the batch total with the sum of the payments the provider says are in it.
+  4. **Classify breaks.** Missing on our side, missing on their side, amount differs, status differs, duplicate.
+  5. **Auto resolve** what you can. Timing breaks wait one more day. Missing payments are fetched from the provider's API.
+  6. **Queue the rest** for people, with an owner and an age. Escalate old ones.
+
+  ### Common breaks and what they mean
+
+  | Break | Usual cause | Action |
+  | --- | --- | --- |
+  | In ours, not in theirs | Cut off time, or a payment we wrongly thought succeeded | Wait a day, then investigate |
+  | In theirs, not in ours | Lost webhook or a bug | Record it, ship the order |
+  | Amount differs | Fees, currency conversion, partial capture | Check the fee table and contract |
+  | Duplicate in theirs | Settled twice | Raise with the provider |
+  | Status differs | Refund or chargeback we did not record | Update our state |
+
+  ### Design for reconciliation from day one
+
+  - Store the **provider's id** on every payment, refund and payout.
+  - Store **amounts as integers** with the currency.
+  - Keep a **ledger**, lesson 7.2, so every movement can be explained.
+  - Record the **time zone** of every cut off.
+
+  !key Reconciliation is the safety net for every other part of a payment system. Webhooks, retries and sagas can all fail quietly. The daily match is where those failures become visible.
+
+diagrams:
+  - type: flow
+    title: The daily reconciliation loop
+    nodes: [["Get files", "box"], ["Normalize", "def"], ["Match by key", "def"], ["Classify breaks", "raised"], ["Auto resolve or queue", "atk"]]
+    edges: ["", "", "", ""]
+    caption: Most rows match automatically. People only look at the small set of real breaks.
+
+life:
+  - ["The lost webhooks", "A marketplace found 40 paid orders a week that never shipped. Customers paid, but the success webhook had been lost during deploys. Daily reconciliation now finds these and ships them the same morning."]
+  - ["A fee change nobody noticed", "A provider raised its fee for international cards. The shop's revenue was a little lower each day, but no alert fired. Reconciliation of fees per payment showed the change within a day."]
+  - ["Midnight in two time zones", "A company's database used local time and the provider's file used UTC. Hundreds of payments looked missing every day. Normalizing both to UTC removed almost all the breaks."]
+
+tradeoffs:
+  - ["Fully automated matching", "Fast and cheap at scale.", "Needs clean keys and careful rules."]
+  - ["Manual review", "Handles odd cases.", "Slow, costly, error prone at volume."]
+  - ["Daily batch", "Matches provider file timing.", "A break can be up to a day old before anyone sees it."]
+  - ["Near real time checks", "Finds problems in minutes.", "Providers may not offer live data, more complexity."]
+
+mistakes:
+  - Not storing the provider's payment id.
+  - Matching on amount and date alone.
+  - Mixing time zones.
+  - Treating every break as an emergency, or ignoring old breaks.
+  - No owner for open breaks.
+
+security: |
+  Reconciliation is also a fraud and insider control. It catches refunds nobody approved, payouts to unknown accounts and money that left without a matching order. Keep the recon job's access read only where possible, keep settlement files in restricted storage, and separate the people who fix breaks from the people who approve adjustments.
+
+quiz:
+  - q: A payment made at 11:58 pm is in your database but not in today's settlement file. What kind of break is it most likely?
+    opts: ["A timing break that should clear tomorrow", "Fraud", "A lost webhook"]
+    a: 0
+    why: Cut off times cause many breaks that fix themselves.
+  - type: fill
+    q: A difference between your records and the bank's records is called a ____.
+    a: ["break"]
+    why: Every break must be explained or resolved.
+  - type: sort
+    q: What is the likely cause of each break?
+    rows:
+      - ["In the provider file, missing in our table", "Lost webhook or bug"]
+      - ["Same payment, amount 10 rupees lower", "Fee or currency difference"]
+      - ["Same payment listed twice in the file", "Duplicate settlement"]
+    opts: ["Lost webhook or bug", "Fee or currency difference", "Duplicate settlement"]
+    why: The shape of a break hints at its cause.
+  - q: Which field is the best matching key?
+    opts: ["The provider's payment id", "The amount", "The customer's first name"]
+    a: 0
+    why: Amounts and names repeat. The provider's id is unique.
+  - q: Hundreds of payments look missing every day and appear the next day. Both sides use different midnights. What is the fix?
+    opts: ["Normalize all timestamps to one time zone, such as UTC", "Ignore them", "Delete the file"]
+    a: 0
+    why: Time zone mismatches create false breaks.
+
+interview:
+  - q: How would you design a daily payment reconciliation system?
+    keys:
+      - ["Ingest provider and bank files, normalize", [file, ingest, normalize, settlement, statement]]
+      - ["Match by provider id, batch totals for bank deposits", [match, key, provider id, batch, total]]
+      - ["Classify breaks, timing versus real", [break, timing, classify, missing, amount]]
+      - ["Auto resolve and queue the rest with owners and ageing", [auto, resolve, queue, owner, age, escalat]]
+    a: |
+      Every day I fetch settlement reports from each provider and statements from the bank, and normalize them to UTC, integer minor units and our own status names. I match each record to our payments by the provider's payment id, and match bank deposits against the sum of the payments in each provider payout batch. Unmatched items become breaks, classified as missing on our side, missing on theirs, amount, status or duplicate. Timing breaks get a day to clear. Missing payments are fetched from the provider's API and recorded automatically. Everything else goes to a queue with an owner and an age, and old breaks are escalated. A dashboard shows the matched rate every day.
+    fb: Separating timing breaks from real breaks shows you have done this in practice.
+  - q: Why do you need reconciliation if you already use webhooks and idempotency?
+    keys:
+      - ["Webhooks can be lost or delayed", [lost, missed, delay, webhook]]
+      - ["Bugs and fees differ from expectations", [bug, fee, amount, unexpected]]
+      - ["Finance, audit and fraud need proof", [audit, finance, fraud, proof, regulat]]
+    a: |
+      Webhooks can be lost during outages, deploys can drop events, and code can have bugs. Fees and currency conversions can differ from what we expected. Reconciliation compares our records with what money actually moved, so these silent failures become visible within a day. It is also what finance and auditors rely on, and it catches unauthorized refunds or payouts.
+    fb: Calling reconciliation the safety net for everything else is the right framing.
+
+desk:
+  title: Monday's breaks
+  lede: The recon job shows 312 breaks after a long weekend. Sort them out.
+  situation: |
+    Our table uses India time. The provider's file uses UTC. Webhooks were down for 3 hours on Saturday.
+  rounds:
+    - title: Round 1. Classify
+      items:
+        - type: sort
+          q: Timing break or real break?
+          rows:
+            - ["Payments made between 12 am and 5:30 am India time", "Timing break from time zones"]
+            - ["Provider shows paid, we show pending, Saturday afternoon", "Real break from lost webhooks"]
+            - ["Amount 2 percent lower on international cards", "Real break from fees"]
+          opts: ["Timing break from time zones", "Real break from lost webhooks", "Real break from fees"]
+          why: Fix the causes, not only the rows.
+        - q: Which action clears the most breaks at once?
+          opts: ["Normalize both sides to UTC before matching", "Call every customer", "Refund all payments"]
+          a: 0
+          why: India is 5 hours 30 minutes ahead of UTC, so that window shifts days.
+    - title: Round 2. Resolve
+      items:
+        - type: open
+          q: What do you do about payments the provider shows as paid but we show as pending?
+          a: "Fetch each payment from the provider's API to confirm it succeeded, update our payment and order state, and ship the orders. Then make sure the webhook handler is deduplicated so the late webhooks, when they arrive, change nothing. Add an alert when webhook volume drops to zero for more than a few minutes."
+        - q: What is the benefit of tracking the age of each open break?
+          opts: ["Old breaks are escalated before they become losses or audit findings", "It makes matching faster", "It hides breaks"]
+          a: 0
+          why: An old break is more likely to be a real problem.
+  card: |
+    - Two records of the same money. Match daily.
+    - Match by provider id. Normalize time zones and units.
+    - Timing breaks clear. Real breaks need action.
+    - Owners, ageing and escalation.
+    - Reconciliation is the safety net.
+
+refs:
+  - "Stripe. [Payout reconciliation report](https://docs.stripe.com/reports/payout-reconciliation)."
+  - "Wikipedia. [Reconciliation in accounting](https://en.wikipedia.org/wiki/Reconciliation_%28accounting%29)."

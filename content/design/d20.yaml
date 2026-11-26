@@ -1,0 +1,203 @@
+slug: d20
+num: "20"
+short: Maps and routing
+title: Design maps and routing like Google Maps
+time: about 80 minutes
+tags: [graphs, Dijkstra, A star, tiles, live traffic]
+lede: You type a destination and in under a second you get a route, a time estimate and a map that scrolls smoothly. Learn how roads become a graph, how Dijkstra and A* find the fastest path, how precomputation makes it instant, and how live traffic changes the answer.
+
+ask: |
+  Users view a map, search for places and ask for the fastest driving route between two points, with a travel time that reflects current traffic. The route should update if traffic changes during the trip.
+
+reqs:
+  func:
+    - Show a map that pans and zooms smoothly.
+    - Find the fastest route between two points, with an arrival time.
+    - Use live traffic in routes and times.
+    - Re route during navigation when a faster path appears.
+  nonfunc:
+    - Route answers in under 1 second, map tiles in under 200 ms.
+    - Millions of route requests an hour at peak.
+    - Traffic data less than a few minutes old.
+  out:
+    - Place search ranking, public transport, walking and cycling routes, street view.
+
+estimate:
+  intro: |
+    A country's road network has about 20 million intersections and 50 million road segments. Each segment stores two node ids, a length, a speed and a few flags, about 40 bytes.
+  items:
+    - type: num
+      q: About how many GB does the bare road graph take for 50 million segments at 40 bytes each?
+      a: 2
+      tol: 0.1
+      unit: GB
+      why: 50 million × 40 bytes = 2 billion bytes, about 2 GB. The whole graph fits in the memory of one server, so routing servers can each hold a full copy.
+    - type: num
+      q: If plain Dijkstra explores 5 million nodes for a long trip at 10 million nodes a second, how many ms does it take?
+      a: 500
+      tol: 10
+      unit: ms
+      why: 5 million ÷ 10 million a second = 0.5 s. Too slow at scale, which is why routing engines precompute shortcuts.
+  after: |
+    !key The graph fits in memory, so routing is about smart algorithms, not about storage. Map tiles, on the other hand, are many and small, so they are a caching problem.
+
+api: |
+  ```
+  GET /v1/tiles/{z}/{x}/{y}.mvt                     vector map tile, cached by CDN
+  GET /v1/route?from=12.97,77.59&to=12.93,77.62&mode=drive&depart=now
+      -> { duration_s, distance_m, polyline, steps: [...], traffic_used: true }
+  POST /v1/probes   anonymous speed samples from phones that opted in
+  ```
+
+data: |
+  | Data | Where | Notes |
+  | --- | --- | --- |
+  | Road graph | In memory on routing servers | Nodes, edges, lengths, speed limits, turn rules |
+  | Precomputed shortcuts | In memory, rebuilt offline | Make long queries fast |
+  | Live edge speeds | Fast key value store, streamed | Updated every minute from probe data |
+  | Map tiles | Object storage plus CDN | Prebuilt per zoom level |
+
+scenes:
+  - title: Dijkstra, A star and live traffic
+    stats: [Step, Algorithm, Nodes explored, Route time]
+    nodes:
+      a: {label: Start, x: 0, y: 2, kind: box}
+      n1: {label: Ring road, x: 2, y: 0, kind: raised}
+      n2: {label: Market street, x: 2, y: 2, kind: raised}
+      n3: {label: Old town, x: 2, y: 4, kind: raised, tag: wrong direction}
+      n4: {label: Bridge, x: 4, y: 1, kind: raised}
+      b: {label: Destination, x: 6, y: 2, kind: def}
+    links: [[a, n1], [a, n2], [a, n3], [n1, n4], [n2, n4], [n2, b], [n4, b]]
+    steps:
+      - title: Roads as a graph
+        text: Intersections are nodes. Road segments are edges, and each edge has a cost, the time to drive it at the current speed.
+        on: [a, n1, n2, n3, n4, b]
+        stats: [Graph, "-", "0", "-"]
+      - title: Dijkstra spreads in every direction
+        text: Dijkstra always expands the closest unexplored node next. It is guaranteed to find the fastest route, but it also explores Old town, which is in the wrong direction.
+        on: [a, n1, n2, n3]
+        flow: [[a, n1, ink], [a, n2, ink], [a, n3, ink]]
+        mark: {n3: warn}
+        stats: [Dijkstra, Dijkstra, "6", "14 min"]
+      - title: A star aims at the goal
+        text: A* adds a guess of the remaining time, the straight line distance divided by the top speed. Nodes that point away from the goal look worse, so it skips Old town.
+        on: [a, n2, b]
+        flow: [[a, n2, def], [n2, b, def]]
+        stats: [A star, A star, "4", "14 min"]
+      - title: Live traffic jams Market street
+        text: Probe data shows Market street crawling at 5 km/h. Its edge cost jumps from 6 to 25 minutes. A route that ignored traffic would drive into the jam.
+        on: [n2, b]
+        flow: [[n2, b, atk]]
+        mark: {n2: bad}
+        stats: [Traffic, A star, "4", "33 min if ignored"]
+      - title: Re route over the bridge
+        text: With live costs, the search now prefers the ring road and the bridge. The route is longer in distance but faster in time.
+        on: [a, n1, n4, b]
+        flow: [[a, n1, def], [n1, n4, def], [n4, b, def]]
+        mark: {b: ok}
+        stats: [Live route, A star with traffic, "5", "18 min"]
+
+hld: |
+  1. **Map data pipeline** turns raw map data into a routing graph, and into **tiles** for each zoom level, offline.
+  2. **Tile service.** Vector tiles in object storage behind a CDN. The phone draws them, so one tile set works for any style and language.
+  3. **Routing servers** each hold the whole graph and precomputed shortcuts in memory. Route requests are spread across them by a load balancer.
+  4. **Traffic pipeline.** Phones that opt in send anonymous speed samples. A stream processor, lesson 5.2, matches samples to road segments and averages speeds per minute, then publishes new edge costs to the routing servers.
+  5. **ETA model** adjusts times using history, such as typical rush hour slowdowns, not only current speeds.
+  6. **Navigation sessions** check the route every minute or two against new traffic and offer a faster one.
+
+diagrams:
+  - type: flow
+    title: From phone speeds to a better route
+    nodes: [["Phones send speeds", "box"], ["Stream processor", "def", "match to roads, average"], ["Edge costs updated", "raised"], ["Routing servers", "def", "new routes"], ["Re route offered", "box"]]
+    edges: ["", "", "", ""]
+    caption: Traffic is a stream that keeps changing the weights of a graph that otherwise stays the same.
+
+deep:
+  - ["Dijkstra", "Published by Edsger Dijkstra in 1959. It keeps a priority queue of nodes by distance from the start and always expands the closest. With non negative edge costs it always finds the shortest path. On a big road network it explores a huge circle around the start."]
+  - ["A star", "Described by Hart, Nilsson and Raphael in 1968. It orders nodes by distance so far plus an estimate of the distance left. If the estimate never overestimates, it still finds the best path, but explores far fewer nodes. For travel time, straight line distance divided by the highest speed on the network is a safe estimate."]
+  - ["Precomputation", "Long trips are still too slow even with A*. Methods such as contraction hierarchies precompute shortcut edges, so a query climbs to important roads quickly and explores only a few thousand nodes. Answers come in milliseconds."]
+  - ["Live traffic and shortcuts", "Precomputed shortcuts assume fixed costs. Engines handle traffic with methods that can update costs quickly without a full rebuild, such as customizable route planning, which splits preprocessing into a slow map based part and a fast cost based part."]
+  - ["Tiles", "The world is cut into square tiles at each zoom level. Zoom level z has 2 to the power z by 2 to the power z tiles. Tiles are prebuilt and cached on a CDN, so panning only fetches the few new tiles that come into view."]
+
+tradeoffs:
+  - ["Plain Dijkstra", "Simple, always correct.", "Too slow for long trips at scale."]
+  - ["A star", "Same answer, far fewer nodes explored.", "Needs a good, safe estimate."]
+  - ["Precomputed shortcuts", "Millisecond queries.", "Preprocessing takes time, traffic needs extra methods."]
+  - ["Vector tiles", "Small, styled on the device, crisp at any zoom.", "Phones do more drawing work."]
+
+security: |
+  Location data is very sensitive. Collect speed samples only from users who opted in, strip identities, cut traces into short pieces so a full journey cannot be rebuilt, and keep raw data briefly. Watch for fake traffic. In 2020 an artist walked through Berlin pulling a cart with 99 phones running Google Maps and made empty streets show as traffic jams. Look for many devices moving together in an unusual way.
+
+task:
+  intro: |
+    Explain how a route is found and how traffic changes it.
+  items:
+    - q: Explain how your system answers a driving route request in under a second, using live traffic.
+      keys:
+        - ["Road network as a weighted graph held in memory", [graph, node, edge, weight, memory]]
+        - ["Dijkstra or A star with a safe heuristic", [dijkstra, a star, a*, heuristic, estimate]]
+        - ["Precomputed shortcuts like contraction hierarchies", [precomput, contraction, shortcut, hierarch, preprocess]]
+        - ["Live traffic from probe data via streaming updates edge costs", [traffic, probe, stream, speed, update cost]]
+        - ["Tiles on a CDN for the map", [tile, cdn, cache, zoom]]
+      a: |
+        Roads are a weighted graph, with intersections as nodes and road segments as edges whose cost is the travel time. The graph for a country fits in memory, so every routing server holds a copy, plus precomputed shortcuts such as contraction hierarchies that let queries jump to major roads and explore only a few thousand nodes. The search itself is A* or a bidirectional variant with a safe estimate of remaining time. Live traffic comes from opted in phones, which a stream processor matches to road segments and averages every minute, and new edge costs are pushed to routing servers using a method like customizable route planning that updates weights without a full rebuild. The map itself is vector tiles per zoom level, served from a CDN. During navigation the app rechecks the route every couple of minutes and offers a faster one.
+      fb: Saying the graph fits in memory and naming one precomputation method shows depth.
+
+interview:
+  - q: Why is A star faster than Dijkstra, and when is it still correct?
+    keys:
+      - ["Adds an estimate of the remaining cost", [estimate, heuristic, remaining, guess]]
+      - ["Explores fewer nodes toward the goal", [fewer, direction, toward, focus]]
+      - ["Correct if the estimate never overestimates, admissible", [never overestimate, admissible, underestimate, lower bound]]
+    a: |
+      Dijkstra expands nodes purely by distance from the start, so it searches a circle in all directions. A* orders nodes by distance so far plus an estimate of the distance left, so it focuses on nodes that lead toward the goal and explores far fewer. It still returns the best path as long as the estimate never overestimates the true remaining cost, which is called an admissible heuristic. For travel time, straight line distance divided by the fastest possible speed is admissible.
+    fb: Naming the admissible heuristic condition is the precise answer.
+  - q: How do you collect live traffic without harming privacy?
+    keys:
+      - ["Opt in and anonymize", [opt in, consent, anonym]]
+      - ["Aggregate many devices per segment", [aggregat, average, many devices, segment]]
+      - ["Cut traces and keep raw data briefly", [trace, short, retention, delete]]
+    a: |
+      Only users who opted in share location. Samples are sent without account ids, traces are split into short pieces with rotating identifiers, and the system only publishes averages per road segment when enough devices pass, so one person's trip cannot be seen. Raw samples are kept for a short time and then deleted.
+    fb: Aggregation thresholds and short retention show privacy by design.
+
+desk:
+  title: Routes that drive into jams
+  lede: Users complain that routes ignore accidents and the app is slow for long trips.
+  situation: |
+    The routing service runs Dijkstra on the full graph with speed limits as costs. Traffic data is collected but only used to colour the map.
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: What does each choice cause?
+          rows:
+            - ["Plain Dijkstra on the full graph", "Slow answers for long trips"]
+            - ["Speed limits as edge costs", "Times that ignore real conditions"]
+            - ["Traffic only colours the map", "Routes drive into jams"]
+          opts: ["Slow answers for long trips", "Times that ignore real conditions", "Routes drive into jams"]
+          why: Speed comes from the algorithm. Accuracy comes from live costs.
+        - q: Which change helps long trip speed the most?
+          opts: ["Precomputed shortcuts such as contraction hierarchies", "Bigger map tiles", "More logging"]
+          a: 0
+          why: Queries then explore thousands of nodes instead of millions.
+    - title: Round 2. Benefits and workarounds
+      items:
+        - q: What is the benefit of using historical speeds as well as live speeds?
+          opts: ["Arrival times account for jams that will form later in the trip, like rush hour", "Routes become shorter in distance", "Tiles load faster"]
+          a: 0
+          why: A trip that starts now will reach the city centre at 6 pm, so predict 6 pm speeds there.
+        - type: open
+          q: The traffic stream is down for 30 minutes. What should routing do?
+          a: "Fall back to historical speeds for that time of day and day of week, which are far better than speed limits. Mark the arrival time as estimated without live traffic in the app. When the stream returns, resume live costs and recheck active navigation routes."
+  card: |
+    - Roads are a weighted graph. It fits in memory.
+    - Dijkstra is correct. A star is faster with a safe estimate.
+    - Precompute shortcuts for millisecond queries.
+    - Traffic is a stream that updates edge costs. Tiles live on a CDN.
+
+refs:
+  - "Edsger Dijkstra. [A note on two problems in connexion with graphs, 1959](https://ir.cwi.nl/pub/9256)."
+  - "Hart, Nilsson and Raphael. [A formal basis for the heuristic determination of minimum cost paths, 1968](https://ieeexplore.ieee.org/document/4082128)."
+  - "Microsoft Research. [Customizable route planning](https://www.microsoft.com/en-us/research/publication/customizable-route-planning/)."
+  - "Simon Weckert. [Google Maps hacks, 2020](https://www.simonweckert.com/googlemapshacks.html)."

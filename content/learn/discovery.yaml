@@ -1,0 +1,208 @@
+short: Service discovery
+title: Service discovery, health checks and stale lists
+time: about 45 minutes
+tags: [registry, DNS, Consul, Kubernetes, heartbeats]
+lede: In the cloud, servers come and go every minute and their addresses change. Learn how services find each other through a registry, how health checks remove dead copies, and why a crashed server can still get traffic for a while.
+
+idea: |
+  When the order service wants to call the payment service, it needs an address, such as `10.0.3.17:8080`. With one server you could write that in a config file. With 20 copies that scale up and down, crash and move, a fixed list is always out of date.
+
+  **Service discovery** keeps a live list. Each copy of a service **registers** itself in a **registry** when it starts and sends a **heartbeat** every few seconds. If heartbeats stop, the registry removes it. Callers ask the registry for the current list and pick one copy.
+
+  There is a catch. Callers usually **cache** the list for a short time, so they do not ask the registry on every request. After a crash, traffic can still go to the dead copy until the registry notices and the cache expires. Good clients also retry on another copy.
+
+  !eli5 A taxi stand keeps a board of which drivers are free. Drivers wave every minute to show they are still there. If a driver stops waving, the board removes them. But a customer who looked at the board two minutes ago may still walk to a car that already left.
+
+scenes:
+  - title: A crash and a stale list
+    stats: [Step, Healthy copies, Copies in caller cache, Errors]
+    nodes:
+      order: {label: Order service, x: 0, y: 1, kind: box, tag: caches list 30 s}
+      reg: {label: Registry, x: 3, y: 3, kind: def, tag: heartbeat 5 s}
+      pay1: {label: Payment copy 1, x: 6, y: 0, kind: raised}
+      pay2: {label: Payment copy 2, x: 6, y: 1, kind: raised}
+      pay3: {label: Payment copy 3, x: 6, y: 2, kind: raised}
+    links: [[order, reg], [order, pay1], [order, pay2], [order, pay3], [pay1, reg], [pay2, reg], [pay3, reg]]
+    steps:
+      - title: Register and heartbeat
+        text: Three payment copies register with the registry and send a heartbeat every 5 seconds.
+        on: [pay1, pay2, pay3, reg]
+        flow: [[pay1, reg, ink], [pay2, reg, ink], [pay3, reg, ink]]
+        stats: [Register, "3", "0", "0"]
+      - title: Look up and cache
+        text: The order service asks for payment and gets three addresses. It caches them for 30 seconds and spreads calls across them.
+        on: [order, reg, pay1, pay2, pay3]
+        flow: [[reg, order, def], [order, pay1, ink], [order, pay2, ink], [order, pay3, ink]]
+        stats: [Lookup, "3", "3", "0"]
+      - title: Copy 2 crashes
+        text: Copy 2 dies. Its heartbeats stop. The registry waits for 3 missed heartbeats, 15 seconds, to avoid removing a copy that only had a short hiccup.
+        on: [pay2, order]
+        flow: [[order, pay2, atk]]
+        mark: {pay2: bad}
+        stats: [Crash, "2", "3", rising]
+      - title: Registry removes it, cache is still stale
+        text: After 15 seconds the registry drops copy 2. The order service's cache still lists it for up to 30 more seconds. Retries on another copy hide most errors.
+        on: [reg, order]
+        mark: {reg: ok, order: warn}
+        stats: [Stale cache, "2", "3", "few, retried"]
+      - title: Cache refreshes
+        text: The cache expires and the new list has two copies. Traffic goes only to healthy copies again.
+        on: [order, reg, pay1, pay3]
+        flow: [[reg, order, def], [order, pay1, ink], [order, pay3, ink]]
+        mark: {order: ok}
+        stats: [Healthy, "2", "2", "0"]
+
+terms:
+  - [Service registry, "A database of which copies of each service are running and where."]
+  - [Registration, "A copy adding itself to the registry when it starts."]
+  - [Heartbeat, "A small regular message that says I am still alive."]
+  - [Health check, "A test, such as calling /health, that decides if a copy should get traffic."]
+  - [Client side discovery, "The caller gets the list and picks a copy itself."]
+  - [Server side discovery, "The caller sends to a load balancer or proxy, which picks a copy."]
+  - [Readiness, "Whether a copy is ready for traffic right now, for example warmed up and connected to its database."]
+
+how: |
+  ### Two styles
+
+  | Style | How | Examples |
+  | --- | --- | --- |
+  | Client side | Caller asks the registry and load balances itself | Consul with a client library, Netflix Eureka |
+  | Server side | Caller calls one stable name, a proxy picks a copy | Kubernetes Services, cloud load balancers, service meshes |
+
+  ### How Kubernetes does it
+
+  A **Service** gives a set of pods one stable name and virtual IP, such as `payments.shop.svc.cluster.local`. Kubernetes tracks the pods behind it in **EndpointSlices**. Only pods whose **readiness probe** passes are added. Cluster DNS answers the name, and the node's proxy forwards traffic to a ready pod. You rarely run a separate registry inside Kubernetes.
+
+  ### Health checks that tell the truth
+
+  - **Liveness.** Is the process stuck? If it fails, restart it.
+  - **Readiness.** Can it serve right now? If it fails, stop sending traffic but do not restart.
+  - Keep checks cheap. Do not make readiness depend on every other service, or one outage takes everything out of rotation.
+
+  ### Timing is a trade-off
+
+  Time to stop sending traffic to a dead copy is roughly **missed heartbeats × interval + cache time**. 3 × 5 s + 30 s is up to 45 seconds. Shorter values react faster but add load and can remove copies that only had a short pause. Clients should add **retries on another copy** with a timeout, and a load balancer can do **outlier detection**, removing a copy that returns many errors.
+
+  ### DNS as discovery
+
+  DNS is the simplest registry. Clients and resolvers cache answers for the record's **TTL**. Some language runtimes cache DNS longer than the TTL by default, so check your runtime's settings.
+
+  ### Shutting down gracefully
+
+  Before a copy stops, it should fail its readiness check, wait for callers to notice, finish the requests it already has, and only then exit. Otherwise every deploy causes a burst of errors.
+
+  !key Discovery is eventually consistent. Design callers to expect a few dead addresses and to retry elsewhere.
+
+diagrams:
+  - type: flow
+    title: From crash to no more traffic
+    nodes: [["Copy crashes", "atk"], ["Heartbeats missed", "raised", "3 × 5 s"], ["Registry removes it", "def"], ["Caller cache expires", "raised", "up to 30 s"], ["No more traffic", "box"]]
+    edges: ["", "", "", ""]
+    caption: Add the delays to know how long callers can still hit a dead copy. Retries on another copy cover the gap.
+
+life:
+  - ["Netflix Eureka", "Netflix built Eureka for client side discovery in AWS, where instances come and go often. Clients cache the registry and keep working even if the registry is briefly unreachable, choosing availability over a perfectly fresh list."]
+  - ["Errors on every deploy", "A team saw a spike of connection errors each time they deployed. Pods were killed at once, while callers still had them in their lists. Adding a preStop wait and failing readiness first removed the spike."]
+  - ["The cached DNS answer", "An app kept calling an old database address for hours after a failover, because its runtime cached DNS answers far longer than the record's TTL. Setting the runtime's DNS cache time fixed it."]
+
+tradeoffs:
+  - ["Short heartbeat and cache times", "Dead copies leave fast.", "More load on the registry, more false removals."]
+  - ["Client side discovery", "No extra hop, smart client balancing.", "A library in every language you use."]
+  - ["Server side discovery", "Simple clients, one stable name.", "An extra hop and a component that must be highly available."]
+  - ["DNS based discovery", "Works everywhere, nothing new to run.", "Caching makes changes slow to spread."]
+
+mistakes:
+  - Hard coding IP addresses of other services.
+  - No retry on another copy when a call fails to connect.
+  - Readiness checks that call every downstream service.
+  - Killing pods without draining them first.
+  - Trusting DNS changes to apply at once.
+
+security: |
+  A registry decides where traffic goes, so protect it. Require authentication to register, or an attacker could add their own server as a copy of the payment service and receive real requests. Use mutual TLS between services, so a caller checks the identity of the copy it reached, not only its address.
+
+quiz:
+  - type: num
+    q: Heartbeats come every 5 s and the registry removes a copy after 3 missed heartbeats. Callers cache the list for 20 s. What is the longest time, in seconds, a caller may still pick a dead copy?
+    a: 35
+    tol: 0
+    why: 3 × 5 + 20 = 35 seconds.
+  - q: Which probe should fail when a pod is running but still loading its cache, so it gets no traffic but is not restarted?
+    opts: ["Readiness", "Liveness", "Startup of the node"]
+    a: 0
+    why: Readiness controls traffic. Liveness controls restarts.
+  - type: fill
+    q: A small regular message that says a service copy is still alive is a ____.
+    a: ["heartbeat"]
+    why: Missing heartbeats tell the registry a copy is gone.
+  - type: sort
+    q: Client side or server side discovery?
+    rows:
+      - ["The caller gets the list from Consul and picks a copy", "Client side"]
+      - ["The caller calls payments.svc, and a proxy picks a pod", "Server side"]
+    opts: ["Client side", "Server side"]
+    why: Who picks the copy decides the style.
+  - q: Every deploy causes a short burst of 502 errors. What is the most likely fix?
+    opts: ["Fail readiness and drain requests before the old pods exit", "Deploy less often", "Turn off health checks"]
+    a: 0
+    why: Callers need time to stop sending traffic to pods that are leaving.
+
+interview:
+  - q: How do services find each other in a system where instances change all the time?
+    keys:
+      - ["Registry with registration and heartbeats or health checks", [registry, register, heartbeat, health]]
+      - ["Client side versus server side discovery", [client side, server side, load balancer, proxy]]
+      - ["Kubernetes Services and DNS as an example", [kubernetes, service, dns, endpoint]]
+      - ["Caching makes it eventually consistent, so retry and drain", [cache, stale, ttl, retry, drain, eventual]]
+    a: |
+      Each instance registers in a service registry and keeps a heartbeat or passes health checks, so dead instances are removed. Callers either look up the list themselves and balance across it, client side discovery as with Consul or Eureka, or call a stable name and let a proxy or load balancer pick an instance, server side discovery as with Kubernetes Services. Lists are cached, so they can be stale for some seconds. Callers therefore use timeouts and retry on another instance, and instances drain gracefully before shutting down.
+    fb: Saying that discovery is eventually consistent and planning for it is the mature point.
+  - q: What is the difference between liveness and readiness checks?
+    keys:
+      - ["Liveness decides restart when stuck", [liveness, restart, stuck, dead]]
+      - ["Readiness decides whether to send traffic", [readiness, traffic, ready, serve]]
+      - ["Do not make checks depend on other services", [depend, downstream, cascade, cheap]]
+    a: |
+      Liveness asks whether the process is broken beyond repair, such as a deadlock, and failing it makes the platform restart the container. Readiness asks whether the instance can serve traffic right now, and failing it only removes the instance from load balancing, for example while warming a cache or during shutdown. Both should be cheap and should not depend on other services, otherwise one downstream outage can take every instance out or cause restart loops.
+    fb: Warning against checks that depend on downstream services shows real production experience.
+
+desk:
+  title: Traffic to ghosts
+  lede: After pods crash, the checkout service keeps getting connection errors for almost a minute.
+  situation: |
+    Heartbeat every 10 seconds, removal after 3 misses, client cache of 30 seconds, and no retries on connection errors.
+  rounds:
+    - title: Round 1. Measure the gap
+      items:
+        - type: num
+          q: For how many seconds can callers still pick a crashed copy?
+          a: 60
+          tol: 0
+          why: 3 × 10 + 30 = 60 seconds.
+        - q: Which single change hides most errors at once, without touching the registry?
+          opts: ["Retry once on another copy when a connection fails", "Increase the cache time", "Remove health checks"]
+          a: 0
+          why: A quick retry elsewhere covers the stale window.
+    - title: Round 2. Tune it
+      items:
+        - type: sort
+          q: Benefit or cost of shortening the heartbeat to 2 seconds?
+          rows:
+            - ["Dead copies are removed sooner", "Benefit"]
+            - ["More load on the registry", "Cost"]
+            - ["A short pause may remove a healthy copy", "Cost"]
+          opts: ["Benefit", "Cost"]
+          why: Every timing choice is a trade-off.
+        - type: open
+          q: Write the shutdown steps a pod should follow during a deploy.
+          a: "Receive the stop signal. Start failing readiness so the registry and load balancers stop sending new requests. Wait a few seconds longer than the discovery delay. Finish the requests already in progress. Close database connections and exit."
+  card: |
+    - Register, heartbeat, look up.
+    - Liveness restarts. Readiness routes.
+    - Dead traffic window = missed beats × interval + cache time.
+    - Retry elsewhere. Drain before you exit.
+
+refs:
+  - "Kubernetes. [Service](https://kubernetes.io/docs/concepts/services-networking/service/) and [probes](https://kubernetes.io/docs/concepts/configuration/liveness-readiness-startup-probes/)."
+  - "HashiCorp. [Consul service discovery](https://developer.hashicorp.com/consul/docs/concepts/service-discovery)."
+  - "Netflix. [Eureka](https://github.com/Netflix/eureka)."

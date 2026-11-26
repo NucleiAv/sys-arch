@@ -15,7 +15,7 @@ cards:
   - href: learn/index.html
     num: '<span class="dot def"></span> Concepts'
     t: The building blocks
-    d: Six levels, from design versus architecture and REST, GraphQL, gRPC and WebSocket, to consensus, multi-region systems, stream processing, and secure architecture, risk and GRC.
+    d: Seven levels, from design versus architecture and REST, GraphQL, gRPC and WebSocket, through transactions, Kafka, locks and consensus, to secure architecture, GRC and payments.
     go: Open the lessons
   - href: infra/index.html
     num: '<span class="dot pen"></span> Infra'
@@ -30,7 +30,7 @@ cards:
   - href: design/index.html
     num: '<span class="dot atk"></span> Design it'
     t: Real design tasks
-    d: Design a link shortener, a chat app, a news feed, payments, an AI chat app, a peer to peer network, a discussion forum, a secure medical device platform and more, step by step.
+    d: Design a link shortener, a chat app, a news feed, payments, a job scheduler, photo sharing, maps and routing, a shopping cart, a logging system, a peer to peer network and more, step by step.
     go: Open the designs
   - href: interview.html
     num: "Interview prep"

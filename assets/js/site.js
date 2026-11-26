@@ -189,10 +189,10 @@
   function drawRoute() {
     const svg = $("#route"); if (!svg || !window.ROUTE) return;
     const R_ = window.ROUTE, a = store.all();
-    const rows = [[], [], [], [], [], []];
+    const rows = [[], [], [], [], [], [], []];
     R_.forEach(r => rows[(r.l || 1) - 1].push(r));
-    const names = ["Foundations", "Data", "Many machines", "Running it for real", "Mastery", "Security and GRC"];
-    const ys = [50, 112, 174, 236, 298, 360];
+    const names = ["Foundations", "Data", "Many machines", "Running it for real", "Mastery", "Security and GRC", "Payments"];
+    const ys = [44, 96, 148, 200, 252, 304, 356];
     let h = "";
     /* snake line through the rows */
     let d = "";
@@ -202,7 +202,7 @@
       else if (i % 2) d += ` C${rgt + 30} ${ys[i - 1]} ${rgt + 30} ${y} ${rgt} ${y} H${lft}`;
       else d += ` C${lft - 30} ${ys[i - 1]} ${lft - 30} ${y} ${lft} ${y} H${rgt}`;
     });
-    d += ` C120 360 120 420 170 420 H296`;
+    d += ` C640 356 640 420 600 420 H330`;
     h += `<path class="ln" d="${d}"/>`;
     ys.forEach((y, i) => {
       h += `<text x="0" y="${y - 2}" class="t-s t-mute">${names[i]}</text><text x="0" y="${y + 14}" class="t-mono">level ${i + 1}</text>`;
@@ -217,7 +217,7 @@
     });
     const dd = Object.keys(a).filter(k => k.startsWith("design.")).length;
     h += `<a href="design/index.html"><rect x="300" y="410" width="20" height="20" transform="rotate(45 310 420)" style="fill:${dd ? "var(--pencil)" : "var(--card)"};stroke:var(--pencil);stroke-width:1.5"/>
-      <text x="334" y="424" class="t-s t-mute">then design ${window.DESIGNS} real systems</text></a>`;
+      <text x="290" y="424" text-anchor="end" class="t-s t-mute">then design ${window.DESIGNS} real systems</text></a>`;
     svg.innerHTML = h;
   }
 

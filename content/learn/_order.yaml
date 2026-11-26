@@ -6,11 +6,11 @@ levels:
   - n: 2
     t: Data
     d: Learn where data lives. Choose a database, make it fast with indexes and caches, copy it, split it and move big files near users.
-    items: [l06, l07, l08, l09, l10, l11, p2]
+    items: [l06, l07, l08, l09, l10, l11, tx, pool, search, p2]
   - n: 3
     t: Many machines
     d: Learn what changes when many machines must agree. Consistency, queues, rate limits, ids, clocks and consensus.
-    items: [l12, l13, l14, l15, l16, p3]
+    items: [l12, l13, l14, l15, l16, kafka, idem, locks, discovery, p3]
   - n: 4
     t: Running it for real
     d: Learn to keep a system alive and safe. Failure patterns, monitoring, security and how to split a system into services.
@@ -23,3 +23,7 @@ levels:
     t: Secure architecture, risk and GRC
     d: Learn to think like a security architect. Principles, crypto and access, requirements and standards, secure design, threat modeling, controls, risk, secure development and testing, security in the field, laws and GRC, and the architect's role. One product, a connected infant incubator, runs through every lesson.
     items: [s01, s02, s03, s04, s05, s06, s07, s08, s09, s10, s11, p6]
+  - n: 7
+    t: Payments and money
+    d: Learn how money moves through real systems. Card authorize and capture, wallets with double entry ledgers, UPI and the pending state, sagas and inventory holds, reconciliation, offline payments and fraud detection.
+    items: [pay-gateway, pay-ledger, pay-upi, pay-saga, pay-recon, pay-offline, pay-fraud, p7]

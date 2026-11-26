@@ -1,0 +1,103 @@
+kind: practice
+title: Level 7 practice, payments and money
+time: about 40 minutes
+lede: Mixed questions on cards, wallets, UPI, sagas, reconciliation, offline payments and fraud. Find the bug, the risk and the fix. Every answer has a reason.
+
+situation: |
+  Most questions use one online shop that takes cards and UPI, keeps a wallet for refunds and cashback, and ships physical goods.
+
+rounds:
+  - title: Round 1. Follow the money
+    items:
+      - type: sort
+        q: Put each event in the right card payment step.
+        rows:
+          - ["The issuer approves and holds 3,000 rupees", "Authorize"]
+          - ["The shop ships and asks to take the money", "Capture"]
+          - ["Banks move the money in a nightly batch", "Settle"]
+          - ["The customer's bank reverses a disputed payment", "Chargeback"]
+        opts: ["Authorize", "Capture", "Settle", "Chargeback"]
+        why: Money moves in stages, not in one step.
+      - q: A UPI payment shows pending after the customer was debited. What should the shop do?
+        opts: ["Hold the order and check the status of the same transaction", "Ask the customer to pay again", "Ship at once"]
+        a: 0
+        why: A second payment while the first is pending can charge the customer twice.
+      - type: num
+        q: A wallet top up of 1,500 rupees has a fee of 30 rupees taken from it. Entries are bank clearing −1,500, wallet +X and fees +30. What is X?
+        a: 1470
+        tol: 0
+        why: The entries must sum to zero. −1,500 + X + 30 = 0 gives X = 1,470.
+  - title: Round 2. Find the bug
+    items:
+      - q: Find the bug in this refund handler.
+        info: |
+          ```python
+          @app.post("/refunds")
+          def refund():
+              gateway.refund(payment_id=request.json["payment_id"], amount=request.json["amount"])
+              return {"ok": True}
+          ```
+        opts: ["No idempotency key and no check of the amount or the caller, so retries and abuse can refund twice or too much", "Refunds should use GET", "JSON cannot hold amounts"]
+        a: 0
+        why: Check permissions and the refundable amount, pass an idempotency key, and record the refund in the ledger.
+      - q: Find the bug in this stock hold.
+        info: |
+          ```sql
+          SELECT available FROM stock WHERE sku = 'TV-55';   -- returns 1
+          UPDATE stock SET available = 0 WHERE sku = 'TV-55';
+          ```
+        opts: ["Two buyers can both read 1 and both take the last TV", "SELECT needs ORDER BY", "available should be a string"]
+        a: 0
+        why: Use one statement, available = available - 1 WHERE available >= 1.
+      - q: Find the security bug. "Orders are marked paid when the browser reaches /payment/success."
+        opts: ["Anyone can open that URL without paying", "The URL is too long", "Success pages are slow"]
+        a: 0
+        why: Only the gateway's verified state or a signed webhook can mark an order paid.
+  - title: Round 3. Name the benefit
+    items:
+      - type: sort
+        q: Which design gives each benefit?
+        rows:
+          - ["Money can never appear or vanish", "Double entry ledger"]
+          - ["Retries never charge twice", "Idempotency keys"]
+          - ["Lost webhooks are found within a day", "Daily reconciliation"]
+          - ["Sales continue during network outages", "Offline mode with limits"]
+        opts: ["Double entry ledger", "Idempotency keys", "Daily reconciliation", "Offline mode with limits"]
+        why: Each control has one main job.
+      - q: What is the benefit of using the gateway's hosted card fields?
+        opts: ["Card numbers never reach your servers, so PCI DSS scope shrinks", "Pages load faster", "Fraud disappears"]
+        a: 0
+        why: Not touching card data removes most card security duties.
+  - title: Round 4. Risk, GRC and mitigation
+    items:
+      - q: Support staff fix wallet mistakes by editing balances in the database. What kind of issue is this?
+        opts: ["A control and audit issue, there is no trail and no second approval", "A performance issue", "A UI issue"]
+        a: 0
+        why: Use reversal entries, two person approval and logs.
+      - type: sort
+        q: Pick the mitigation for each risk.
+        rows:
+          - ["A webhook endpoint can be called by anyone", "Verify the gateway's signature"]
+          - ["A merchant row is locked thousands of times a second", "Split into sub accounts"]
+          - ["Card testing with tiny payments", "Velocity rules and CAPTCHA"]
+        opts: ["Verify the gateway's signature", "Split into sub accounts", "Velocity rules and CAPTCHA"]
+        why: Match the control to the risk.
+      - q: You raise the fraud block line from 80 to 95. What should you watch?
+        opts: ["Fraud losses and chargebacks rise, while fewer honest customers are refused", "Only page speed", "Nothing, it is safe"]
+        a: 0
+        why: Moving the line trades one cost for the other.
+  - title: Round 5. Workarounds
+    items:
+      - type: open
+        q: The payment gateway's webhooks are delayed for three hours. How do you keep orders flowing?
+        a: "Run a job every few minutes that lists recent payments from the gateway's API and updates any order whose state changed. Keep the webhook handler deduplicated by event id, so the late webhooks change nothing. Reconcile the day's payments against the settlement report the next morning."
+      - type: open
+        q: "Design task. A canteen app runs a wallet, takes UPI top ups and must work when the campus Wi-Fi fails. Name four parts of your design."
+        a: "1. A double entry ledger in integer paise with locks on the paying account and idempotency keys on every request. 2. UPI top ups with a unique transaction id, a pending state, status polling and no second request while pending. 3. Offline mode on the canteen terminal with a small per payment limit, a total offline limit and signed records with counters, synced when Wi-Fi returns. 4. Daily reconciliation of top ups against the provider's settlement report and of offline records against the ledger."
+card: |
+  - Authorize, capture, settle. Refunds and chargebacks after.
+  - Ledger entries sum to zero. Integers. Append only.
+  - Idempotency keys on every money call.
+  - Pending is a real state. One id per payment.
+  - Sagas undo in reverse. Holds use one conditional update.
+  - Reconcile daily. Cap offline risk. Balance fraud cost against lost sales.

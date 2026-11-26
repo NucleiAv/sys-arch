@@ -1,0 +1,216 @@
+short: UPI payments
+title: UPI, real time bank payments and the pending state
+time: about 50 minutes
+tags: [UPI, NPCI, pending, reversal, status check]
+lede: In India you pay a tea shop by scanning a QR code, and the money moves from your bank to theirs in seconds. Learn who takes part in a UPI payment, what happens when one bank is slow or down, and how to design an app that handles pending payments safely.
+
+idea: |
+  **UPI**, the Unified Payments Interface, lets people send money from one bank account to another in real time, using a phone app and an address like `shop@okbank` instead of an account number. **NPCI**, the National Payments Corporation of India, runs the central switch. UPI started in 2016 and by 2025 carried well over ten billion payments a month.
+
+  A UPI payment has four main players.
+
+  1. Your **UPI app**, such as a bank app or a third party app, working with a **payment service provider** bank.
+  2. The **NPCI switch** in the middle, which routes every request.
+  3. Your bank, the **remitter bank**, which takes the money out.
+  4. The shop's bank, the **beneficiary bank**, which puts the money in.
+
+  You enter your **UPI PIN** in the app. Your bank checks it, debits your account and tells NPCI. NPCI asks the shop's bank to credit the shop. When both are done, everyone gets a success message.
+
+  The hard part is the middle. If your bank has debited you but the shop's bank does not answer in time, the payment is neither clearly done nor clearly failed. It is **pending**. The system must settle it later, by crediting the shop or by **reversing** the debit back to you.
+
+  !eli5 You hand a letter to a post office, which takes your stamp money and passes the letter to another post office. If the second office does not reply, nobody knows yet if the letter arrived. You wait for the answer. If it never arrived, the first office gives your stamp money back.
+
+scenes:
+  - title: A QR payment when the shop's bank is slow
+    stats: [Step, Customer debited, Shop credited, Status]
+    nodes:
+      app: {label: Customer UPI app, x: 0, y: 1, kind: box}
+      npci: {label: NPCI switch, x: 3, y: 1, kind: def}
+      rem: {label: Customer's bank, x: 3, y: 3, kind: raised, tag: remitter}
+      ben: {label: Shop's bank, x: 6, y: 1, kind: raised, tag: beneficiary}
+      shop: {label: Shop app, x: 6, y: 3, kind: box}
+    links: [[app, npci], [npci, rem], [npci, ben], [ben, shop]]
+    steps:
+      - title: Scan and pay
+        text: The customer scans the QR code, which holds shop@okbank and 120 rupees, and enters the UPI PIN. The app sends the request with a unique transaction id to NPCI.
+        on: [app, npci]
+        flow: [[app, npci, ink]]
+        stats: [Request, "no", "no", initiated]
+      - title: Debit at the customer's bank
+        text: NPCI sends it to the customer's bank. The bank checks the PIN and the balance, debits 120 and replies success.
+        on: [npci, rem]
+        flow: [[npci, rem, ink], [rem, npci, def]]
+        stats: [Debit, "yes", "no", in progress]
+      - title: Credit request times out
+        text: NPCI asks the shop's bank to credit 120. The shop's bank is slow and does not reply in time. The customer sees pending.
+        on: [npci, ben]
+        flow: [[npci, ben, atk]]
+        mark: {ben: warn, app: warn}
+        stats: [Timeout, "yes", unknown, pending]
+      - title: Status checks
+        text: The customer's app and the shop's system ask NPCI for the status every few seconds, then less often. They do not start a new payment.
+        on: [app, npci, shop]
+        flow: [[app, npci, pen], [shop, ben, pen]]
+        stats: [Check status, "yes", unknown, pending]
+      - title: Resolved
+        text: Either the shop's bank confirms the credit, and both sides see success, or it is marked failed and the customer's bank reverses the 120. Regulators set deadlines for such reversals.
+        on: [ben, shop, rem]
+        flow: [[ben, shop, def], [npci, rem, def]]
+        mark: {shop: ok, app: ok}
+        stats: [Final, "yes or reversed", "yes or no", success or failed]
+
+terms:
+  - [UPI, "Unified Payments Interface. Real time account to account payments in India."]
+  - [NPCI, "National Payments Corporation of India, which runs the UPI switch."]
+  - [VPA or UPI ID, "A payment address like name@bank, linked to a bank account."]
+  - [UPI PIN, "A secret number the customer enters to approve a payment. It is checked by the customer's bank."]
+  - [Remitter bank, "The payer's bank, which debits the account."]
+  - [Beneficiary bank, "The payee's bank, which credits the account."]
+  - [Pending, "The payer has been debited but the final result is not known yet."]
+  - [Reversal, "Returning a debited amount to the payer when the credit failed."]
+  - [Collect request, "A request from the payee asking the payer to approve a payment, unlike a normal pay where the payer starts."]
+
+how: |
+  ### Why pending exists
+
+  Every step is a network call between different organizations, and any one can be slow. A debit that succeeded cannot be silently forgotten, and a credit cannot be guessed. So UPI has a **pending** state and a way to **check status** and **settle later**.
+
+  ### Rules for an app or a merchant
+
+  1. **Make a unique transaction id** for each payment and reuse it for every status check. Never start a second payment because the first is pending. That is how customers pay twice.
+  2. **Poll status with backoff**, for example every 5 seconds at first, then every 30 seconds, and also accept callbacks from your payment provider.
+  3. **Ship only on success.** For a pending payment, show "we are checking" and hold the order.
+  4. **Reconcile** every day against your provider's settlement report, see lesson 7.5.
+
+  ### Reversal deadlines
+
+  The Reserve Bank of India set **turnaround times** for failed digital payments in 2019. For UPI, if a customer is debited but the payee is not credited, the amount must be reversed automatically, generally by the next working day. If a bank misses the deadline, it pays the customer compensation for each day of delay. Check the current RBI rules before you rely on exact numbers.
+
+  ### Pay versus collect
+
+  | | Pay, also called push | Collect, also called pull |
+  | --- | --- | --- |
+  | Who starts | The payer | The payee |
+  | Example | Scan a QR code and pay | A website sends a request to your UPI app |
+  | Risk | Low, the payer chose the amount | Fraudsters send fake collect requests hoping people approve them |
+
+  Because of fraud, NPCI has limited person to person collect requests, and apps warn users that entering a PIN always means **paying**, never receiving.
+
+  !key In real time payments, "unknown" is a valid answer. Design screens, data and support for pending, not only for success and failure.
+
+diagrams:
+  - type: flow
+    title: The happy path of a UPI payment
+    nodes: [["Customer app", "box", "PIN entered"], ["NPCI switch", "def"], ["Customer bank debits", "raised"], ["Shop bank credits", "raised"], ["Both notified", "def"]]
+    edges: ["", "", "", ""]
+    caption: Each arrow can time out. A timeout after the debit makes the payment pending until it is confirmed or reversed.
+
+life:
+  - ["UPI's growth", "UPI went from a pilot in 2016 to the most used way to pay in India. It shows how a shared national switch, open to many apps and banks, can scale real time payments to billions a month."]
+  - ["Paying twice at a petrol pump", "A customer's payment showed pending, so the attendant asked them to pay again. Ten minutes later the first payment went through too. The pump now shows the status of the first payment and waits, instead of asking for a new one."]
+  - ["The fake collect request", "Fraudsters sent collect requests that said things like \"receive 5,000 rupees\". People entered their PIN and paid instead. Apps added clear warnings, and NPCI limited peer to peer collect requests."]
+
+tradeoffs:
+  - ["Short status timeout", "Customers learn the result fast.", "More payments end as pending, more checks."]
+  - ["Long wait before showing pending", "Fewer pending screens.", "Customers stare at a spinner and may pay again."]
+  - ["Polling status", "Works even when callbacks fail.", "Extra load, needs backoff."]
+  - ["Callbacks from the provider", "Fast and cheap.", "Can be lost, so keep polling or reconciliation as backup."]
+
+mistakes:
+  - Asking the customer to pay again while the first payment is pending.
+  - Making a new transaction id for each status check.
+  - Shipping goods on pending.
+  - Showing "failed" when the true state is unknown.
+  - Not reconciling with the settlement report.
+
+security: |
+  Never ask users for their UPI PIN outside the official PIN screen, and teach them that a PIN is only for paying. Verify that callbacks really come from your payment provider. Check the amount and the payee in the final status against what you expected, so a tampered QR code or a changed amount is caught. Watch for many small payments from new accounts, a sign of mule accounts used for fraud.
+
+quiz:
+  - q: Who checks the customer's UPI PIN?
+    opts: ["The customer's bank", "The shop", "The QR code printer"]
+    a: 0
+    why: The PIN is validated by the bank that holds the account.
+  - q: The customer was debited, but the shop's bank timed out. What state is the payment in?
+    opts: ["Pending, until it is confirmed or reversed", "Failed, refund now", "Success, ship now"]
+    a: 0
+    why: The result is unknown, so treat it as pending.
+  - type: fill
+    q: Returning a debited amount to the payer when the credit failed is called a ____.
+    a: ["reversal"]
+    why: Reversals settle pending payments that did not complete.
+  - q: Spot the problem in this checkout. "If the UPI status is pending after 20 seconds, show a Pay again button with a new transaction."
+    opts: ["Customers can be charged twice when the first payment later succeeds", "20 seconds is too fast to scan a QR", "UPI has no pending state"]
+    a: 0
+    why: Keep checking the same transaction id and hold the order instead.
+  - type: sort
+    q: Pay or collect?
+    rows:
+      - ["You scan a shop's QR code and approve 120", "Pay"]
+      - ["A website sends a request that pops up in your UPI app", "Collect"]
+    opts: ["Pay", "Collect"]
+    why: Who starts the payment decides the type.
+  - q: What should a merchant do with a pending payment?
+    opts: ["Hold the order, poll status with backoff and accept callbacks", "Cancel the order at once", "Ship and hope"]
+    a: 0
+    why: Wait for a final state from the provider.
+
+interview:
+  - q: Design the payment status handling for a shop that accepts UPI.
+    keys:
+      - ["Unique transaction id per payment, never a second payment while pending", [unique, transaction id, same id, pay again, twice]]
+      - ["Pending state with status polling and backoff", [pending, poll, status, backoff]]
+      - ["Callbacks or webhooks verified", [callback, webhook, verify, signature]]
+      - ["Ship only on success and reconcile daily", [success, ship, reconcil, settlement]]
+    a: |
+      Each payment gets a unique transaction id that I store with the order. The UI shows three outcomes, success, failed and pending. For pending I hold the order, poll the provider's status API for that same id with backoff, and accept signed callbacks, whichever comes first. I never offer a second payment while one is pending, since both could succeed. I ship only on confirmed success. A daily reconciliation against the provider's settlement report catches anything the callbacks missed, and pending payments that end as failed are reversed to the customer by the banks within the regulator's deadlines.
+    fb: Treating pending as a first class state is the core of the answer.
+  - q: How is UPI different from a card payment?
+    keys:
+      - ["Account to account, bank to bank in real time", [account to account, bank to bank, real time, account]]
+      - ["NPCI switch and UPI ID instead of card network and card number", [npci, switch, upi id, vpa]]
+      - ["PIN approved by the payer's bank, push payment", [pin, push, payer starts, approve]]
+      - ["No authorize then capture hold in the basic flow", [no hold, no capture, immediate, authorize]]
+    a: |
+      UPI moves money directly from the payer's bank account to the payee's bank account in real time, through NPCI's central switch, using a UPI ID instead of a card number. In a normal pay flow the payer starts the payment and approves it with a PIN checked by their own bank. A card payment goes through a card network and the merchant's acquirer, usually authorizes a hold first and captures later, and settles in batches. Basic UPI has no separate hold and capture step, so refunds are new payments back to the customer.
+    fb: Contrasting push account to account with the card authorize and capture flow shows breadth.
+
+desk:
+  title: The petrol pump checkout
+  lede: A chain of petrol pumps sees customers charged twice. Design the UPI flow again.
+  situation: |
+    The pump's terminal shows a QR for each sale. If no success arrives in 15 seconds, the attendant presses New QR, which starts a new transaction.
+  rounds:
+    - title: Round 1. Find the problems
+      items:
+        - q: Why are some customers charged twice?
+          opts: ["The first payment was only pending, then succeeded, while the customer also paid a new QR", "UPI is unreliable", "The QR codes are too small"]
+          a: 0
+          why: A new transaction while the first is pending can lead to two debits.
+        - type: sort
+          q: Problem or fix?
+          rows:
+            - ["New QR after 15 seconds", "Problem"]
+            - ["Show the first payment's live status", "Fix"]
+            - ["Refund duplicates automatically when both succeed", "Fix"]
+          opts: ["Problem", "Fix"]
+          why: Wait on the first payment, and clean up any duplicates that slip through.
+    - title: Round 2. Workaround and benefit
+      items:
+        - type: open
+          q: The payment provider's status API is down for an hour. What should attendants do?
+          a: "Keep the sale open, note the transaction id, and ask the customer to show the success screen in their UPI app with the same amount, time and the pump's UPI ID. Record it as unconfirmed. Confirm or reverse every unconfirmed sale against the provider's report when the API is back, and refund any duplicates."
+        - q: What is the main benefit of one transaction id per sale, reused in every status check?
+          opts: ["You can always tell if the sale is already paid, so you never ask for a second payment", "It makes QR codes prettier", "It is required for cash"]
+          a: 0
+          why: One id gives one truth to check.
+  card: |
+    - App, NPCI, payer bank, payee bank.
+    - Debited plus timeout means pending.
+    - One transaction id. Poll status. Never pay again while pending.
+    - Ship on success. Reconcile. Reverse failed debits on time.
+
+refs:
+  - "NPCI. [National Payments Corporation of India](https://www.npci.org.in/), which runs UPI and publishes monthly statistics."
+  - "Wikipedia. [Unified Payments Interface](https://en.wikipedia.org/wiki/Unified_Payments_Interface)."
+  - "Reserve Bank of India. [Harmonisation of turn around time and customer compensation for failed transactions, 2019](https://www.rbi.org.in/Scripts/NotificationUser.aspx?Id=11693)."

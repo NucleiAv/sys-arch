@@ -1,0 +1,216 @@
+slug: d19
+num: "19"
+short: Photo sharing
+title: Design a photo sharing app like Instagram
+time: about 75 minutes
+tags: [object storage, CDN, image variants, presigned URLs]
+lede: People upload photos from phones and scroll through thousands of others, fast, on slow networks, all over the world. Design the upload path, the image processing, and how photos reach a phone in a few hundred milliseconds.
+
+ask: |
+  Users post photos with a caption, follow other users and scroll a feed of photos. Photos must look sharp on any screen but load fast on a weak mobile network. The feed itself is covered in the news feed design, d03. Here, focus on storing, processing and serving photos.
+
+reqs:
+  func:
+    - Upload one or more photos with a caption.
+    - Show photos in a feed, on profiles and in full screen.
+    - Serve the right size for each screen.
+    - Delete a photo everywhere when the owner deletes it.
+  nonfunc:
+    - Feed thumbnails load in under 300 ms for most users worldwide.
+    - Uploads work on slow networks and can resume.
+    - Photos are never lost once the upload is confirmed.
+    - Reads outnumber uploads by more than 100 to 1.
+  out:
+    - Stories, video, the ranking of the feed, comments and likes.
+
+estimate:
+  intro: |
+    100 million photos uploaded a day. The average phone original is 3 MB. We keep the original plus 4 resized variants that together add about 1 MB. Each photo is viewed about 200 times on average. A feed thumbnail is about 50 KB.
+  items:
+    - type: num
+      q: New storage a day, in TB, for originals plus variants?
+      a: 400
+      tol: 10
+      unit: TB
+      why: 100 million × 4 MB = 400 million MB, which is about 400 TB a day, roughly 146 PB a year before replication.
+    - type: num
+      q: Views a day, in billions?
+      a: 20
+      tol: 0.5
+      unit: billion
+      why: 100 million × 200 = 20 billion views a day.
+    - type: num
+      q: If every view were a 50 KB thumbnail served from origin, how many PB a day would that be?
+      a: 1
+      tol: 0.05
+      unit: PB
+      why: 20 billion × 50 KB = 1,000 TB, about 1 PB a day. A CDN must serve almost all of it from edge caches.
+  after: |
+    !key Storage grows by hundreds of TB a day, and reads are petabytes. That points to object storage for bytes, a CDN for delivery, and a separate database only for small metadata.
+
+api: |
+  ```
+  POST /v1/uploads                 -> { upload_id, presigned_url, expires_in: 900 }
+  PUT  <presigned_url>             the phone sends bytes straight to object storage
+  POST /v1/posts                   { upload_ids: [...], caption }   -> post id, status processing
+  GET  /v1/posts/{id}              caption, author, image URLs for each size
+  DELETE /v1/posts/{id}
+  ```
+
+data: |
+  | Store | Holds | Why |
+  | --- | --- | --- |
+  | Object storage | Originals and resized variants | Cheap, durable, huge |
+  | Posts table, sharded by user id | post id, user id, caption, created_at, status | Small rows, fast lookups |
+  | Media table | post id, object keys per size, width, height | Lets clients pick a size |
+  | CDN | Cached variants near users | Fast reads, protects origin |
+
+  Ids can carry a time part so posts sort by time without a lookup, like the Snowflake ids in lesson 3.4.
+
+scenes:
+  - title: From upload to a phone in another city
+    stats: [Step, Where the photo is, Bytes through our API servers, Load time]
+    nodes:
+      phone: {label: Phone, x: 0, y: 1, kind: box}
+      api: {label: API servers, x: 2, y: 0, kind: def}
+      obj: {label: Object storage, x: 4, y: 1, kind: raised, tag: originals}
+      proc: {label: Image workers, x: 4, y: 3, kind: def, tag: resize}
+      cdn: {label: CDN edge, x: 6, y: 1, kind: raised, tag: near viewer}
+      view: {label: Viewer phone, x: 6, y: 3, kind: box}
+    links: [[phone, api], [phone, obj], [obj, proc], [obj, cdn], [cdn, view]]
+    steps:
+      - title: Ask to upload
+        text: The phone asks the API for an upload. The API returns a presigned URL that lets the phone write one object for 15 minutes.
+        on: [phone, api]
+        flow: [[phone, api, ink], [api, phone, def]]
+        stats: [Request, phone, "0 MB", "-"]
+      - title: Upload straight to storage
+        text: The phone sends the 3 MB original straight to object storage, in parts so it can resume on a weak network. Our API servers carry none of these bytes.
+        on: [phone, obj]
+        flow: [[phone, obj, ink]]
+        stats: [Upload, object storage, "0 MB", "-"]
+      - title: Resize in the background
+        text: A storage event starts image workers. They strip location data, make 4 sizes from 150 px to 1080 px in a modern format such as WebP or AVIF, and save them.
+        on: [obj, proc]
+        flow: [[obj, proc, def], [proc, obj, def]]
+        mark: {proc: ok}
+        stats: [Process, 5 objects, "0 MB", "-"]
+      - title: First view in Mumbai
+        text: A viewer in Mumbai scrolls to the post. The CDN edge in Mumbai does not have it yet, so it fetches the 50 KB thumbnail from origin once and keeps it.
+        on: [obj, cdn, view]
+        flow: [[obj, cdn, pen], [cdn, view, def]]
+        stats: [Cache miss, edge cache, "0 MB", "280 ms"]
+      - title: Everyone else in Mumbai
+        text: Thousands of later viewers in Mumbai get the thumbnail from the edge cache, a few milliseconds away. Origin sees almost no traffic for this photo.
+        on: [cdn, view]
+        flow: [[cdn, view, def]]
+        mark: {cdn: ok}
+        stats: [Cache hit, edge cache, "0 MB", "40 ms"]
+
+hld: |
+  1. **Upload service** hands out presigned URLs and records upload ids. Bytes go straight from phone to object storage with resumable multipart upload.
+  2. **Image pipeline.** Storage events go on a queue. Workers validate the file, strip metadata such as GPS, make several sizes and formats, and mark the post ready.
+  3. **Metadata store.** Posts and media rows, sharded by user id.
+  4. **Delivery.** A CDN in front of object storage. URLs include the size and a version, so they can be cached for a long time.
+  5. **Feed and profiles** return post ids and image URLs. The client picks the size that fits its screen.
+  6. **Deletion.** Mark the post deleted, remove objects, and purge CDN caches. Cached copies expire anyway because URLs include a version.
+
+diagrams:
+  - type: split
+    title: One upload, many variants
+    source: ["3 MB original", "def"]
+    targets:
+      - ["150 px thumbnail", "box", "grids and feeds on small screens"]
+      - ["320 px", "box", "feeds on phones"]
+      - ["640 px", "box", "feeds on large phones"]
+      - ["1080 px", "raised", "full screen view"]
+    caption: Each screen downloads the smallest image that still looks sharp. Most views never touch the original.
+
+deep:
+  - ["Why presigned URLs", "If 3 MB uploads passed through API servers, those servers would spend their time moving bytes. A presigned URL lets the phone write directly to object storage, while the API stays small and only checks who may upload."]
+  - ["Choosing sizes and formats", "A phone showing a 360 px wide feed should not download a 3 MB original. Modern formats like WebP and AVIF are often much smaller than JPEG at similar quality. Clients send their screen size, or the server lists sizes and the client picks."]
+  - ["Cache keys and versions", "Put the size and a version in the URL, such as /p/81/640/v2.webp. Then the CDN can cache it for a year. Editing a photo creates a new version, so no purge is needed for updates."]
+  - ["Hot photos", "A celebrity post can get millions of views in minutes. The CDN absorbs this. Origin shielding, where edge caches fetch through one mid tier cache, stops a stampede of cache misses on origin."]
+  - ["Instagram's ids", "Instagram's engineers described 64 bit ids made of a timestamp, a logical shard id and a sequence number, generated inside PostgreSQL. Ids sort by time and also tell you which shard holds the row."]
+
+tradeoffs:
+  - ["Make all sizes at upload", "Fast reads, predictable cost.", "Storage for sizes nobody views."]
+  - ["Resize on demand at the edge", "Only sizes that are used.", "Slow first view, needs an image service."]
+  - ["Long CDN cache times", "Cheap and fast.", "Deletes and changes need versioned URLs or purges."]
+  - ["Keep originals forever", "Can make new formats later.", "The largest storage cost."]
+
+security: |
+  Images carry hidden data. Strip GPS and camera metadata so a photo does not reveal a home address. Check file types by content and process images in sandboxed workers, since image parsers have had many security bugs. Presigned URLs should allow only one object, one content type, a size limit and a short expiry. For private accounts, use signed CDN URLs that expire, so a copied link stops working. Scan uploads for known illegal content as the law requires.
+
+task:
+  intro: |
+    Walk through upload and delivery, and defend your storage and CDN choices.
+  items:
+    - q: Explain how a photo goes from a user's phone to thousands of viewers' screens quickly and cheaply.
+      keys:
+        - ["Presigned URL, upload straight to object storage, resumable", [presigned, object storage, s3, direct, multipart, resum]]
+        - ["Async processing into several sizes and formats", [resize, variant, sizes, webp, avif, worker, queue]]
+        - ["Metadata in a sharded database", [metadata, database, shard, posts table]]
+        - ["CDN delivery with versioned URLs", [cdn, edge, cache, version]]
+        - ["Strip metadata and control access", [gps, exif, metadata strip, signed, private]]
+      a: |
+        The phone asks the API for a presigned URL and uploads the original straight to object storage in resumable parts, so API servers never carry the bytes. A storage event puts a job on a queue. Image workers strip GPS and other metadata, then create several sizes and modern formats, and the post is marked ready. Post and media metadata live in a database sharded by user id. Feeds return image URLs that include the size and a version, so a CDN can cache them for a long time. Viewers fetch the smallest variant that fits their screen from a nearby edge, and origin shielding protects storage when a photo goes viral. Private photos use signed, expiring CDN URLs.
+      fb: Direct to storage uploads and versioned CDN URLs are the two ideas that make this design scale.
+
+interview:
+  - q: How do you delete a photo that is cached on CDN edges around the world?
+    keys:
+      - ["Mark deleted in metadata so it disappears from feeds at once", [mark, metadata, feed, hide]]
+      - ["Delete objects from storage", [delete object, storage, remove]]
+      - ["Purge CDN or rely on short signed URLs and versioning", [purge, invalidat, signed, expire, version]]
+    a: |
+      First I mark the post deleted in the metadata store, so feeds and profiles stop returning it immediately. Then I delete the original and all variants from object storage and send purge requests to the CDN for those URLs. For private or sensitive content I serve images through signed URLs with a short expiry, so even a missed purge stops working soon. Legal takedowns get the same flow with priority and an audit record.
+    fb: Hiding it from metadata first, then purging, shows you know caches lag.
+  - q: Why not store images in the database?
+    keys:
+      - ["Databases are expensive per byte and slow for large blobs", [expensive, cost, blob, large]]
+      - ["Object storage is cheap, durable and scales", [object storage, cheap, durable, scale]]
+      - ["CDNs integrate with object storage", [cdn, integrat, serve]]
+    a: |
+      Images are large blobs that are written once and read many times. Databases are built for small rows, indexes and transactions, and storing petabytes of blobs there is costly and makes backups and replication slow. Object storage is cheap, very durable and scales without limit, and CDNs can pull from it directly. The database keeps only the small metadata and the object keys.
+    fb: Saying "bytes in object storage, facts in the database" is the clean summary.
+
+desk:
+  title: The slow feed
+  lede: Users in other countries say the feed loads slowly and uses a lot of data.
+  situation: |
+    Uploads go through the API servers. The feed sends the original 3 MB image to every phone. Images are served from one data center with no CDN.
+  rounds:
+    - title: Round 1. Find the problems
+      items:
+        - type: sort
+          q: What does each choice cause?
+          rows:
+            - ["Uploads pass through API servers", "API servers busy moving bytes"]
+            - ["Feed sends 3 MB originals", "Slow loads and high data use"]
+            - ["No CDN, one data center", "Long round trips for far away users"]
+          opts: ["API servers busy moving bytes", "Slow loads and high data use", "Long round trips for far away users"]
+          why: Three separate fixes.
+        - q: What is the biggest single win for users far away?
+          opts: ["Serve resized images from a CDN near them", "A bigger database", "More API servers"]
+          a: 0
+          why: Smaller images from a nearby edge fix both size and distance.
+    - title: Round 2. Privacy and workarounds
+      items:
+        - q: A user's home address could be found from their photos. What is the cause?
+          opts: ["GPS data in the image metadata was not stripped", "The caption mentioned the city", "The CDN was too fast"]
+          a: 0
+          why: Strip EXIF location data during processing.
+        - type: open
+          q: The resize workers are backed up for an hour after a big event. What is a workaround so posts still appear?
+          a: "Show the post with a lower quality placeholder, such as a small thumbnail made first in a fast priority queue, then swap in full sizes when ready. Scale workers out, and give the thumbnail step priority over larger sizes."
+  card: |
+    - Presigned URLs. Bytes go phone to storage.
+    - Resize in the background. Several sizes and formats.
+    - Metadata in a sharded database. Bytes in object storage.
+    - CDN with versioned URLs. Strip GPS data.
+
+refs:
+  - "Instagram Engineering. [Sharding and IDs at Instagram](https://medium.com/instagram-engineering/sharding-ids-at-instagram-1cf5a71e5a5c)."
+  - "AWS. [Uploading objects with presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html)."
+  - "web.dev. [Use modern image formats](https://web.dev/articles/serve-images-webp)."

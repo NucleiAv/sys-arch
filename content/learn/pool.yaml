@@ -1,0 +1,218 @@
+short: Connection pooling
+title: Connection pooling, borrowing database connections
+time: about 40 minutes
+tags: [pool, PgBouncer, Little's law, limits]
+lede: Opening a database connection is slow and each one uses memory on the server. Learn why apps borrow connections from a pool, how to size it with simple math, and what happens when the pool or the database runs out.
+
+idea: |
+  Before your app can run a query, it needs a **connection** to the database. Opening one is not cheap. It needs a TCP handshake, often a TLS handshake, a login check, and on PostgreSQL the server starts a new process for it.
+
+  If every request opened its own connection and closed it after, you would pay that cost every time, and a traffic spike would open thousands of connections at once. The database has a hard limit. PostgreSQL allows 100 by default.
+
+  A **connection pool** keeps a small number of connections open and lends them out. A request **borrows** a connection, runs its queries and **returns** it. The next request reuses it at once.
+
+  !eli5 A library does not print a new book for every reader. It keeps a few copies on the shelf. You borrow one, read, and bring it back. If all copies are out, you wait in line for a short time.
+
+scenes:
+  - title: Requests borrow from a pool of 4
+    stats: [Step, In use, Waiting, Database connections]
+    nodes:
+      r1: {label: Requests, x: 0, y: 1, kind: box, tag: 200 a second}
+      app: {label: App server, x: 2, y: 1, kind: def}
+      pool: {label: Pool of 4, x: 4, y: 1, kind: raised, tag: kept open}
+      db: {label: PostgreSQL, x: 6, y: 1, kind: def, tag: limit 100}
+      slow: {label: Slow query, x: 4, y: 3, kind: atk}
+    links: [[r1, app], [app, pool], [pool, db], [slow, pool]]
+    steps:
+      - title: Borrow
+        text: A request asks the pool for a connection. One is free, so it gets it in microseconds. No handshake needed.
+        on: [r1, app, pool]
+        flow: [[r1, app, ink], [app, pool, def]]
+        stats: [Borrow, "1", "0", "4"]
+      - title: Query and return
+        text: The query takes 5 ms. Then the connection goes back to the pool, still open, ready for the next request.
+        on: [pool, db]
+        flow: [[pool, db, def]]
+        mark: {pool: ok}
+        stats: [Return, "0", "0", "4"]
+      - title: Busy but fine
+        text: At 200 requests a second and 5 ms each, about 1 connection is busy at any moment. A pool of 4 has room to spare.
+        on: [r1, app, pool, db]
+        flow: [[r1, app, ink], [app, pool, def], [pool, db, def]]
+        stats: [Steady, "1", "0", "4"]
+      - title: A slow query holds connections
+        text: A report query takes 2 seconds and runs 4 times. All 4 connections are busy. New requests wait in the pool's queue.
+        on: [slow, pool]
+        flow: [[slow, pool, atk]]
+        mark: {pool: warn}
+        stats: [Exhausted, "4", "120", "4"]
+      - title: Timeout, not collapse
+        text: After a 1 second wait, the pool gives up and the request fails fast with a clear error. The database itself is safe, because it still sees only 4 connections.
+        on: [app, pool]
+        mark: {app: bad}
+        stats: [Fail fast, "4", "0", "4"]
+
+terms:
+  - [Connection, "An open, logged in link between your app and the database."]
+  - [Connection pool, "A set of open connections that the app reuses."]
+  - [Pool size, "The most connections the pool will open."]
+  - [Acquire timeout, "How long a request waits for a free connection before giving up."]
+  - [Idle timeout, "How long an unused connection stays open before the pool closes it."]
+  - [PgBouncer, "A separate pooler that sits in front of PostgreSQL and shares a few real connections among many clients."]
+  - [Little's law, "Busy items = arrival rate × time each item takes. Here, busy connections = queries a second × seconds per query."]
+
+how: |
+  ### Size the pool with Little's law
+
+  Connections busy at once = queries a second × seconds per query.
+
+  | Queries a second | Time per query | Busy connections |
+  | --- | --- | --- |
+  | 200 | 5 ms | 1 |
+  | 2,000 | 5 ms | 10 |
+  | 2,000 | 50 ms | 100 |
+
+  Add headroom for spikes, often about double. A bigger pool is not always better. The database has a fixed number of CPU cores. Hundreds of active connections fight for those cores and the disk, and every query gets slower. A small pool with a short queue is often faster than a huge pool.
+
+  ### Count every pool, on every server
+
+  Total connections = pool size × app instances. 20 connections × 30 pods = 600, which is far over PostgreSQL's default of 100. Autoscaling the app can break the database this way.
+
+  ### Two places to pool
+
+  | Where | Example | Good for |
+  | --- | --- | --- |
+  | Inside the app | HikariCP for Java, SQLAlchemy pool for Python | One app with a few instances |
+  | In front of the database | PgBouncer, RDS Proxy | Many instances or serverless functions |
+
+  PgBouncer has three modes. **Session** gives a client a server connection for its whole session. **Transaction** gives it one only during a transaction, which shares connections far better. **Statement** gives one per statement and is rarely used. Transaction mode breaks features that depend on the session, such as session level settings and some uses of prepared statements, so check before you switch.
+
+  ### Settings that matter
+
+  - **Acquire timeout.** Fail fast, about 1 to 3 seconds, rather than piling up requests.
+  - **Max lifetime.** Recycle connections now and then, so a database failover or a firewall that drops idle links does not leave dead connections.
+  - **Validation.** Check a connection is alive before lending it, or after an error.
+
+  !key When the pool is exhausted, the real problem is usually slow queries or a leak, not a small pool. Fix the slow query first.
+
+diagrams:
+  - type: flow
+    title: The life of one borrowed connection
+    nodes: [["Request arrives", "box"], ["Borrow from pool", "def", "or wait"], ["Run queries", "raised"], ["Return to pool", "def", "stays open"]]
+    edges: ["", "", ""]
+    caption: The expensive handshake and login happen once per connection, not once per request.
+
+life:
+  - ["Serverless meets PostgreSQL", "A team moved an API to serverless functions. Each function instance opened its own connection. A traffic spike started 800 instances and the database refused connections at 100. A pooler in front of the database, such as RDS Proxy, shared a small number of real connections among them."]
+  - ["The leak", "A code path forgot to return its connection when an exception was thrown. The pool slowly emptied over a day and then every request timed out. Using a with block that always returns the connection fixed it, and a leak detection setting in the pool now logs any connection held longer than 10 seconds."]
+
+tradeoffs:
+  - ["Small pool", "Database stays fast, fair queueing.", "Requests wait during spikes."]
+  - ["Large pool", "Fewer waits in the app.", "Database overloaded by too many active queries."]
+  - ["App side pool", "Simple, no extra hop.", "Total connections grow with every instance."]
+  - ["External pooler", "Caps connections for the whole fleet.", "One more component, some session features limited."]
+
+mistakes:
+  - Opening a new connection for every request.
+  - Setting pool size without multiplying by the number of instances.
+  - Making the pool huge to hide slow queries.
+  - Not returning connections on errors.
+  - No acquire timeout, so requests wait forever.
+
+security: |
+  Each pool logs in with a database user. Give that user only the rights the app needs, and keep its password in a secrets manager, rotated on a schedule. Use TLS between the pool and the database. A pooler in front of the database is also a good place to cap connections, so a bug or an attacker cannot exhaust the database.
+
+quiz:
+  - type: num
+    q: Your app runs 1,500 queries a second and each takes 4 ms. How many connections are busy at once, on average?
+    a: 6
+    tol: 0.1
+    why: 1,500 × 0.004 s = 6. Add headroom, so a pool of about 12 is plenty.
+  - type: num
+    q: Each app pod has a pool of 25 and you run 12 pods. How many database connections can they open?
+    a: 300
+    tol: 0
+    why: 25 × 12 = 300, far over PostgreSQL's default limit of 100.
+  - q: Why is opening a connection per request slow?
+    opts: ["Each one needs a network handshake, often TLS, a login and server side setup", "Connections use too much disk", "SQL needs a new parser each time"]
+    a: 0
+    why: Pooling pays these costs once and reuses the connection.
+  - type: fill
+    q: In PgBouncer's ____ mode, a client holds a server connection only while a transaction runs.
+    a: ["transaction"]
+    why: Transaction mode shares connections best, but some session features stop working.
+  - q: The pool is often exhausted. Queries usually take 5 ms but one report takes 3 seconds. What do you do first?
+    opts: ["Fix or move the slow report query", "Make the pool 10 times bigger", "Turn off the acquire timeout"]
+    a: 0
+    why: Slow queries hold connections. A bigger pool only moves the queue into the database.
+  - q: Spot the bug.
+    info: |
+      ```python
+      conn = pool.getconn()
+      rows = conn.execute(query).fetchall()
+      pool.putconn(conn)
+      return rows
+      ```
+    opts: ["If execute raises an error, the connection is never returned, so the pool leaks", "fetchall is too slow", "putconn must come before execute"]
+    a: 0
+    why: Use try and finally, or a with block, so the connection always goes back.
+
+interview:
+  - q: How would you size a database connection pool for a service?
+    keys:
+      - ["Use throughput times query time, Little's law", [little, throughput, per second, times, × , latency]]
+      - ["Multiply by the number of instances against the database limit", [instance, pods, servers, max_connections, limit, total]]
+      - ["Bigger is not always better, database cores and contention", [core, cpu, contention, too many, smaller]]
+      - ["Timeouts and monitoring wait time", [timeout, wait, monitor, metric, queue]]
+    a: |
+      I start with Little's law. Busy connections equal queries per second times time per query, so 2,000 queries a second at 5 ms is about 10 busy, and I add headroom. Then I multiply by the number of app instances and check that the total stays well under the database's limit, leaving room for admin and migrations. If it does not fit, I add an external pooler such as PgBouncer. I avoid huge pools, because the database only has so many cores and too many active queries slow everything. Finally I set an acquire timeout so requests fail fast, and I monitor pool wait time and active connections.
+    fb: Multiplying by instances is the detail most candidates miss.
+  - q: Your service suddenly gets "too many connections" errors after an autoscaling event. Why, and what do you do?
+    keys:
+      - ["More instances each opened their own pool", [instance, pods, each, scale, multiply]]
+      - ["Database max connections limit reached", [limit, max_connections, maximum]]
+      - ["Fix with an external pooler or smaller per instance pools", [pgbouncer, proxy, pooler, smaller pool, cap]]
+    a: |
+      Autoscaling added instances, and each one opened its own pool, so the total passed the database's connection limit. Short term I lower the per instance pool size and cap the autoscaler. Long term I put a pooler like PgBouncer or RDS Proxy in front of the database so the whole fleet shares a fixed number of real connections, and I alert when connections approach the limit.
+    fb: Linking autoscaling to the connection limit shows you understand the whole system, not one box.
+
+desk:
+  title: Black Friday and the connection limit
+  lede: A shop's checkout API fails during a sale with "remaining connection slots are reserved".
+  situation: |
+    40 pods, each with a pool of 10. PostgreSQL max_connections is 300. Normal checkout queries take 8 ms. A new "recommended for you" query takes 900 ms.
+  rounds:
+    - title: Round 1. Find the problem
+      items:
+        - type: num
+          q: How many connections can the pods open in total?
+          a: 400
+          tol: 0
+          why: 40 × 10 = 400, which is over the limit of 300.
+        - q: Which issue makes pools run out even before the limit?
+          opts: ["The 900 ms recommendation query holds connections a long time", "Checkout queries are too fast", "Pods have too much memory"]
+          a: 0
+          why: One slow query keeps a connection busy for as long as about 110 checkout queries.
+    - title: Round 2. Mitigate and work around
+      items:
+        - type: sort
+          q: Short term workaround or long term fix?
+          rows:
+            - ["Lower each pod's pool to 6 tonight", "Short term workaround"]
+            - ["Add PgBouncer in transaction mode", "Long term fix"]
+            - ["Move recommendations to a cache refreshed every few minutes", "Long term fix"]
+          opts: ["Short term workaround", "Long term fix"]
+          why: Get through the sale safely, then fix the design.
+        - type: open
+          q: What would you monitor so this never surprises you again?
+          a: "Active and idle connections on the database against max_connections, pool wait time and timeouts per service, and slow query logs. Alert when connections pass 80 percent of the limit, and when pool wait time goes above a few milliseconds."
+  card: |
+    - Borrow, query, return. Never open a connection per request.
+    - Busy connections = queries a second × seconds per query.
+    - Total = pool size × instances. Check the database limit.
+    - Fix slow queries before growing the pool. Fail fast with a timeout.
+
+refs:
+  - "PostgreSQL. [Connections and authentication, max_connections](https://www.postgresql.org/docs/current/runtime-config-connection.html)."
+  - "PgBouncer. [Features and pool modes](https://www.pgbouncer.org/features.html)."
+  - "HikariCP. [About pool sizing](https://github.com/brettwooldridge/HikariCP/wiki/About-Pool-Sizing)."
