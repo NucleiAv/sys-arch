@@ -27,41 +27,36 @@ how: |
   - **Links to the rest of the site.** Concepts explain the ideas behind each service. Infra has hands on Git, Docker, Kubernetes and Terraform. Protocols animate DNS, TLS, BGP and more.
 
 labs_intro: |
-  You learn the cloud fastest by doing. These labs are free, or have free parts. Use a separate practice account, set a budget alert first, and delete what you create. **Only attack systems that are built for practice, or that you own and are allowed to test.**
+  You learn the cloud fastest by doing. These are a short, picked set of free AWS labs, not a full list. Use a separate practice account, set a budget alert first, and delete what you create, because self deployed labs can start paid resources. **Only attack systems that are built for practice, or that you own and are allowed to test.**
+
+  **A suggested order.** Build the basics, then flAWS, CloudFoxable, AWSGoat, CloudGoat with Pacu, and IAM Vulnerable. Then switch sides with the GuardDuty and Detective workshop, Prowler and Stratus Red Team. For a portfolio, write up one attack with its evidence in CloudTrail, the finding, the fix and the alert that would catch it.
 
 labs:
-  - t: Build
+  - t: 1. Build
     d: Learn the services by using them.
     items:
       - {t: AWS Free Tier, u: "https://aws.amazon.com/free/", type: account, kind: def, n: "Free use of many services within limits. Read the limits and set a budget alert first."}
-      - {t: AWS Skill Builder, u: "https://skillbuilder.aws/", type: courses, kind: def, n: "AWS's own learning site with free courses. Some labs need a subscription."}
-      - {t: "AWS Cloud Quest, Cloud Practitioner", u: "https://explore.skillbuilder.aws/learn/course/external/view/elearning/11458/aws-cloud-quest-cloud-practitioner", type: game, kind: def, n: "A free game style course with real labs in a sandbox."}
-      - {t: AWS Workshops, u: "https://workshops.aws/", type: workshops, kind: def, n: "Hundreds of step by step workshops written by AWS. You run them in your account, so watch the cost."}
+      - {t: "AWS Skill Builder and Cloud Quest", u: "https://skillbuilder.aws/", type: courses, kind: def, n: "AWS's own learning site. Free courses, and Cloud Quest, a game with real labs in a sandbox."}
+      - {t: AWS Workshops, u: "https://workshops.aws/", type: workshops, kind: def, n: "Step by step workshops written by AWS, including Well-Architected labs. You run them in your account, so watch the cost."}
       - {t: AWS First Cloud Journey, u: "https://awsfirstcloudjourney.github.io/", type: workshops, kind: def, n: "A free community path with hands on labs, from a first account to architectures."}
-      - {t: Well-Architected Labs, u: "https://www.wellarchitectedlabs.com/", type: labs, kind: def, n: "Labs for each Well-Architected pillar, including security, reliability and cost."}
-      - {t: Microsoft Learn for Azure, u: "https://learn.microsoft.com/en-us/training/azure/", type: courses, kind: def, n: "Free modules, many with a free temporary sandbox subscription."}
-      - {t: Google Cloud Skills Boost, u: "https://www.cloudskillsboost.google/", type: labs, kind: def, n: "Real Google Cloud labs. Some are free, others use credits."}
-  - t: Defend
-    d: Find misconfigurations, detect attacks and harden accounts.
+  - t: 2. Attack, legally
+    d: Labs made to be broken, in rough order from easy to hard. Never use these methods on systems you do not own.
     items:
-      - {t: Prowler, u: "https://github.com/prowler-cloud/prowler", type: tool, kind: cl, n: "Open source tool that checks AWS, Azure and Google Cloud against hundreds of security controls, including CIS benchmarks."}
-      - {t: ScoutSuite, u: "https://github.com/nccgroup/ScoutSuite", type: tool, kind: cl, n: "Open source multi cloud security audit tool that builds a report of risky settings."}
-      - {t: Stratus Red Team, u: "https://stratus-red-team.cloud/", type: detection, kind: cl, n: "Runs real attack techniques in your own test account, so you can check that your alerts fire."}
-      - {t: "flAWS 2, defender path", u: "http://flaws2.cloud/", type: challenge, kind: cl, n: "Investigate a breach from CloudTrail logs as an incident responder."}
-  - t: Attack, legally
-    d: Deliberately vulnerable labs and challenges made for practice. Never use these methods on systems you do not own.
+      - {t: flAWS, u: "http://flaws.cloud/", type: challenge, kind: atk, n: "Hosted, no account needed. Public buckets, leaked keys and the metadata service."}
+      - {t: "flAWS 2, attacker path", u: "http://flaws2.cloud/", type: challenge, kind: atk, n: "Hosted. Break into a serverless and container app step by step."}
+      - {t: CloudFoxable, u: "https://cloudfoxable.bishopfox.com/", type: challenge, kind: atk, n: "A capture the flag in your account that teaches finding attack paths with the CloudFox tool."}
+      - {t: AWSGoat, u: "https://github.com/ine-labs/AWSGoat", type: lab, kind: atk, n: "A deliberately vulnerable AWS app with attack and defence manuals."}
+      - {t: CloudGoat, u: "https://github.com/RhinoSecurityLabs/cloudgoat", type: lab, kind: atk, n: "Builds vulnerable AWS scenarios in your account to practise multi step attack paths."}
+      - {t: Pacu, u: "https://github.com/RhinoSecurityLabs/pacu", type: tool, kind: atk, n: "An open source AWS exploitation framework from the makers of CloudGoat. Use it against CloudGoat or your own lab only."}
+      - {t: IAM Vulnerable, u: "https://github.com/BishopFox/iam-vulnerable", type: lab, kind: atk, n: "Over 30 IAM privilege escalation paths to practise in your own account."}
+      - {t: Pwned Labs, u: "https://pwnedlabs.io/", type: labs, kind: atk, n: "Hosted attack and defence scenarios. Some are free."}
+  - t: 3. Defend
+    d: Detect, investigate and fix what you just attacked.
     items:
-      - {t: flAWS, u: "http://flaws.cloud/", type: challenge, kind: atk, n: "Classic free challenge on common AWS mistakes, public buckets, leaked keys and metadata."}
-      - {t: "flAWS 2, attacker path", u: "http://flaws2.cloud/", type: challenge, kind: atk, n: "Exploit a serverless and container app step by step."}
-      - {t: CloudGoat, u: "https://github.com/RhinoSecurityLabs/cloudgoat", type: lab, kind: atk, n: "Builds vulnerable AWS scenarios in your own account to practice attack paths."}
-      - {t: CloudFoxable, u: "https://cloudfoxable.bishopfox.com/", type: challenge, kind: atk, n: "A capture the flag that teaches finding attack paths with the CloudFox tool."}
-      - {t: IAM Vulnerable, u: "https://github.com/BishopFox/iam-vulnerable", type: lab, kind: atk, n: "Practice IAM privilege escalation paths in your own account."}
-      - {t: "AWSGoat, AzureGoat, GCPGoat", u: "https://github.com/ine-labs/AWSGoat", type: lab, kind: atk, n: "Vulnerable apps for each major cloud, from INE. See also AzureGoat and GCPGoat on the same GitHub account."}
-      - {t: Thunder CTF, u: "https://thunder-ctf.cloud/", type: challenge, kind: atk, n: "Google Cloud security challenges."}
-      - {t: Pwned Labs, u: "https://pwnedlabs.io/", type: labs, kind: atk, n: "Cloud attack and defence labs. Some are free."}
-      - {t: Cloud Security Championship, u: "https://cloudsecuritychampionship.com/", type: challenge, kind: atk, n: "Monthly cloud security challenges from Wiz."}
-      - {t: TerraGoat, u: "https://github.com/bridgecrewio/terragoat", type: lab, kind: atk, n: "Vulnerable Terraform code to practice finding misconfigurations before deploy."}
-      - {t: HackTricks Cloud, u: "https://cloud.hacktricks.wiki/", type: reference, kind: atk, n: "A large reference of cloud attack techniques and their defences."}
+      - {t: "flAWS 2, defender path", u: "http://flaws2.cloud/", type: challenge, kind: cl, n: "Investigate the same breach from CloudTrail logs as an incident responder."}
+      - {t: GuardDuty and Detective workshop, u: "https://catalog.workshops.aws/security/en-US", type: workshop, kind: cl, n: "AWS's threat detection and response workshop. Investigate compromised keys, instances and buckets."}
+      - {t: Prowler, u: "https://github.com/prowler-cloud/prowler", type: tool, kind: cl, n: "Open source tool that checks your account against hundreds of security controls, including CIS."}
+      - {t: Stratus Red Team, u: "https://stratus-red-team.cloud/", type: detection, kind: cl, n: "Runs real attack techniques in a test account, so you can check that your alerts fire."}
 
 resources_intro: |
   The AWS Certified Solutions Architect Associate exam, **SAA-C03**, tests the same ideas as this track. Lesson 7.2 explains the exam domains and question patterns. These free community resources are useful for revision. They are written by other people, so check facts against the official AWS documentation.

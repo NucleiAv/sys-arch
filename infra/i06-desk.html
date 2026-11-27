@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/site.css?v=20261127e">
+<link rel="stylesheet" href="../assets/css/site.css?v=20261127f">
 </head>
 <body data-root="../" data-track="infra">
 <a class="skip" href="#main">Skip to content</a>
@@ -20,8 +20,8 @@ COPY . /app
 WORKDIR /app
 RUN pip install -r requirements.txt
 CMD [&quot;python&quot;, &quot;main.py&quot;]</code></pre><div class="qset" data-id="i06-desk-r1"></div><script type="application/json" data-for="i06-desk-r1">[{"q": "Why does every code change reinstall all packages?", "opts": ["pip is slow", "COPY . comes before the install, so any change breaks the cache for the install layer", "Python 3.12"], "a": 1, "why": "Copy requirements.txt first, install, then copy the code.", "type": "mcq"}, {"type": "fill", "q": "Add this line before CMD so the app does not run as root. <code>____ app<\/code>", "a": ["USER"], "why": "Create a user, then switch with USER."}]</script></section><section class="block round" id="r2"><h2>Round 2. Make it small</h2><div class="qset" data-id="i06-desk-r2"></div><script type="application/json" data-for="i06-desk-r2">[{"type": "sort", "q": "Match each fix to what it saves.", "rows": [["Use python:3.12-slim", "Smaller base"], ["Add .dockerignore with .git and tests", "Fewer files copied"], ["pip install --no-cache-dir", "No pip cache in the image"]], "opts": ["Smaller base", "Fewer files copied", "No pip cache in the image"], "why": "Every byte you do not ship is faster to push, pull and scan."}]</script></section><section class="block" id="card"><h2>Pocket card. Keep this</h2><ul><li>Image is the template, container is the running copy.</li><li>Copy dependency files first for the cache.</li><li>Slim base, multi-stage, USER, .dockerignore.</li><li>Secrets at run time, version tags always.</li></ul></section><nav class="pager" aria-label="Lesson pages"><a class="pg prev" href="i06.html"><span class="mono">Previous</span>Docker images and containers</a><a class="pg next" href="i07.html"><span class="mono">Next</span>Docker Compose, many containers on one machine</a></nav></main></div><footer id="foot"></footer>
-<script src="../assets/js/site.js?v=20261127e"></script>
-<script src="../assets/js/learn.js?v=20261127e"></script>
-<script src="../assets/js/scene.js?v=20261127e"></script>
+<script src="../assets/js/site.js?v=20261127f"></script>
+<script src="../assets/js/learn.js?v=20261127f"></script>
+<script src="../assets/js/scene.js?v=20261127f"></script>
 </body>
 </html>

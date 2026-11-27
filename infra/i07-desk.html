@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/site.css?v=20261127e">
+<link rel="stylesheet" href="../assets/css/site.css?v=20261127f">
 </head>
 <body data-root="../" data-track="infra">
 <a class="skip" href="#main">Skip to content</a>
@@ -27,8 +27,8 @@
       - &quot;3306:3306&quot;
     environment:
       MYSQL_ROOT_PASSWORD: root</code></pre><div class="qset" data-id="i07-desk-r1"></div><script type="application/json" data-for="i07-desk-r1">[{"q": "The web app cannot connect to the database. Why?", "opts": ["MySQL 8 is too new", "DB_HOST is localhost, which inside web means the web container itself. It must be mysql", "The port is wrong"], "a": 1, "why": "Use the service name as the host.", "type": "mcq"}, {"q": "Where does MySQL store its data now?", "opts": ["In a named volume", "Inside the container, so it is lost when the container is removed", "On GitHub"], "a": 1, "why": "Add a named volume for /var/lib/mysql.", "type": "mcq"}, {"q": "Why is the ports line for mysql risky on a server?", "opts": ["It publishes the database to the host network, maybe to the internet", "It slows MySQL", "It is required"], "a": 0, "why": "Only web needs to reach mysql, through the private network.", "type": "mcq"}]</script></section><section class="block" id="card"><h2>Pocket card. Keep this</h2><ul><li>One file, one command.</li><li>Service names are host names.</li><li>Named volumes for data.</li><li>Health checks for real readiness.</li></ul></section><nav class="pager" aria-label="Lesson pages"><a class="pg prev" href="i07.html"><span class="mono">Previous</span>Docker Compose, many containers on one machine</a><a class="pg next" href="i08.html"><span class="mono">Next</span>Kubernetes basics, pods, deployments and services</a></nav></main></div><footer id="foot"></footer>
-<script src="../assets/js/site.js?v=20261127e"></script>
-<script src="../assets/js/learn.js?v=20261127e"></script>
-<script src="../assets/js/scene.js?v=20261127e"></script>
+<script src="../assets/js/site.js?v=20261127f"></script>
+<script src="../assets/js/learn.js?v=20261127f"></script>
+<script src="../assets/js/scene.js?v=20261127f"></script>
 </body>
 </html>

@@ -21,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261127e"
+V = "20261127f"
 E = lambda s: html.escape(str(s), quote=True)
 
 
@@ -860,7 +860,7 @@ def build_cloud_landing(lessons, levels):
         if L.get("level") != last:
             last = L.get("level")
             lv = next(x for x in levels if x["n"] == last)
-            rows += f'<h3 class="lvl-h">{E(lvl_name(levels, last))}</h3><p class="lvl-d">{inline(lv.get("d", ""))}</p>'
+            rows += f'<h3 class="lvl-h" id="lv{last}">{E(lvl_name(levels, last))}</h3><p class="lvl-d">{inline(lv.get("d", ""))}</p>'
         if L.get("kind") == "practice":
             tg = '<span class="tag new">practice</span>'
         elif L.get("kind") == "design":
@@ -874,7 +874,7 @@ def build_cloud_landing(lessons, levels):
                f'<a class="btn btn-quiet btn-sm" id="cl-trk-next" href="cloud/{lessons[0]["slug"]}.html">Start the first lesson</a></div>'
                f'<div class="trk-bar" aria-hidden="true"><i id="cl-trk-bar"></i></div>'
                f'<div class="trk-lv">' + "".join(
-                   f'<span data-lv="{lv["n"]}"><b class="mono">L{lv["n"]}</b>{E(lv["t"])}<em class="mono" data-lvc="{lv["n"]}">0/{sum(1 for L in lessons if L.get("level") == lv["n"])}</em></span>'
+                   f'<a href="#lv{lv["n"]}" data-lv="{lv["n"]}"><b class="mono">L{lv["n"]}</b>{E(lv["t"])}<em class="mono" data-lvc="{lv["n"]}">0/{sum(1 for L in lessons if L.get("level") == lv["n"])}</em></a>'
                    for lv in levels) + '</div></div>')
     labs = ""
     for g in C["labs"]:
@@ -886,14 +886,17 @@ def build_cloud_landing(lessons, levels):
             f'<span>{n} pages · {len(levels)} levels</span></div><h1>{E(C["title"])}</h1><p class="lede">{inline(C["lede"])}</p>'
             f'<div class="actions"><a class="btn btn-primary" href="cloud/{lessons[0]["slug"]}.html">Start lesson 1.1</a>'
             f'<a class="btn btn-quiet" href="#route">See all levels</a><a class="btn btn-quiet" href="#labs">Hands on labs</a></div></div></section>'
-            f'<div class="wrap narrow doc">'
-            + section("tracker", "Your progress", f'<p class="small muted">{inline(C["tracker_note"])}</p>' + tracker)
+            f'<div class="wrap cl-land"><aside class="cl-aside" aria-label="Your progress"><h2 class="cl-aside-h">Your progress</h2>'
+            f'<p class="small muted">{inline(C["tracker_note"])}</p>{tracker}'
+            f'<nav class="cl-jump" aria-label="On this page"><a href="#why">{E(C["why_t"])}</a><a href="#how">How this track works</a>'
+            f'<a href="#route">All levels and pages</a><a href="#labs">Hands on labs</a><a href="#resources">Study resources</a></nav></aside>'
+            f'<div class="doc cl-main">'
             + section("why", C["why_t"], md(C["why"]) + "".join(diagram(d) for d in C.get("diagrams", [])))
             + section("how", "How this track works", md(C["how"]))
             + section("route", "All levels and pages", f'<div class="lesson-list">{rows}</div>')
             + section("labs", "Free hands on labs, building, defending and attacking", md(C["labs_intro"]) + labs)
             + section("resources", "SAA-C03 study resources", md(C["resources_intro"]) + f'<ol class="reflist">{res}</ol>')
-            + "</div></main>")
+            + "</div></div></main>")
     write("cloud-track.html", "AWS and cloud track. From zero to architect", C["lede"][:155], "cloud", main)
 
 
