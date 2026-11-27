@@ -1,0 +1,227 @@
+short: Shared responsibility and Well-Architected
+title: The shared responsibility model and the Well-Architected Framework
+time: about 50 minutes
+tags: [shared responsibility, Well-Architected, six pillars, reviews]
+lede: AWS secures the cloud. You secure what you put in it. Learn exactly where that line sits for different services, and learn the six pillars of the AWS Well-Architected Framework, the checklist architects use to judge any cloud design.
+
+idea: |
+  **Shared responsibility** means security and running the system is split between the provider and you.
+
+  - **AWS is responsible for security OF the cloud.** The buildings, the hardware, the global network, and the software that runs the services.
+  - **You are responsible for security IN the cloud.** Your data, who can access it, how you set up the services, your operating systems if you run servers, and your code.
+
+  The line moves with the service. With an EC2 server, you patch the operating system. With a managed database like RDS, AWS patches the database engine, but you still decide who can connect. With S3, AWS runs the storage, but you choose whether a bucket is public.
+
+  The **AWS Well-Architected Framework** is a set of questions and best practices for building good cloud systems. It has **six pillars**.
+
+  1. **Operational excellence.** Run and improve the system.
+  2. **Security.** Protect data and systems.
+  3. **Reliability.** Recover from failures and meet demand.
+  4. **Performance efficiency.** Use resources well as needs change.
+  5. **Cost optimization.** Avoid spending you do not need.
+  6. **Sustainability.** Reduce the environmental impact.
+
+  !eli5 You rent a flat. The landlord fixes the roof, the pipes and the front door of the building. You lock your own door, choose who gets a key, and do not leave the windows open. Both of you must do your part.
+
+scenes:
+  - title: Who owns what, from EC2 to S3
+    stats: [Step, Service, AWS handles, You handle]
+    nodes:
+      aws: {label: AWS, x: 0, y: 1, kind: def, tag: security of the cloud}
+      ec2: {label: EC2 server, x: 3, y: 0, kind: raised}
+      rds: {label: RDS database, x: 3, y: 2, kind: raised}
+      s3: {label: S3 bucket, x: 3, y: 4, kind: raised}
+      you: {label: You, x: 6, y: 2, kind: box, tag: security in the cloud}
+    links: [[aws, ec2], [aws, rds], [aws, s3], [you, ec2], [you, rds], [you, s3]]
+    steps:
+      - title: EC2, infrastructure service
+        text: AWS runs the building, hardware and hypervisor. You patch the operating system, set the firewall rules and protect your data and keys.
+        on: [aws, ec2, you]
+        flow: [[aws, ec2, def], [you, ec2, ink]]
+        stats: [IaaS, EC2, "hardware, hypervisor", "OS, firewall, data, access"]
+      - title: RDS, managed service
+        text: AWS also patches the operating system and database engine and runs backups. You still set who can connect, encryption, and the network access.
+        on: [aws, rds, you]
+        flow: [[aws, rds, def], [you, rds, ink]]
+        stats: [Managed, RDS, "plus OS and engine patching", "access, network, encryption choice"]
+      - title: S3, abstracted service
+        text: AWS runs the whole storage system. You decide bucket policies, public access, encryption and versioning.
+        on: [aws, s3, you]
+        flow: [[aws, s3, def], [you, s3, ink]]
+        stats: [Abstracted, S3, the whole service, "who can read, settings"]
+      - title: A public bucket leak
+        text: A team makes a bucket public by mistake and customer files leak. AWS did nothing wrong. Bucket settings are the customer's side of the line.
+        on: [s3, you]
+        mark: {s3: bad}
+        stats: [Breach, S3, worked as designed, misconfigured]
+      - title: Your side, done well
+        text: Block Public Access on, encryption on, least privilege policies, logging on. The same service, now safe.
+        on: [s3, you]
+        mark: {s3: ok}
+        stats: [Fixed, S3, unchanged, secured]
+
+terms:
+  - [Shared responsibility model, "AWS secures the cloud itself. Customers secure what they build and store in it."]
+  - [Security of the cloud, "AWS's part. Facilities, hardware, network, and the software that runs the services."]
+  - [Security in the cloud, "Your part. Data, identity, configuration, operating systems and code."]
+  - [Well-Architected Framework, "AWS's best practices for cloud systems, organized in six pillars."]
+  - [Pillar, "One area of quality, such as security or reliability."]
+  - [Well-Architected Tool, "A free AWS console tool that walks you through review questions and records risks."]
+  - [Lens, "Extra questions for a type of workload, such as serverless or machine learning."]
+
+how: |
+  ### The line, by service type
+
+  | | Infrastructure, EC2 | Container and managed, RDS | Abstracted, S3, DynamoDB, Lambda |
+  | --- | --- | --- | --- |
+  | Physical, network, hypervisor | AWS | AWS | AWS |
+  | Operating system patches | You | AWS | AWS |
+  | Database or runtime patches | You | AWS | AWS |
+  | Network access rules | You | You | You, through policies |
+  | Identity and access | You | You | You |
+  | Data, encryption choices | You | You | You |
+
+  ### The six pillars, with one key practice each
+
+  | Pillar | Key practice |
+  | --- | --- |
+  | Operational excellence | Infrastructure as code, small reversible changes, learn from incidents |
+  | Security | Strong identity, least privilege, encryption, traceability, automate security |
+  | Reliability | Multi AZ, automatic recovery, test recovery, scale with demand |
+  | Performance efficiency | Pick the right service and size, use managed services, measure |
+  | Cost optimization | Pay only for what you need, measure cost per feature, use the right pricing model |
+  | Sustainability | Use less, use efficient hardware, right size, remove idle resources |
+
+  Sustainability was added as the sixth pillar in December 2021.
+
+  ### How to run a Well-Architected review
+
+  1. Pick one workload and the people who know it.
+  2. Answer the questions for each pillar in the Well-Architected Tool.
+  3. Record **high risk issues** and medium risk issues.
+  4. Make an improvement plan with owners and dates.
+  5. Repeat after big changes or once a year.
+
+  Microsoft Azure and Google Cloud have similar frameworks, called the Azure Well-Architected Framework and the Google Cloud Architecture Framework.
+
+  !key Most cloud breaches happen on the customer's side of the line. Misconfigured storage, leaked keys and too broad permissions.
+
+diagrams:
+  - type: split
+    title: The six Well-Architected pillars
+    source: ["A good cloud workload", "def"]
+    targets:
+      - ["Operational excellence", "box", "run and improve"]
+      - ["Security", "atk", "protect"]
+      - ["Reliability", "raised", "recover and scale"]
+      - ["Performance efficiency", "box", "use resources well"]
+      - ["Cost optimization", "raised", "no waste"]
+      - ["Sustainability", "box", "less impact"]
+    caption: The pillars often pull against each other. Good designs make the trade-offs on purpose.
+
+life:
+  - ["Gartner's prediction", "Gartner predicted in 2019 that through 2025, 99 percent of cloud security failures would be the customer's fault. Whatever the exact number, most public cloud breaches come from configuration and identity mistakes."]
+  - ["Public buckets and Block Public Access", "After several years of data leaks from S3 buckets that were made public by mistake, AWS added S3 Block Public Access in 2018, and since April 2023 new buckets block public access by default."]
+  - ["A review finds a single point of failure", "A team ran a Well-Architected review before a big launch and found their database ran in one AZ with no tested restore. They switched on multi AZ and ran a restore drill the week before launch."]
+
+tradeoffs:
+  - ["More managed services", "Less for you to patch and run.", "Less control, more provider dependency."]
+  - ["Reliability pillar pushed hard", "Survives more failures.", "Higher cost, which pulls against cost optimization."]
+  - ["Security pillar pushed hard", "Lower risk.", "More friction for developers if not automated."]
+
+mistakes:
+  - Assuming "it is in AWS, so it is secure".
+  - Thinking a managed database means AWS controls who can connect.
+  - Running a Well-Architected review once and never acting on it.
+  - Optimizing one pillar, such as cost, and silently breaking another, such as reliability.
+
+security: |
+  The shared responsibility model is the start of every cloud threat model. For each service, write down which controls are yours, then check you have them, identity, network rules, encryption, logging and patching. Compliance reports from AWS, available in AWS Artifact, cover AWS's side only. Your auditors will still check yours.
+
+quiz:
+  - q: Who patches the operating system on an EC2 instance?
+    opts: ["The customer", "AWS", "Nobody needs to"]
+    a: 0
+    why: EC2 is infrastructure as a service. The OS is on your side.
+  - q: Who patches the database engine on Amazon RDS?
+    opts: ["AWS, in the maintenance window you choose", "The customer must log into the server", "Nobody"]
+    a: 0
+    why: RDS is managed, so AWS patches the engine and OS.
+  - type: sort
+    q: AWS's side or yours?
+    rows:
+      - ["Physical security of data centers", "AWS"]
+      - ["Who can read an S3 bucket", "Customer"]
+      - ["Encryption setting of your data", "Customer"]
+      - ["The hypervisor that runs EC2", "AWS"]
+    opts: ["AWS", "Customer"]
+    why: Security of the cloud versus security in the cloud.
+  - type: fill
+    q: The sixth Well-Architected pillar, added in 2021, is ____.
+    a: ["sustainability"]
+    why: The other five are operational excellence, security, reliability, performance efficiency and cost optimization.
+  - q: Identify the GRC issue. "AWS is SOC 2 certified, so our app on AWS is SOC 2 compliant."
+    opts: ["AWS's report covers only AWS's side. Your own controls still need to be audited", "SOC 2 does not exist", "It is fully correct"]
+    a: 0
+    why: Shared responsibility applies to compliance too.
+
+interview:
+  - q: Explain the AWS shared responsibility model with examples.
+    keys:
+      - ["AWS secures the cloud, physical, hardware, network, service software", [of the cloud, physical, hardware, data center, hypervisor]]
+      - ["Customer secures in the cloud, data, identity, configuration", [in the cloud, data, iam, configuration, access]]
+      - ["The line moves with the service, EC2 versus RDS versus S3", [ec2, rds, s3, managed, line moves, depends]]
+      - ["Most breaches are customer side misconfigurations", [misconfig, public bucket, leaked key, customer side]]
+    a: |
+      AWS is responsible for security of the cloud, the data centers, hardware, global network and the software that runs each service. The customer is responsible for security in the cloud, their data, identities and permissions, how services are configured, and any operating system or code they run. Where the line sits depends on the service. On EC2 I patch the OS and manage the firewall. On RDS AWS patches the OS and engine, but I control network access, users and encryption. On S3 AWS runs everything except my bucket policies, public access and encryption settings. Most real breaches are on the customer side, such as public buckets and leaked keys.
+    fb: The EC2, RDS and S3 progression is the clearest way to show you understand the moving line.
+  - q: What are the six pillars of the Well-Architected Framework and how do you use them?
+    keys:
+      - ["Names all six pillars", [operational excellence, security, reliability, performance, cost, sustainability]]
+      - ["Use them as a review with the Well-Architected Tool", [review, tool, questions, workload]]
+      - ["Record risks and an improvement plan", [risk, improvement, plan, owner]]
+      - ["Pillars trade off against each other", [trade, balance, conflict, against]]
+    a: |
+      The six pillars are operational excellence, security, reliability, performance efficiency, cost optimization and sustainability. I use them as a structured review of one workload, answering the questions in the Well-Architected Tool with the team that owns it, recording high and medium risk issues, and turning them into an improvement plan with owners and dates. The pillars trade off, for example more reliability usually costs more, so the review makes those choices explicit.
+    fb: Using it as a recurring review, not a one time checklist, is the strong point.
+
+desk:
+  title: The startup's first review
+  lede: A small team runs its app on AWS. Run a quick Well-Architected review.
+  situation: |
+    One EC2 server in one AZ, patched by hand when someone remembers. An RDS database with no backups tested. The root account is used daily. Costs are never checked.
+  rounds:
+    - title: Round 1. Map issues to pillars
+      items:
+        - type: sort
+          q: Which pillar does each issue hurt most?
+          rows:
+            - ["Root account used daily", "Security"]
+            - ["One server in one AZ", "Reliability"]
+            - ["Manual patching when remembered", "Operational excellence"]
+            - ["Costs never checked", "Cost optimization"]
+          opts: ["Security", "Reliability", "Operational excellence", "Cost optimization"]
+          why: Every pillar gets at least one finding.
+        - q: Which is the highest risk to fix first?
+          opts: ["Daily use of the root account", "Server size", "Tag names"]
+          a: 0
+          why: A stolen root session gives full control of the account.
+    - title: Round 2. Plan
+      items:
+        - type: open
+          q: Write three improvements with owners and dates.
+          a: "1. Lock the root account with MFA and create named admin users or SSO, owner the tech lead, this week. 2. Move to two servers in two AZs behind a load balancer and turn on RDS multi AZ, owner the backend lead, this month. 3. Set budgets with alerts and enable automatic patching with Systems Manager, owner the ops lead, this month. Test a database restore within two weeks."
+        - q: Who patches the database engine on RDS?
+          opts: ["AWS, in the chosen maintenance window", "The team by SSH", "Nobody"]
+          a: 0
+          why: Use the managed service's patching instead of doing it by hand.
+  card: |
+    - AWS secures OF the cloud. You secure IN the cloud.
+    - The line moves with the service.
+    - Six pillars. Ops, security, reliability, performance, cost, sustainability.
+    - Review, record risks, plan, repeat.
+
+refs:
+  - "AWS. [Shared responsibility model](https://aws.amazon.com/compliance/shared-responsibility-model/)."
+  - "AWS. [Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html)."
+  - "AWS. [Well-Architected Tool](https://aws.amazon.com/well-architected-tool/)."

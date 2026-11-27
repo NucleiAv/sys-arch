@@ -1,0 +1,216 @@
+kind: design
+short: Tier 3, internal business app
+title: Tier 3. A private internal HR app, multi AZ with backup and restore
+time: about 70 minutes
+tags: [tier 3, private access, backup and restore, personal data, cost]
+lede: An internal HR app slows the company down if it fails, but people can wait a day. Design it simply and cheaply, multi AZ in one region with backups copied to a second region, while still protecting sensitive personal data and keeping it off the public internet.
+
+ask: |
+  A company with 8,000 employees needs an HR app for leave, payslips, appraisals and personal records. Only staff may use it, from company laptops. If it is down for a day, work is annoying but nothing stops. It holds very sensitive personal data, such as salaries, bank details and health leave notes. Design it as a **tier 3** system.
+
+reqs:
+  func:
+    - Staff view payslips, apply for leave and update their details.
+    - Managers approve leave and write appraisals.
+    - HR uploads documents and runs reports.
+  nonfunc:
+    - Availability 99.5 percent. RTO 24 hours. RPO 1 hour in the region, 4 hours after a full region loss.
+    - Reachable only by signed in staff on managed devices. Never public.
+    - Personal data protected under India's Digital Personal Data Protection Act, 2023.
+    - Low running cost.
+  out:
+    - The payroll calculation engine, which is a separate vendor system.
+
+estimate:
+  intro: |
+    8,000 staff, about 400 at the busiest hour. The database is 60 GB. Documents in S3 total 2 TB and grow 50 GB a month. Backups keep 35 days of point in time recovery and 12 monthly copies.
+  items:
+    - type: num
+      q: Downtime allowed per year at 99.5 percent, in hours?
+      a: 43.8
+      tol: 0.2
+      unit: hours
+      why: 8,760 × 0.005 = 43.8 hours.
+    - type: num
+      q: Documents after 2 more years, in TB?
+      a: 3.2
+      tol: 0.05
+      unit: TB
+      why: 2 TB + 24 × 50 GB = 2 TB + 1.2 TB = 3.2 TB.
+    - type: num
+      q: If 400 users each make 1 request every 10 seconds at the busy hour, how many requests a second is that?
+      a: 40
+      tol: 0
+      unit: requests per second
+      why: 400 / 10 = 40. Two small tasks handle this easily.
+  after: |
+    !key The load is tiny. The real design work is private access, protecting personal data, and backups you can actually restore.
+
+api: |
+  ```
+  GET  /me/payslips?year=2026        own records only
+  POST /me/leave      { "from": "2026-12-01", "to": "2026-12-03", "type": "casual" }
+  POST /leave/{id}/approve           manager of that employee only
+  GET  /reports/headcount            HR role only
+  ```
+
+  Every request carries the user's identity from SSO. The app checks the user's role and relationship to the record on each call.
+
+data: |
+  | Store | Holds |
+  | --- | --- |
+  | RDS PostgreSQL, Multi AZ | Employees, leave, appraisals, with encryption by a customer managed key |
+  | S3 bucket, private | Payslip PDFs and documents, Object Lock for records that must be kept |
+  | AWS Backup vault | Daily snapshots and continuous backups, copied to Hyderabad |
+  | Audit table and CloudTrail | Who viewed or changed whose record, kept for years |
+
+scenes:
+  - title: Restoring after a regional outage
+    stats: [Step, Action, Elapsed, Data lost]
+    nodes:
+      bk: {label: Backup vault Mumbai, x: 0, y: 0, kind: box}
+      cp: {label: Backup copy Hyderabad, x: 2, y: 0, kind: def, tag: separate account}
+      iac: {label: Infrastructure as code, x: 2, y: 2, kind: raised}
+      app: {label: App in Hyderabad, x: 4, y: 2, kind: raised}
+      db: {label: Restored database, x: 4, y: 0, kind: raised}
+      va: {label: Verified Access, x: 6, y: 1, kind: def, tag: staff only}
+    links: [[bk, cp], [cp, db], [iac, app], [app, db], [va, app]]
+    steps:
+      - title: Backups copied every day
+        text: AWS Backup copies database snapshots every 4 hours, and documents daily, to a vault in Hyderabad in a separate backup account, with vault lock.
+        on: [bk, cp]
+        flow: [[bk, cp, def]]
+        stats: [Before, copies every 4 hours, "0 h", none yet]
+      - title: Mumbai has a long outage
+        text: The region is down for many hours. The team declares a disaster and opens the runbook.
+        on: [cp]
+        mark: {bk: bad}
+        stats: [Declare, runbook, "1 h", up to the last copy]
+      - title: Rebuild the stack
+        text: The pipeline deploys the same infrastructure as code to Hyderabad. Network, app tasks, load balancer, all from the same templates.
+        on: [iac, app]
+        flow: [[iac, app, ink]]
+        stats: [Rebuild, IaC deploy, "3 h", same]
+      - title: Restore the data
+        text: The database is restored from the latest copied snapshot, and the documents bucket from replicated data.
+        on: [cp, db, app]
+        flow: [[cp, db, def], [app, db, ink]]
+        mark: {db: ok}
+        stats: [Restore, snapshot restore, "6 h", up to 4 hours]
+      - title: Staff back in
+        text: Verified Access policies point to the new app. Staff sign in as normal. HR is told which recent changes to re enter.
+        on: [va, app]
+        flow: [[va, app, ink]]
+        mark: {app: ok}
+        stats: [Open, private access switched, "8 h", known and communicated]
+
+hld: |
+  1. **Private access only.** AWS Verified Access, or the corporate network over Direct Connect and VPN, in front of an internal ALB. Access checks identity from the company IdP and device posture from the device management tool. No public endpoint.
+  2. **App.** ECS on Fargate, two tasks in two AZs, scaled down at night and weekends. Or a small serverless setup with Lambda. Either is cheap at this load.
+  3. **Database.** RDS PostgreSQL Multi AZ with automated backups and point in time recovery for 35 days.
+  4. **Documents.** A private S3 bucket with SSE-KMS, Block Public Access, versioning, Object Lock for records that must be kept, and access only through the app.
+  5. **Backups.** AWS Backup plans copy database backups every 4 hours to Hyderabad in a separate backup account with vault lock. A restore test every quarter.
+  6. **Authorization.** Role and relationship checks in the app, such as "manager of this employee", on every request.
+  7. **Audit.** App level audit log of every view and change to personal records, plus CloudTrail and S3 data events.
+
+diagrams:
+  - type: layers
+    title: Who can reach the salary records
+    attack: someone on the internet
+    layers:
+      - ["No public endpoint", "Verified Access or corporate network only", "stop"]
+      - ["SSO with MFA and managed device check", "Only staff on company laptops", "stop"]
+      - ["Role and relationship check in the app", "Only own records, own team, or HR", "stop"]
+      - ["KMS key policy", "Only the app role can decrypt", "stop"]
+      - ["Audit log and alerts", "Unusual bulk views are flagged", "partial"]
+    caption: Tier 3 does not mean low security. Personal data needs the same care as in tier 1.
+
+deep:
+  - ["Why backup and restore is enough", "The business accepts a day of outage. Backup and restore costs very little compared with a standby, and AZ failures are already covered by Multi AZ. The trade is a slower, manual recovery after a rare regional disaster."]
+  - ["Why RPO is better than RTO here", "RDS point in time recovery gives an RPO of minutes within the region. After a full region loss, the RPO is the age of the last copied backup, so the team copies database backups every 4 hours."]
+  - ["Verified Access instead of a VPN", "AWS Verified Access checks each request against identity and device posture, without a network VPN. It fits zero trust, and every access decision is logged."]
+  - ["Personal data duties", "Collect only what HR needs, set retention per record type, let employees see their own data, log access, and plan for breach notice. India's DPDP Act, 2023 sets these duties for personal data."]
+
+tradeoffs:
+  - ["Backup and restore", "Lowest cost DR.", "Hours to recover from a region loss."]
+  - ["Fargate scaled down off hours", "Lower cost.", "Slow first request after scale up."]
+  - ["Verified Access", "Zero trust, no VPN.", "Extra cost per app and setup work."]
+
+security: |
+  - No public endpoint. Verified Access with IdP and device checks.
+  - Least privilege inside the app, checked on the server for every request, which stops one employee reading another's payslip by changing an id.
+  - Encryption with customer managed keys. The key policy allows only the app role and the backup service.
+  - Separate HR admin roles with just in time access and approval.
+  - Macie on the documents bucket, alerts on bulk downloads.
+  - Backups in a separate account with vault lock against ransomware.
+  - Audit logs kept per the company's retention policy.
+
+task:
+  intro: |
+    Present the design to the HR director and the security team.
+  items:
+    - q: Walk through the HR app design and explain how it keeps personal data safe and how it recovers from a disaster.
+      keys:
+        - ["Private access only, Verified Access or corporate network", [verified access, private, no public, corporate network, vpn]]
+        - ["SSO with MFA and device checks", [sso, mfa, device, idp]]
+        - ["Role and relationship checks on every request", [role, relationship, own record, authoriz, every request]]
+        - ["Encryption with KMS and private S3", [kms, encrypt, block public, private bucket]]
+        - ["Multi AZ database with point in time recovery", [multi az, point in time, rds]]
+        - ["Backups copied to Hyderabad in a separate account, tested", [backup, copy, hyderabad, separate account, vault lock, restore test]]
+      a: |
+        The app is never on the internet. Staff reach it through AWS Verified Access, which checks their SSO login with MFA and that the device is a managed company laptop. The app runs as two small Fargate tasks in two AZs behind an internal load balancer, with an RDS PostgreSQL Multi AZ database and a private S3 bucket for documents, both encrypted with a customer managed KMS key that only the app role can use. Every request is checked on the server for role and relationship, so people see only their own records, their team, or everything if they are HR. All views and changes are audited. For disasters, AWS Backup keeps point in time recovery in Mumbai and copies backups to a locked vault in Hyderabad in a separate account. If Mumbai is lost, we redeploy from infrastructure as code and restore within the 24 hour RTO, and we test that restore every quarter.
+      fb: Saying tier 3 has lower availability but not lower security is the key message.
+
+interview:
+  - q: An employee changed the id in the payslip URL and saw a colleague's salary. What went wrong and how do you fix it?
+    keys:
+      - ["Broken object level authorization, IDOR", [idor, object level, bola, authoriz]]
+      - ["Check ownership on the server for every request", [server, ownership, every request, check]]
+      - ["Investigate logs, notify as required", [audit, log, notify, breach, investigat]]
+      - ["Add tests to stop repeats", [test, automated, regression]]
+    a: |
+      This is broken object level authorization, also called IDOR. The app trusted the id in the URL without checking that the payslip belongs to the signed in user. The fix is a server side check on every request that the record's owner matches the user, or that the user has a role allowing access. I would also use the audit logs to see whose records were viewed this way, follow the personal data breach process, including notifying people and the authority if required, and add automated tests for each endpoint that try other users' ids.
+    fb: Naming BOLA or IDOR and fixing it on the server is the expected answer.
+
+desk:
+  title: The cheap HR app review
+  lede: A team built the HR app quickly to save money. Review it before launch.
+  situation: |
+    The app has a public URL with a login page. The database is single AZ with no backups beyond the default 7 days. Payslips are in an S3 bucket that the app makes readable with presigned links valid for 7 days. Admins share one HR admin login.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What risk does each fact create?
+          rows:
+            - ["Public login page", "Anyone on the internet can attack the login"]
+            - ["Single AZ, default backups only", "No AZ resilience and no copy outside the region"]
+            - ["7 day presigned links", "Forwarded links expose payslips for a week"]
+            - ["Shared HR admin login", "No accountability for who saw what"]
+          opts: ["Anyone on the internet can attack the login", "No AZ resilience and no copy outside the region", "Forwarded links expose payslips for a week", "No accountability for who saw what"]
+          why: Each must be fixed before launch.
+        - q: What is the right presigned link lifetime for a payslip download?
+          opts: ["A few minutes, created after an authorization check", "7 days", "Forever"]
+          a: 0
+          why: Short lived and checked.
+    - title: Round 2. Fix cheaply
+      items:
+        - type: open
+          q: Write fixes that keep the cost low.
+          a: "Put the app behind Verified Access or the corporate VPN and remove the public URL. Turn on RDS Multi AZ and AWS Backup with a daily copy to Hyderabad. Use presigned links that last 5 minutes and are created only after the server checks ownership. Give each HR admin their own SSO login with MFA and log every access."
+        - q: What is a benefit of keeping this app at tier 3?
+          opts: ["Lower cost, since a day of downtime is acceptable to the business", "It needs no security", "It never fails"]
+          a: 0
+          why: Spend on resilience where outages hurt.
+  card: |
+    - Tier 3, 99.5 percent, RTO 24 hours.
+    - Private only. Verified Access with SSO and device checks.
+    - Multi AZ database, point in time recovery.
+    - Backups copied to another region and account, tested.
+    - Lower tier, same care for personal data.
+
+refs:
+  - "AWS. [What is AWS Verified Access](https://docs.aws.amazon.com/verified-access/latest/ug/what-is-verified-access.html)."
+  - "AWS. [Creating backup copies across AWS Regions](https://docs.aws.amazon.com/aws-backup/latest/devguide/cross-region-backup.html)."
+  - "OWASP. [API1 Broken object level authorization](https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/)."
+  - "Government of India. [Digital Personal Data Protection Act, 2023](https://www.meity.gov.in/data-protection-framework)."

@@ -1,0 +1,208 @@
+short: Cost and FinOps
+title: Cost control and FinOps on AWS
+time: about 50 minutes
+tags: [FinOps, tagging, Savings Plans, rightsizing, Budgets]
+lede: In the cloud, every engineer can spend money with one click, so cost becomes everyone's job. Learn how AWS charges, the tools that show where money goes, the biggest levers to cut waste, and the FinOps practice that keeps cost under control as teams grow.
+
+idea: |
+  Cloud cost is not one big invoice you sign once a year. It is millions of tiny charges, per second of compute, per GB stored, per GB sent, per request. That is great for flexibility, and easy to lose control of.
+
+  The main things you pay for are **compute**, **storage**, **data transfer**, especially out to the internet and between regions or AZs, and **requests** to managed services. Data coming **into** AWS from the internet is generally free. Data going **out** usually is not.
+
+  **FinOps** is the practice of managing cloud cost as a team sport between engineering, finance and the business. The FinOps Foundation describes three phases.
+
+  1. **Inform.** See who spends what, with tags, accounts and reports.
+  2. **Optimize.** Cut waste and buy smarter.
+  3. **Operate.** Make it routine, with budgets, reviews and goals.
+
+  !eli5 The cloud bill is like a family's electricity bill, where every light and gadget has its own meter. First you label every meter so you know who left the heater on. Then you turn off what nobody uses, buy cheaper bulbs, and check the bill every month together.
+
+scenes:
+  - title: Cutting a monthly bill by a third
+    stats: [Step, Lever, Monthly bill, Visibility]
+    nodes:
+      cur: {label: Cost and usage data, x: 0, y: 1, kind: raised, tag: by tag and account}
+      ce: {label: Cost Explorer, x: 2, y: 0, kind: def}
+      idle: {label: Idle resources, x: 4, y: 0, kind: atk}
+      size: {label: Oversized instances, x: 4, y: 2, kind: atk}
+      sp: {label: Savings Plans, x: 6, y: 1, kind: def}
+    links: [[cur, ce], [ce, idle], [ce, size], [ce, sp]]
+    steps:
+      - title: See where money goes
+        text: Tags for team, environment and service are turned on as cost allocation tags. Cost Explorer shows 40 percent of spend has no owner.
+        on: [cur, ce]
+        flow: [[cur, ce, ink]]
+        stats: [Inform, tags and reports, "100,000 dollars", owners known for 60 percent]
+      - title: Remove waste
+        text: Dev environments run all night and weekend, and old snapshots and unattached volumes pile up. Schedules and clean up rules remove them.
+        on: [ce, idle]
+        flow: [[ce, idle, ink]]
+        mark: {idle: ok}
+        stats: [Optimize, remove idle, "88,000 dollars", tagged 95 percent]
+      - title: Rightsize
+        text: Compute Optimizer shows many instances use under 20 percent CPU. Teams move them to smaller sizes and to Graviton.
+        on: [ce, size]
+        flow: [[ce, size, ink]]
+        mark: {size: ok}
+        stats: [Optimize, rightsize, "78,000 dollars", tagged 95 percent]
+      - title: Commit for the steady base
+        text: With the base load now smaller and stable, a 1 year Compute Savings Plan covers it at a large discount.
+        on: [ce, sp]
+        flow: [[ce, sp, def]]
+        mark: {sp: ok}
+        stats: [Optimize, Savings Plans, "66,000 dollars", tagged 95 percent]
+      - title: Keep it there
+        text: Budgets alert each team on its own spend. A monthly review looks at cost per order, not just the total.
+        on: [cur, ce]
+        stats: [Operate, budgets and reviews, "66,000 dollars", every team sees its cost]
+
+terms:
+  - [FinOps, "A practice where engineering, finance and business manage cloud cost together."]
+  - [Cost allocation tag, "A tag turned on in billing so costs can be split by it."]
+  - [Cost Explorer, "AWS tool to view and forecast spend by service, account and tag."]
+  - [AWS Budgets, "Alerts when actual or forecast cost or usage passes a limit."]
+  - [Cost and Usage Report, "The most detailed billing data, delivered to S3 for analysis."]
+  - [Compute Optimizer, "Recommends better instance sizes and types from real usage."]
+  - [Rightsizing, "Changing resources to the smallest size that meets the need."]
+  - [Unit cost, "Cost per business unit, such as per order or per active user."]
+  - [Data transfer out, "Data sent from AWS to the internet or other regions, usually charged."]
+
+how: |
+  ### The biggest levers, in usual order
+
+  1. **Turn off what is not used.** Idle dev servers, forgotten load balancers, unattached EBS volumes, old snapshots, unused Elastic IPs.
+  2. **Rightsize.** Use Compute Optimizer and real metrics. Try Graviton.
+  3. **Use the right pricing model.** Savings Plans for the steady base, Spot for interruptible work, lesson 4.1.
+  4. **Store data in the right class** with lifecycle rules, lesson 4.2.
+  5. **Cut data transfer.** CloudFront for internet traffic, VPC endpoints instead of NAT gateways for AWS services, keep chatty services in the same AZ when safe.
+  6. **Use managed and serverless** where it lowers total cost, including people's time.
+
+  ### Tools
+
+  | Tool | Use |
+  | --- | --- |
+  | Cost Explorer | See and forecast spend by service, account, tag |
+  | AWS Budgets | Alerts and some automatic actions on limits |
+  | Cost and Usage Report, Data Exports | Detailed data for your own dashboards |
+  | Compute Optimizer | Rightsizing advice |
+  | Trusted Advisor | Checks for idle resources and other savings |
+  | Cost Anomaly Detection | Machine learning alerts for unusual spend |
+
+  ### Make cost visible to the people who spend it
+
+  - One account per team and environment, plus required tags, makes ownership clear.
+  - **Showback** shows teams their spend. **Chargeback** bills it to their budget.
+  - Track **unit cost**, such as cost per 1,000 orders. Total cost going up is fine if orders grew faster.
+
+  ### Cost is an architecture choice
+
+  Choices like multi region active active, keeping all logs hot, or chatty microservices across AZs all carry a price. Put cost in design reviews next to reliability and security, as the Well-Architected cost pillar suggests.
+
+  !key You cannot optimize what you cannot see. Tag and own every resource first, then cut waste, then commit.
+
+diagrams:
+  - type: cycle
+    title: The FinOps loop
+    nodes: [["Inform", "def", "tags, reports, owners"], ["Optimize", "raised", "waste, size, pricing"], ["Operate", "box", "budgets, reviews, goals"]]
+    center: Engineering, finance and business together
+    caption: The loop repeats. New services and teams create new waste, so it is never finished.
+
+life:
+  - ["Dropbox moves storage in house", "Dropbox moved most of its storage from AWS to its own data centers around 2016 and reported large savings over the following two years. At very large, steady scale, owning hardware can win. For most companies it does not."]
+  - ["The NAT gateway surprise", "A team pulled large container images and S3 data through a NAT gateway every few minutes. Data processing charges became one of their biggest line items. VPC endpoints for S3 and ECR removed most of it."]
+  - ["Cost anomaly alert", "An anomaly alert fired on a Sunday. A misconfigured job was writing debug logs at a huge rate. It was stopped after a few hours instead of at the end of the month."]
+
+tradeoffs:
+  - ["Savings Plans", "Big discounts.", "Commitment, risky if usage drops."]
+  - ["Strict cost controls", "Predictable spend.", "Can slow teams down and block experiments."]
+  - ["Multi region and multi AZ", "Higher resilience.", "More cost for capacity and data transfer."]
+  - ["Cheaper storage classes", "Lower storage bills.", "Retrieval fees and delays."]
+
+mistakes:
+  - No tags, so nobody owns the spend.
+  - Buying Savings Plans before rightsizing.
+  - Ignoring data transfer and NAT gateway charges.
+  - Looking only at the total bill instead of unit cost.
+  - Letting cost be finance's job only.
+
+security: |
+  Cost and security are linked. A sudden spike can mean stolen keys used for crypto mining, so budgets and anomaly detection are security alerts too. Deny unused regions with SCPs, limit who can launch expensive instance types, and make sure cost data, which can reveal your architecture, is shared only with the right people.
+
+quiz:
+  - type: sort
+    q: Which FinOps phase is each activity?
+    rows:
+      - ["Turn on cost allocation tags and build a dashboard by team", "Inform"]
+      - ["Rightsize instances and buy a Savings Plan", "Optimize"]
+      - ["Monthly cost review with budgets per team", "Operate"]
+    opts: ["Inform", "Optimize", "Operate"]
+    why: The three phases form a loop.
+  - q: Which is usually free on AWS?
+    opts: ["Data transfer into AWS from the internet", "Data transfer out to the internet", "Cross region transfer"]
+    a: 0
+    why: Ingress is generally free, egress is not.
+  - type: fill
+    q: Changing resources to the smallest size that still meets the need is called ____.
+    a: ["rightsizing", "right sizing"]
+    why: Do it before buying commitments.
+  - q: Spot the problem. "We bought 3 year Savings Plans for our current usage, then started rightsizing."
+    opts: ["After rightsizing, usage drops and the commitment may be wasted", "Savings Plans cannot be bought for 3 years", "No problem"]
+    a: 0
+    why: Rightsize first, then commit to the new base.
+  - q: Total spend rose 20 percent but orders rose 50 percent. What does unit cost say?
+    opts: ["Cost per order fell, which is good", "The bill is out of control", "Nothing"]
+    a: 0
+    why: Unit cost puts spend in business context.
+
+interview:
+  - q: The AWS bill doubled in six months. How do you bring it under control?
+    keys:
+      - ["Visibility first, tags, accounts, Cost Explorer, owners", [tag, owner, cost explorer, visib, account]]
+      - ["Remove idle and waste", [idle, waste, unused, unattached, schedule]]
+      - ["Rightsize then commit with Savings Plans, use Spot", [rightsiz, savings plan, reserved, spot, commit]]
+      - ["Data transfer and storage classes", [data transfer, nat, endpoint, lifecycle, storage class]]
+      - ["Budgets, anomaly detection, unit cost and regular reviews", [budget, anomaly, unit cost, review, finops]]
+    a: |
+      First I make cost visible. Cost Explorer by service, account and tag, enforced tagging, and an owner for each major cost. Then I remove waste, idle environments, unattached volumes, old snapshots and forgotten load balancers, and schedule dev to stop at night. Next I rightsize with Compute Optimizer and test Graviton, then buy Savings Plans for the new steady base and move interruptible work to Spot. I check data transfer, often NAT gateway and cross AZ traffic, and fix it with VPC endpoints and CloudFront, and I add lifecycle rules for storage and logs. Finally I make it routine, with budgets and anomaly alerts per team, unit cost tracking and a monthly review with engineering and finance.
+    fb: Rightsizing before committing and tracking unit cost are the two signals of real FinOps experience.
+
+desk:
+  title: Nobody owns the bill
+  lede: Finance asks why the cloud bill is 300,000 dollars a month. Engineering does not know.
+  situation: |
+    Most resources have no tags. All teams share three accounts. Dev and test run 24 hours a day. Logs are kept forever in S3 Standard.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What problem does each fact cause?
+          rows:
+            - ["No tags and shared accounts", "Nobody can see or own their spend"]
+            - ["Dev and test always on", "Paying for idle hours"]
+            - ["Logs forever in Standard", "Storage cost grows without limit"]
+          opts: ["Nobody can see or own their spend", "Paying for idle hours", "Storage cost grows without limit"]
+          why: Visibility, waste and storage.
+        - q: What should come first?
+          opts: ["Tagging and per team visibility", "Buying a 3 year commitment", "Cutting all budgets by half"]
+          a: 0
+          why: Inform before optimize.
+    - title: Round 2. Plan and quick wins
+      items:
+        - type: open
+          q: Name three quick wins for this month.
+          a: "Schedule dev and test to stop outside working hours, saving around two thirds of their compute. Add lifecycle rules to move logs to Glacier after 30 days and delete them after the retention period. Delete unattached EBS volumes and old snapshots found by Trusted Advisor. Turn on Cost Anomaly Detection and budgets per account."
+        - q: What is a benefit of showing each team its own cost?
+          opts: ["Teams can see the result of their choices and fix waste themselves", "It lowers prices automatically", "It removes the need for finance"]
+          a: 0
+          why: Ownership drives behaviour.
+  card: |
+    - Compute, storage, data out and requests.
+    - Inform, Optimize, Operate.
+    - Tags and accounts for ownership.
+    - Waste, rightsize, then commit. Spot for interruptible work.
+    - Watch NAT and data transfer. Track unit cost.
+
+refs:
+  - "FinOps Foundation. [The FinOps framework](https://www.finops.org/framework/)."
+  - "AWS. [Cost optimization pillar](https://docs.aws.amazon.com/wellarchitected/latest/cost-optimization-pillar/welcome.html)."
+  - "AWS. [AWS Cost Explorer](https://docs.aws.amazon.com/cost-management/latest/userguide/ce-what-is.html)."

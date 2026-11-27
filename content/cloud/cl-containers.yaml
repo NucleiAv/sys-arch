@@ -1,0 +1,221 @@
+short: Containers on the cloud
+title: Containers on AWS, ECS, EKS, Fargate and ECR
+time: about 50 minutes
+tags: [ECS, EKS, Fargate, ECR, App Runner]
+lede: Infra lessons 2.2 to 2.5 taught Docker and Kubernetes. Now run containers on AWS. Learn the difference between ECS and EKS, what Fargate removes, how images are stored and scanned, and how to pick between containers, serverless and plain servers.
+
+idea: |
+  A **container** packs an app with everything it needs, so it runs the same everywhere. To run many containers in production you need an **orchestrator** that starts them, restarts failures, spreads them over servers and connects them to load balancers.
+
+  AWS offers two orchestrators.
+
+  - **Amazon ECS**, Elastic Container Service. AWS's own, simpler orchestrator. You describe a **task definition** and a **service** that keeps N tasks running.
+  - **Amazon EKS**, Elastic Kubernetes Service. Managed **Kubernetes**. AWS runs the control plane, and you get the standard Kubernetes API and tools.
+
+  Both need compute to run on, and you have two choices.
+
+  - **EC2 launch type or node groups.** Containers run on EC2 instances you manage.
+  - **AWS Fargate.** Serverless compute for containers. You give CPU and memory per task or pod, and AWS runs it with no servers for you to patch.
+
+  Images are stored in **Amazon ECR**, a private registry that can scan images for known vulnerabilities.
+
+  !eli5 Containers are lunch boxes with the whole meal inside. ECS is the school's own simple lunch rota. EKS is the famous international rota system that many schools use. Fargate means the school hires a catering company, so nobody has to run the kitchen.
+
+scenes:
+  - title: Deploying a new version on ECS with Fargate
+    stats: [Step, Running tasks, Version, Servers you patch]
+    nodes:
+      ci: {label: CI pipeline, x: 0, y: 1, kind: box}
+      ecr: {label: ECR, x: 2, y: 0, kind: raised, tag: scan on push}
+      ecs: {label: ECS service, x: 2, y: 2, kind: def, tag: desired 4}
+      alb: {label: Load balancer, x: 5, y: 1, kind: def}
+      tasks: {label: Fargate tasks, x: 5, y: 3, kind: raised, tag: 2 AZs}
+    links: [[ci, ecr], [ci, ecs], [ecr, tasks], [ecs, tasks], [alb, tasks]]
+    steps:
+      - title: Build and push
+        text: CI builds image v42, pushes it to ECR, and ECR scans it. No critical findings, so the pipeline continues.
+        on: [ci, ecr]
+        flow: [[ci, ecr, ink]]
+        mark: {ecr: ok}
+        stats: [Push, "4", v41, none]
+      - title: Update the service
+        text: CI registers a new task definition with v42 and updates the service. ECS starts new tasks while old ones keep serving.
+        on: [ci, ecs, tasks]
+        flow: [[ci, ecs, ink], [ecs, tasks, def]]
+        stats: [Roll, "4 old, 2 new", "v41 and v42", none]
+      - title: Health checks pass
+        text: New tasks pass load balancer health checks and start getting traffic. Old tasks are drained and stopped.
+        on: [alb, tasks]
+        flow: [[alb, tasks, def]]
+        stats: [Shift, "4 new", v42, none]
+      - title: A bad release
+        text: If new tasks had failed health checks, the deployment circuit breaker would stop and roll back to v41 automatically.
+        on: [ecs, tasks]
+        mark: {tasks: warn}
+        stats: [Guard, "4", "v41 if failed", none]
+      - title: Nothing to patch
+        text: Fargate runs each task in its own isolated environment and patches the underlying hosts. The team updates only its image.
+        on: [tasks]
+        mark: {tasks: ok}
+        stats: [Done, "4", v42, none]
+
+terms:
+  - [ECS, "Elastic Container Service. AWS's own container orchestrator."]
+  - [Task definition, "In ECS, the blueprint for containers, image, CPU, memory, ports, role and logs."]
+  - [ECS service, "Keeps a set number of tasks running and connects them to a load balancer."]
+  - [EKS, "Elastic Kubernetes Service. Managed Kubernetes control plane on AWS."]
+  - [Fargate, "Serverless compute for ECS tasks and EKS pods."]
+  - [ECR, "Elastic Container Registry. Private image storage with vulnerability scanning."]
+  - [Task role, "The IAM role a running container uses to call AWS."]
+  - [App Runner, "A simpler service that runs a web app from an image or source code with little setup."]
+
+how: |
+  ### ECS or EKS?
+
+  | | ECS | EKS |
+  | --- | --- | --- |
+  | Learning curve | Lower | Higher, it is Kubernetes |
+  | Portability | AWS only | Kubernetes runs anywhere |
+  | Ecosystem | AWS integrations | Huge Kubernetes ecosystem, Helm, operators |
+  | Control plane cost | None extra | Hourly fee per cluster |
+  | Fits | Teams that want simple and AWS native | Teams already on Kubernetes or needing its tools |
+
+  ### Fargate or EC2 underneath?
+
+  | | Fargate | EC2 nodes |
+  | --- | --- | --- |
+  | Servers to patch | None | Yes |
+  | Price | Higher per CPU hour | Lower, especially with Spot and Savings Plans |
+  | Control | Less, no daemons or special hardware | Full, GPUs, custom AMIs |
+  | Scaling | Per task | Nodes plus tasks |
+
+  ### Choosing compute overall
+
+  | Workload | Good choice |
+  | --- | --- |
+  | Short event handlers, spiky | Lambda |
+  | Web services and long running workers | ECS or EKS on Fargate |
+  | Special hardware, GPUs, heavy steady load | ECS or EKS on EC2, or plain EC2 |
+  | A simple web app, minimum setup | App Runner or Elastic Beanstalk |
+
+  ### Running containers well
+
+  - Two **roles**. The **task execution role** lets ECS pull images and write logs. The **task role** is what your code uses. Keep them separate and small.
+  - Logs to CloudWatch Logs or another log system.
+  - Secrets from Secrets Manager or Parameter Store, injected at start.
+  - Scan images in ECR and rebuild regularly with patched base images.
+
+  !key Pick the least operations heavy option that meets your needs. For many teams that is ECS on Fargate.
+
+diagrams:
+  - type: layers
+    title: Who runs what, from EC2 to Fargate to Lambda
+    attack: operations work
+    layers:
+      - ["EC2 with your own Docker", "You run hosts and orchestration", "partial"]
+      - ["ECS or EKS on EC2 nodes", "AWS runs the control plane, you run nodes", "partial"]
+      - ["ECS or EKS on Fargate", "AWS runs the hosts too", "partial"]
+      - ["Lambda", "You run only your function code", "stop"]
+    caption: Each step down hands more work to AWS, and gives up some control and sometimes cost efficiency.
+
+life:
+  - ["Fargate for a small team", "A five person startup moved from hand managed Docker hosts to ECS on Fargate. They stopped patching servers entirely and deploys became one pipeline step."]
+  - ["EKS for a platform team", "A large company standardized on Kubernetes across clouds and its own data centers. EKS let it use the same tools, Helm charts and policies on AWS."]
+  - ["The image with a critical CVE", "ECR scanning flagged a critical vulnerability in an old base image. Because images were rebuilt weekly from patched bases, the fix shipped in the next routine release."]
+
+tradeoffs:
+  - ["ECS", "Simple, deeply integrated with AWS.", "AWS only."]
+  - ["EKS", "Kubernetes standard and ecosystem.", "More complex, control plane fee."]
+  - ["Fargate", "No servers to manage.", "Higher unit price, fewer low level options."]
+  - ["EC2 nodes", "Cheaper at scale, full control.", "Patching and capacity are your job."]
+
+mistakes:
+  - Choosing EKS without Kubernetes skills on the team.
+  - One shared task role with broad permissions for every service.
+  - Secrets in task definition environment values.
+  - Images built once and never rebuilt.
+  - No deployment circuit breaker or rollback.
+
+security: |
+  Containers add the image supply chain to your attack surface. Scan images, sign them, and allow only images from your registry. Give each service its own task role, run containers as non root, enable read only root file systems where possible, and use Kubernetes Pod Security Standards and network policies on EKS. Fargate gives each task its own isolation boundary, which reduces the impact of container escapes.
+
+quiz:
+  - q: A team wants containers with no servers to patch. Which compute fits?
+    opts: ["Fargate", "EC2 launch type", "Dedicated Hosts"]
+    a: 0
+    why: Fargate runs containers without servers you manage.
+  - type: sort
+    q: Which ECS role is used for each job?
+    rows:
+      - ["Pull the image from ECR and send logs", "Task execution role"]
+      - ["Your code reads a DynamoDB table", "Task role"]
+    opts: ["Task execution role", "Task role"]
+    why: Separate roles keep each one small.
+  - type: fill
+    q: AWS's managed Kubernetes service is called Amazon ____.
+    a: ["eks"]
+    why: Elastic Kubernetes Service.
+  - q: Spot the problem.
+    info: |
+      ```json
+      "taskRoleArn": "arn:aws:iam::123456789012:role/AdminForAllServices"
+      ```
+    opts: ["Every service shares an admin role, so one compromised container controls the account", "Task roles are not allowed", "The ARN is too long"]
+    a: 0
+    why: Give each service its own least privilege task role.
+  - q: A simple web app needs the least setup possible. Which fits?
+    opts: ["App Runner or Elastic Beanstalk", "A self managed Kubernetes cluster on EC2", "Raw EC2 with Docker installed by hand"]
+    a: 0
+    why: Managed platforms hide most infrastructure.
+
+interview:
+  - q: How do you choose between Lambda, ECS on Fargate, EKS and EC2?
+    keys:
+      - ["Lambda for short event driven spiky work", [lambda, event, short, spiky, 15 minute]]
+      - ["ECS on Fargate for long running services with low ops", [ecs, fargate, long running, service, low ops]]
+      - ["EKS when Kubernetes ecosystem or portability is needed", [eks, kubernetes, portab, ecosystem, helm]]
+      - ["EC2 for special hardware, full control or cost at steady scale", [ec2, gpu, control, steady, cost, spot]]
+    a: |
+      I start from the workload and the team. Short, event driven, spiky work fits Lambda. Long running web services and workers fit containers, and ECS on Fargate gives the least operations work if we are AWS focused. If the company already runs Kubernetes or needs its ecosystem and portability, EKS makes sense, ideally with managed node groups or Fargate. Plain EC2 or EC2 nodes fit special hardware like GPUs, custom operating system needs, or large steady workloads where Savings Plans and Spot make it cheapest. I pick the least operations heavy option that meets the requirements.
+    fb: Starting from the workload and the team's skills is the mature framing.
+
+desk:
+  title: Containers on hand built hosts
+  lede: A team runs 30 containers on 6 EC2 instances they set up by hand, using docker run in a script.
+  situation: |
+    Hosts are patched rarely. When a host dies, its containers stay down until someone notices. Every container uses the instance's admin role.
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: What risk does each fact create?
+          rows:
+            - ["Hosts patched rarely", "Known vulnerabilities on the hosts"]
+            - ["No orchestrator restarting containers", "Long outages after host failures"]
+            - ["One admin role for all containers", "Any compromised container controls the account"]
+          opts: ["Known vulnerabilities on the hosts", "Long outages after host failures", "Any compromised container controls the account"]
+          why: Patching, healing and permissions.
+        - q: Which move fixes the most with the least new skills?
+          opts: ["ECS services on Fargate with a task role per service", "Self managed Kubernetes on the same hosts", "More scripts"]
+          a: 0
+          why: Orchestration, healing and no hosts to patch.
+    - title: Round 2. Plan
+      items:
+        - type: open
+          q: Write the migration steps.
+          a: "Push all images to ECR with scanning on. Write a task definition and an ECS service for each app, on Fargate, across two AZs behind an ALB. Give each service its own task role and move secrets to Secrets Manager. Turn on the deployment circuit breaker. Move one low risk service first, then the rest, and shut down the old hosts."
+        - q: What is a benefit of the deployment circuit breaker?
+          opts: ["A failing release is rolled back automatically", "Images get smaller", "It removes the need for tests"]
+          a: 0
+          why: Bad deploys stop before they take the service down.
+  card: |
+    - ECS simple and AWS native. EKS is Kubernetes.
+    - Fargate removes servers. EC2 nodes give control and cost savings.
+    - ECR stores and scans images.
+    - Separate task execution role and task role.
+    - Least operations heavy option that fits.
+
+refs:
+  - "AWS. [Choosing an AWS container service](https://docs.aws.amazon.com/decision-guides/latest/containers-on-aws-how-to-choose/choosing-aws-container-service.html)."
+  - "AWS. [Amazon ECS task IAM roles](https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html)."
+  - "AWS. [EKS best practices guide](https://docs.aws.amazon.com/eks/latest/best-practices/introduction.html)."

@@ -1,0 +1,69 @@
+kind: practice
+title: Cloud level 1 practice, foundations
+time: about 25 minutes
+lede: Mixed questions on service models, regions and zones, shared responsibility, the Well-Architected pillars and a safe account start.
+
+rounds:
+  - title: Round 1. Words and ideas
+    items:
+      - type: sort
+        q: Which service model is each?
+        rows:
+          - ["Zoom", "SaaS"]
+          - ["Amazon EC2", "IaaS"]
+          - ["Amazon RDS", "PaaS"]
+        opts: ["IaaS", "PaaS", "SaaS"]
+        why: More managed means further toward SaaS.
+      - type: fill
+        q: Each AWS region has at least three ____ Zones.
+        a: ["availability"]
+        why: AZs are isolated data centers inside a region.
+      - type: sort
+        q: AWS's side or yours in shared responsibility?
+        rows:
+          - ["Patching the OS on EC2", "Customer"]
+          - ["Patching the engine on RDS", "AWS"]
+          - ["Deciding who can read an S3 bucket", "Customer"]
+        opts: ["AWS", "Customer"]
+        why: The line moves with the service.
+  - title: Round 2. Spot it, fix it
+    items:
+      - q: Find the issue. "Our production app runs on one EC2 instance in ap-south-1a."
+        opts: ["Single server in a single AZ, so one failure stops the app", "Mumbai is too far", "EC2 cannot run apps"]
+        a: 0
+        why: Use at least two instances in two AZs behind a load balancer.
+      - q: Identify the GRC issue. "We are on AWS, so we are automatically compliant with our customers' security requirements."
+        opts: ["AWS covers only its side. Your configuration, access and data controls must be shown separately", "Compliance is automatic in the cloud", "Customers cannot ask"]
+        a: 0
+        why: Shared responsibility applies to compliance evidence.
+      - q: Find the security bug in this CLI setup.
+        info: |
+          ```ini
+          # ~/.aws/credentials on a shared build server
+          [default]
+          aws_access_key_id = AKIA...ROOT
+          aws_secret_access_key = ...
+          ```
+        opts: ["Root user access keys stored on a shared machine", "The file should be JSON", "Default profiles are not allowed"]
+        a: 0
+        why: Delete root keys. Use a role for the build server.
+  - title: Round 3. Benefits and workarounds
+    items:
+      - type: sort
+        q: Which pillar does each practice support most?
+        rows:
+          - ["Turn off idle servers at night", "Cost optimization"]
+          - ["Deploy across three AZs", "Reliability"]
+          - ["Least privilege access", "Security"]
+          - ["Infrastructure as code with small changes", "Operational excellence"]
+        opts: ["Cost optimization", "Reliability", "Security", "Operational excellence"]
+        why: Name the pillar each choice serves.
+      - type: open
+        q: A team must launch next week but has no time to build multi AZ. What is a reasonable workaround and what must they do after launch?
+        a: "Launch with automated backups and a tested restore, an AMI or template that can rebuild the server in another AZ quickly, and monitoring with alerts. Write the risk down with an owner. Right after launch, move to two instances behind a load balancer and turn on multi AZ for the database."
+card: |
+  - IaaS, PaaS, SaaS.
+  - Regions, AZs, edge. Production in two or more AZs.
+  - AWS secures OF the cloud. You secure IN it.
+  - Six pillars. Review and act.
+  - Root locked, named users, budgets, CloudTrail.

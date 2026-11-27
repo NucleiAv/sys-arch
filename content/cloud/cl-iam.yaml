@@ -1,0 +1,236 @@
+short: IAM in depth
+title: IAM in depth, users, roles and policies
+time: about 60 minutes
+tags: [IAM, policies, roles, STS, least privilege]
+lede: In the cloud, identity is the new firewall. Every request to AWS is checked against IAM. Learn users, groups and roles, how to read and write a policy, how AWS decides allow or deny, and why roles with short lived credentials beat stored keys.
+
+idea: |
+  **IAM**, Identity and Access Management, answers two questions for every AWS API call. **Who is calling?** And **are they allowed to do this action on this resource?**
+
+  IAM has a few kinds of identity.
+
+  - **Users.** A person or an app with long lived credentials. In companies, people should usually sign in through IAM Identity Center instead, lesson 2.2.
+  - **Groups.** A set of users that share permissions.
+  - **Roles.** An identity that someone or something **assumes** for a while. It has no password or long lived key. When assumed, AWS's Security Token Service, **STS**, hands out **temporary credentials** that expire.
+
+  Permissions come from **policies**, JSON documents that say which actions are allowed or denied on which resources. By default everything is **denied**. A request is allowed only if some policy allows it and no policy denies it.
+
+  The golden rule is **least privilege**. Give each identity only the actions and resources it needs.
+
+  !eli5 IAM is the security desk of a huge building. Users are staff with permanent badges. Roles are visitor badges that work for an hour and then stop. Policies are the list on the guard's desk of which badge opens which door. If a door is not on the list, it stays shut.
+
+scenes:
+  - title: An app on EC2 reads one S3 bucket through a role
+    stats: [Step, Credential, Expires, Decision]
+    nodes:
+      ec2: {label: App on EC2, x: 0, y: 1, kind: box, tag: instance profile}
+      sts: {label: STS, x: 2, y: 0, kind: def, tag: temporary credentials}
+      iam: {label: IAM policy check, x: 4, y: 1, kind: def}
+      ok: {label: reports bucket, x: 6, y: 0, kind: raised}
+      no: {label: payroll bucket, x: 6, y: 2, kind: atk}
+    links: [[ec2, sts], [ec2, iam], [iam, ok], [iam, no]]
+    steps:
+      - title: The instance has a role
+        text: The server was started with a role called app-reader. No access keys are stored on the disk.
+        on: [ec2]
+        stats: [Setup, none stored, "-", "-"]
+      - title: Get temporary credentials
+        text: The AWS SDK on the server asks the instance metadata service, which gets credentials for app-reader from STS. They expire after a few hours and are rotated automatically.
+        on: [ec2, sts]
+        flow: [[ec2, sts, ink], [sts, ec2, def]]
+        stats: [Assume, temporary, hours, "-"]
+      - title: Read the reports bucket
+        text: The app calls s3:GetObject on reports-bucket. The role's policy allows exactly that action on that bucket. Allowed.
+        on: [ec2, iam, ok]
+        flow: [[ec2, iam, ink], [iam, ok, def]]
+        mark: {ok: ok}
+        stats: [Request, temporary, hours, allow]
+      - title: Try the payroll bucket
+        text: A bug, or an attacker, makes the app call s3:GetObject on payroll-bucket. No policy allows it, so the default deny applies. Access denied, and CloudTrail logs it.
+        on: [ec2, iam, no]
+        flow: [[ec2, iam, atk]]
+        mark: {no: ok}
+        stats: [Request, temporary, hours, implicit deny]
+      - title: Credentials expire
+        text: Even if an attacker copied the credentials, they stop working when they expire. A stored access key would work until someone noticed and deleted it.
+        on: [sts]
+        stats: [Expire, rotated, short, safer]
+
+terms:
+  - [IAM user, "An identity with long lived credentials, such as a password or access keys."]
+  - [IAM group, "A collection of users that share policies."]
+  - [IAM role, "An identity assumed for a limited time, giving temporary credentials."]
+  - [STS, "Security Token Service. Issues temporary credentials when a role is assumed."]
+  - [Policy, "A JSON document that allows or denies actions on resources."]
+  - [Identity based policy, "Attached to a user, group or role. Says what that identity can do."]
+  - [Resource based policy, "Attached to a resource, such as an S3 bucket policy. Says who can use it."]
+  - [Explicit deny, "A Deny statement. It always wins over any Allow."]
+  - [Permissions boundary, "A policy that sets the most permissions an identity can ever have."]
+  - [Instance profile, "The container that gives an EC2 instance a role."]
+
+how: |
+  ### Reading a policy
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Sid": "ReadReports",
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:ListBucket"],
+      "Resource": ["arn:aws:s3:::reports-bucket", "arn:aws:s3:::reports-bucket/*"],
+      "Condition": {"Bool": {"aws:SecureTransport": "true"}}
+    }]
+  }
+  ```
+
+  - **Effect.** Allow or Deny.
+  - **Action.** Which API calls, written as service:Action.
+  - **Resource.** Which ARNs. Note ListBucket applies to the bucket ARN, GetObject to the objects under it.
+  - **Condition.** Extra rules, here only over HTTPS. Others include `aws:MultiFactorAuthPresent`, `aws:SourceIp` and `aws:PrincipalOrgID`.
+
+  ### How AWS decides, simplified
+
+  1. Start with **deny** by default.
+  2. If any applicable policy has an **explicit Deny**, the answer is **deny**. Stop.
+  3. Organization **SCPs** and **permissions boundaries** must allow the action. They never grant on their own, they only limit.
+  4. An **identity based** or **resource based** policy must **allow** it.
+  5. Otherwise, **deny**.
+
+  For access **across accounts**, both sides must agree. The caller's identity policy must allow the action, and the resource's policy, or a role trust policy, must allow the caller.
+
+  ### Roles everywhere
+
+  | Who needs access | Use |
+  | --- | --- |
+  | An app on EC2, Lambda, ECS | A role attached to the service |
+  | Another AWS account | A role it can assume, with a trust policy |
+  | GitHub Actions or another CI | OIDC federation to a role, no stored keys |
+  | People | IAM Identity Center, which uses roles behind the scenes |
+  | On premises servers | IAM Roles Anywhere with certificates |
+
+  ### Tools for least privilege
+
+  - **IAM Access Analyzer** finds resources shared outside your account and can generate policies from what an identity actually used in CloudTrail.
+  - **Last accessed information** shows permissions never used, so you can remove them.
+  - **Policy simulator** tests a policy before you apply it.
+
+  !key Prefer roles and temporary credentials. Long lived access keys are the most common way AWS accounts get breached.
+
+diagrams:
+  - type: flow
+    title: The IAM decision, simplified
+    nodes: [["Request", "box"], ["Explicit deny anywhere?", "atk", "then deny"], ["SCPs and boundaries allow?", "def", "they only limit"], ["An identity or resource policy allows?", "def"], ["Allow", "raised"]]
+    edges: ["no", "yes", "yes", ""]
+    caption: Any "no" along the way ends in deny. Deny is the default.
+
+life:
+  - ["Capital One, 2019", "An attacker used a server side request forgery flaw in a web firewall to get the temporary credentials of the instance's role from the metadata service. The role could list and read far more S3 buckets than it needed. Data on over 100 million people was taken. Least privilege on that role would have limited the damage."]
+  - ["Keys in a public repository", "Long lived keys leaked to public code are found by bots within minutes. Moving CI pipelines to OIDC federation removes stored keys completely."]
+  - ["The wildcard policy", "A developer gave a Lambda function \"Action\" \"*\" and \"Resource\" \"*\" to make an error go away. Months later a dependency in that function was compromised, and the attacker had full account access. Access Analyzer's policy generation now replaces such policies with what the function really uses."]
+
+tradeoffs:
+  - ["IAM users with keys", "Simple for one off scripts.", "Keys leak and live forever unless rotated."]
+  - ["Roles and temporary credentials", "Expire automatically, no secrets to store.", "A little more setup, especially across accounts."]
+  - ["Broad managed policies", "Quick to start.", "Far more power than needed."]
+  - ["Custom least privilege policies", "Small blast radius.", "Need upkeep as the app changes."]
+
+mistakes:
+  - "Using \"Action\": \"*\" with \"Resource\": \"*\" in application roles."
+  - Long lived access keys for apps that could use roles.
+  - Sharing one IAM user between several people.
+  - Forgetting that an explicit Deny always wins, then debugging the wrong policy.
+  - Trust policies that let any AWS account assume a role.
+
+security: |
+  IAM is your main security boundary. Enforce MFA for people, use roles for workloads, remove unused permissions every quarter, alert on new access keys, root sign ins and policy changes, and require IMDSv2 on EC2 so stolen metadata credentials are much harder to get through server side request forgery. Lesson 6.2 shows the attack paths that bad IAM opens.
+
+quiz:
+  - q: A policy allows s3:GetObject and another policy attached to the same role denies it. What happens?
+    opts: ["Denied, an explicit deny always wins", "Allowed, allow wins", "It depends on the order"]
+    a: 0
+    why: Explicit deny beats any allow.
+  - type: fill
+    q: The AWS service that issues temporary credentials when a role is assumed is ____.
+    a: ["sts", "security token service"]
+    why: STS credentials expire, which limits the damage if they leak.
+  - q: Find the problem in this policy for a function that only reads one bucket.
+    info: |
+      ```json
+      {"Effect": "Allow", "Action": "s3:*", "Resource": "*"}
+      ```
+    opts: ["Far too broad. It can delete and change every bucket", "Effect must be Deny", "Resource cannot be a star"]
+    a: 0
+    why: Allow only s3:GetObject on that bucket's objects.
+  - type: sort
+    q: Pick the best identity for each case.
+    rows:
+      - ["A Lambda function reading DynamoDB", "Execution role"]
+      - ["GitHub Actions deploying to AWS", "OIDC federation to a role"]
+      - ["A new engineer", "IAM Identity Center user with MFA"]
+    opts: ["Execution role", "OIDC federation to a role", "IAM Identity Center user with MFA"]
+    why: Avoid long lived keys wherever possible.
+  - q: A role in account A must read a bucket in account B. What must be true?
+    opts: ["Account A's policy allows the read and account B's bucket policy allows account A's role", "Only account A's policy matters", "Cross account access is impossible"]
+    a: 0
+    why: Cross account access needs both sides to agree.
+
+interview:
+  - q: How does AWS decide whether a request is allowed?
+    keys:
+      - ["Default deny", [default deny, implicit deny, denied by default]]
+      - ["Explicit deny always wins", [explicit deny, deny wins, overrides]]
+      - ["SCPs and permission boundaries limit but do not grant", [scp, boundar, limit, guardrail, maximum]]
+      - ["An identity or resource policy must allow, cross account needs both", [identity policy, resource policy, both sides, cross account, bucket policy]]
+    a: |
+      Everything starts as denied. AWS gathers all applicable policies. If any of them has an explicit Deny for the request, it is denied, no matter what allows it. Service control policies from AWS Organizations and any permissions boundary must also permit the action, but they only limit, they never grant. Then an identity based policy on the caller, or a resource based policy such as a bucket policy, must allow it. If nothing allows it, the default deny stands. For cross account access both sides must allow, the caller's identity policy and the resource policy or role trust policy in the other account.
+    fb: Saying that SCPs and boundaries only limit is the detail many candidates miss.
+  - q: Why are roles better than access keys for applications?
+    keys:
+      - ["Temporary credentials that expire and rotate automatically", [temporary, expire, rotate, short lived]]
+      - ["No secret stored in code or on disk", [no secret, no key, stored, code]]
+      - ["Easier least privilege per workload and clear audit", [least privilege, per workload, audit, cloudtrail]]
+    a: |
+      A role gives the application temporary credentials from STS that expire and are rotated automatically, so nothing long lived sits in code, config or on disk to be leaked. Each workload gets its own role with least privilege, and CloudTrail shows which role did what. Access keys, by contrast, work until someone deletes them, and leaked keys are the most common cause of AWS account compromise.
+    fb: Linking roles to fewer leaked secrets is the core point.
+
+desk:
+  title: Clean up the startup's IAM
+  lede: A growing startup asks you to review its IAM setup before a security audit.
+  situation: |
+    Five engineers share one IAM user called dev with AdministratorAccess and access keys in everyone's laptop. Apps on EC2 use another IAM user's keys stored in a config file. CI uses a third user's keys stored in GitHub secrets.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What risk does each choice create?
+          rows:
+            - ["One shared admin user", "No accountability and far too much power"]
+            - ["Keys in a config file on EC2", "Long lived secret on disk"]
+            - ["CI keys stored in GitHub", "Long lived secret outside AWS"]
+          opts: ["No accountability and far too much power", "Long lived secret on disk", "Long lived secret outside AWS"]
+          why: Each has a role based fix.
+        - q: Which fix replaces the CI keys?
+          opts: ["OIDC federation from GitHub Actions to a deploy role", "Rotate the keys every year", "Put the keys in the repository"]
+          a: 0
+          why: No stored keys at all.
+    - title: Round 2. Fix and work around
+      items:
+        - type: open
+          q: Write the target IAM setup.
+          a: "Each engineer signs in with IAM Identity Center and MFA, with a read only permission set by default and an admin set only for a few people. EC2 apps use an instance role with least privilege, and their config files hold no keys. GitHub Actions assumes a deploy role through OIDC, limited to the repository and branch. The shared user and all old keys are deleted. Access Analyzer and last accessed data are reviewed every quarter."
+        - q: The audit is in three days and SSO setup takes longer. What is a safe workaround?
+          opts: ["Create one IAM user per engineer with MFA and least privilege, delete the shared user, and plan SSO next", "Keep the shared user", "Turn off CloudTrail"]
+          a: 0
+          why: Named users with MFA restore accountability quickly.
+  card: |
+    - Default deny. Explicit deny wins. SCPs and boundaries only limit.
+    - Roles and temporary credentials over keys.
+    - Least privilege, checked with Access Analyzer.
+    - Cross account needs both sides.
+    - IMDSv2 on EC2.
+
+refs:
+  - "AWS. [Policy evaluation logic](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html)."
+  - "AWS. [Security best practices in IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)."
+  - "AWS. [IAM Access Analyzer](https://docs.aws.amazon.com/IAM/latest/UserGuide/what-is-access-analyzer.html)."

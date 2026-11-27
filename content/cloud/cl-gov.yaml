@@ -1,0 +1,209 @@
+short: Governance and compliance
+title: Landing zones, Control Tower, compliance and audit
+time: about 50 minutes
+tags: [landing zone, Control Tower, controls, compliance, data residency]
+lede: When a company has many teams and many accounts, it needs the same safe starting point for each one and proof for auditors that rules are followed. Learn what a landing zone is, how Control Tower sets one up, the three kinds of controls, and how compliance, data residency and audit evidence work in AWS.
+
+idea: |
+  **Governance** means deciding the rules and making sure everyone follows them. In the cloud, good governance is mostly **automatic**. Rules are written as code and applied to every account.
+
+  A **landing zone** is a ready made, secure multi account setup. It has an organization, a structure of OUs, shared accounts for logs and security, single sign on, networking and guardrails. Every new account "lands" in it with the right settings already in place.
+
+  **AWS Control Tower** builds and runs a landing zone for you. It creates two shared accounts in a Security OU, a **Log Archive** account and an **Audit** account, next to the management account. It also gives you an **Account Factory** to create new accounts with the right settings, and a library of **controls**.
+
+  Controls come in three kinds.
+
+  1. **Preventive.** Stop a bad action before it happens. Built with SCPs and, in some cases, other policies. Example, "nobody can disable CloudTrail".
+  2. **Detective.** Find bad settings after they happen. Built with AWS Config rules. Example, "flag any bucket without encryption".
+  3. **Proactive.** Check resources before they are created. Built with CloudFormation hooks. Example, "block a template that creates an unencrypted database".
+
+  !eli5 A landing zone is like a new housing estate that the builder sets up before families move in. Roads, water, street lights, fences and a security office are ready. Every new house is built from the same plan. The rules say no one may remove the smoke alarm, the inspector checks every house each week, and the builder will not approve a house plan without fire exits.
+
+scenes:
+  - title: A new team gets a compliant account in minutes
+    stats: [Step, Part, Guardrails applied, Manual work]
+    nodes:
+      req: {label: Account request, x: 0, y: 1, kind: box, tag: team payments}
+      af: {label: Account Factory, x: 2, y: 1, kind: def}
+      ou: {label: Workloads OU, x: 4, y: 0, kind: raised, tag: SCPs}
+      new: {label: New account, x: 4, y: 2, kind: raised}
+      log: {label: Log Archive, x: 6, y: 0, kind: def}
+      aud: {label: Audit account, x: 6, y: 2, kind: def, tag: security tools}
+    links: [[req, af], [af, ou], [af, new], [new, log], [new, aud]]
+    steps:
+      - title: Ask for an account
+        text: The payments team asks for a production account through a form that feeds the Account Factory.
+        on: [req, af]
+        flow: [[req, af, ink]]
+        stats: [Request, Account Factory, none yet, fill a form]
+      - title: Account created in the right OU
+        text: The account is created in the Workloads Prod OU. All SCPs on that OU apply at once, such as allowed regions only and no disabling of logs.
+        on: [af, ou, new]
+        flow: [[af, new, def], [ou, new, def]]
+        stats: [Create, OU and SCPs, preventive controls, none]
+      - title: Logging and detection wired in
+        text: The organization trail and Config send records to the Log Archive account. GuardDuty and Security Hub report to the Audit account.
+        on: [new, log, aud]
+        flow: [[new, log, ink], [new, aud, ink]]
+        mark: {log: ok, aud: ok}
+        stats: [Wire up, logs and security tools, detective controls, none]
+      - title: Access through SSO
+        text: Team members get permission sets through IAM Identity Center. No IAM users are created.
+        on: [new]
+        stats: [Access, Identity Center, least privilege roles, none]
+      - title: Ready to build
+        text: The team deploys with infrastructure as code. Proactive controls block a template with an unencrypted database before it is created.
+        on: [new]
+        mark: {new: ok}
+        stats: [Build, CloudFormation hooks, proactive controls, none]
+
+terms:
+  - [Governance, "Setting rules for cloud use and making sure they are followed."]
+  - [Landing zone, "A ready, secure multi account setup that every new account joins."]
+  - [Control Tower, "AWS service that builds and manages a landing zone with controls."]
+  - [Account Factory, "Control Tower feature to create accounts with standard settings."]
+  - [Preventive control, "Stops a bad action, usually with an SCP."]
+  - [Detective control, "Finds a bad setting after the fact, usually with a Config rule."]
+  - [Proactive control, "Checks resources before creation, with CloudFormation hooks."]
+  - [AWS Artifact, "Where you download AWS compliance reports and accept agreements."]
+  - [Data residency, "Keeping data inside a chosen country or region."]
+
+how: |
+  ### A common OU layout
+
+  - **Security OU.** Log Archive and Audit accounts.
+  - **Infrastructure OU.** Shared networking, DNS, shared services.
+  - **Workloads OU,** split into Prod and Non prod, with stricter SCPs on Prod.
+  - **Sandbox OU.** For experiments, with budgets and auto clean up.
+  - **Suspended OU.** For accounts being closed, with an SCP that denies everything.
+
+  ### Compliance in the cloud
+
+  - Compliance is **shared**. AWS is audited for its part, such as data center security. You must prove your part, such as access control and encryption.
+  - **AWS Artifact** gives you AWS's audit reports, such as SOC 2 and PCI DSS attestations, and agreements such as the HIPAA BAA.
+  - **AWS Config conformance packs** and **Security Hub standards** map your settings to frameworks like CIS, PCI DSS and NIST.
+  - **AWS Audit Manager** collects evidence from your accounts and maps it to frameworks.
+  - Not every AWS service is in scope for every program. Check the **services in scope** list before you use a service for regulated data.
+
+  ### Data residency
+
+  - Data stays in the region where you store it unless you move or replicate it.
+  - Use an **SCP that denies other regions**, keep backups and replicas in allowed regions, and check where logs and global services send data.
+  - For example, India's RBI asked payment system operators in 2018 to store payment data only in India. A Mumbai and Hyderabad design meets that.
+
+  ### Tags, policies and cost governance
+
+  Tag policies enforce tag names and values. Budgets per account and OU, and Service Catalog for approved products, keep teams inside the lines without slowing them down.
+
+  !key Write the rules once as code, apply them to every account automatically, and keep evidence flowing to accounts that workload teams cannot change.
+
+diagrams:
+  - type: split
+    title: Three kinds of controls
+    source: ["Control Tower controls", "def"]
+    targets:
+      - ["Preventive", "def", "SCPs stop the action"]
+      - ["Detective", "raised", "Config rules find it later"]
+      - ["Proactive", "box", "CloudFormation hooks check before creation"]
+    caption: Use preventive controls for things that must never happen, and detective controls for everything else you want to know about.
+
+life:
+  - ["Payment data stays in India", "In 2018 the Reserve Bank of India directed payment system operators to store payment data only in India. Companies running on AWS used the Mumbai region, and later Hyderabad, with SCPs to block other regions for those workloads."]
+  - ["Hundreds of accounts, one standard", "Large companies use Control Tower or their own landing zone code to create hundreds of accounts that all start with the same logging, SSO, network and guardrails, so auditors can check the standard once."]
+  - ["The audit that took days, not months", "A fintech mapped its controls to PCI DSS with Config conformance packs and Audit Manager. Evidence was collected all year, so the yearly audit reused it instead of starting from screenshots."]
+
+tradeoffs:
+  - ["Control Tower", "Fast, AWS managed landing zone.", "Less flexible than custom code, some opinions built in."]
+  - ["Custom landing zone code", "Full control.", "You build and maintain it all."]
+  - ["Many preventive SCPs", "Strong guarantees.", "Can block teams, needs a clear exception process."]
+
+mistakes:
+  - Running workloads in the management account.
+  - Letting teams create accounts by hand outside the factory.
+  - Assuming AWS's compliance report covers your application.
+  - Using a service for regulated data that is not in scope.
+  - Forgetting backups and replicas when planning data residency.
+
+security: |
+  Treat the management account as the crown jewels. Few people, strong MFA, no workloads. Keep Log Archive and Audit accounts locked down, with separate admins from workload teams. Review SCP exceptions on a schedule. Make break glass access to these accounts logged, alerted and tested.
+
+quiz:
+  - type: sort
+    q: Which kind of control is each one?
+    rows:
+      - ["An SCP that denies cloudtrail:StopLogging", "Preventive"]
+      - ["A Config rule that flags unencrypted EBS volumes", "Detective"]
+      - ["A CloudFormation hook that blocks a public RDS instance before creation", "Proactive"]
+    opts: ["Preventive", "Detective", "Proactive"]
+    why: Before the action, after the fact, or before creation.
+  - q: Which two shared accounts does Control Tower create in the Security OU?
+    opts: ["Log Archive and Audit", "Network and Billing", "Dev and Prod"]
+    a: 0
+    why: Logs and security tooling are kept apart from workloads.
+  - type: fill
+    q: You download AWS's SOC and PCI reports from AWS ____.
+    a: ["artifact"]
+    why: Artifact holds AWS compliance reports and agreements.
+  - q: Identify the GRC issue. "We are PCI compliant because AWS is PCI DSS certified."
+    opts: ["AWS covers its part only. You must prove your own controls for card data.", "Correct, nothing else is needed", "PCI does not apply in the cloud"]
+    a: 0
+    why: Compliance is shared like security.
+  - q: How do you keep data in one country?
+    opts: ["Use regions in that country, deny others with an SCP, and check replicas, backups and logs", "Turn on encryption only", "Use CloudFront everywhere"]
+    a: 0
+    why: Residency is about where every copy lives.
+
+interview:
+  - q: Design the AWS account structure and guardrails for a company that is moving 50 teams to AWS.
+    keys:
+      - ["Organization with OUs for security, infrastructure, workloads, sandbox", [ou, organization, security ou, workload, sandbox]]
+      - ["Log Archive and Audit accounts, central security tools", [log archive, audit, security account, delegated]]
+      - ["Account per team and environment from a factory", [account factory, per team, per environment, vend]]
+      - ["SSO with Identity Center, no IAM users", [identity center, sso, permission set, no iam users]]
+      - ["Preventive, detective and proactive controls", [scp, config rule, preventive, detective, proactive]]
+    a: |
+      I would use AWS Organizations with Control Tower to set up a landing zone. OUs for Security, Infrastructure, Workloads split into Prod and Non prod, Sandbox and Suspended. The Security OU holds a Log Archive account with the organization trail and Config data under Object Lock, and an Audit account that is delegated admin for GuardDuty, Security Hub and other tools. Each team gets separate prod and non prod accounts from the Account Factory, so blast radius and cost are clear. People sign in through IAM Identity Center with permission sets, and no IAM users are allowed. Guardrails include SCPs that deny unused regions, protect logging and security services, and block leaving the organization, Config rules and conformance packs for detection, and proactive checks in the pipeline. Shared networking lives in an Infrastructure account with Transit Gateway.
+    fb: Naming the separate log and security accounts, and account per team per environment, are the key structural points.
+
+desk:
+  title: Audit next quarter
+  lede: A health tech company has an audit for a security certification in three months. Its AWS setup grew by hand.
+  situation: |
+    There are 12 accounts, all directly under the root with no OUs. Two run workloads in the management account. CloudTrail is on in some accounts. Patient data is stored in two regions, one outside the country where the law requires it to stay.
+  rounds:
+    - title: Round 1. Find the gaps
+      items:
+        - type: sort
+          q: Which risk does each gap create?
+          rows:
+            - ["No OUs", "Guardrails cannot be applied by group"]
+            - ["Workloads in the management account", "SCPs do not apply there and its compromise affects everything"]
+            - ["CloudTrail only in some accounts", "Missing audit evidence"]
+            - ["Patient data in a second country", "Data residency breach"]
+          opts: ["Guardrails cannot be applied by group", "SCPs do not apply there and its compromise affects everything", "Missing audit evidence", "Data residency breach"]
+          why: Each gap fails a different control.
+        - q: Which gap is most urgent legally?
+          opts: ["Patient data stored outside the required country", "Missing tags", "No Sandbox OU"]
+          a: 0
+          why: A legal breach comes first.
+    - title: Round 2. Plan the fix
+      items:
+        - type: open
+          q: Write a three month plan.
+          a: "Month 1, move the out of country patient data back and delete it there, add an SCP that denies other regions for patient workloads, and turn on an organization CloudTrail trail to a new Log Archive account. Month 2, set up Control Tower, create OUs, enrol the accounts and move the workloads out of the management account. Month 3, apply conformance packs for the framework, turn on Audit Manager to collect evidence, and close remaining findings."
+        - q: What is a benefit of collecting evidence automatically all year?
+          opts: ["Audits reuse continuous evidence instead of last minute screenshots", "It removes the audit", "It lowers AWS prices"]
+          a: 0
+          why: Continuous compliance.
+  card: |
+    - Landing zone, a secure multi account starting point.
+    - Control Tower, Log Archive and Audit accounts, Account Factory.
+    - Preventive SCPs, detective Config rules, proactive hooks.
+    - Compliance is shared. Artifact for AWS reports, services in scope.
+    - Data residency covers every copy. Deny other regions.
+
+refs:
+  - "AWS. [What is AWS Control Tower](https://docs.aws.amazon.com/controltower/latest/userguide/what-is-control-tower.html)."
+  - "AWS. [Organizing your AWS environment using multiple accounts](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)."
+  - "AWS. [AWS services in scope by compliance program](https://aws.amazon.com/compliance/services-in-scope/)."
+  - "AWS. [What is AWS Artifact](https://docs.aws.amazon.com/artifact/latest/ug/what-is-aws-artifact.html)."

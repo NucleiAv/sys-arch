@@ -1,5 +1,5 @@
 title: Learn to design systems that serve millions, one box at a time
-lede: System design, architecture, infrastructure, network protocols, secure architecture with risk and GRC, payments, and AI and agent systems, from zero to mastery, in plain words. Animated diagrams, real life scenarios, quizzes, fill-ups, code questions, design tasks and interview questions with feedback. You need no background.
+lede: System design, architecture, infrastructure, network protocols, secure architecture with risk and GRC, payments, AI and agent systems, and AWS and cloud, from zero to mastery, in plain words. Animated diagrams, real life scenarios, quizzes, fill-ups, code questions, design tasks and interview questions with feedback. You need no background.
 loop_sub: About 45 minutes a lesson. Read the idea, watch it move, then practice. Every lesson ends with practice, and every level ends with a practice page.
 loop:
   - ["1 · 10 min", "Understand", "A plain explanation with a picture you can keep in your head. Every new word is explained."]
@@ -22,6 +22,11 @@ cards:
     t: Build and run it
     d: Git, GitHub, GitHub Actions, Linux, Docker, Compose, Kubernetes, AWS, serverless, Terraform and safe deploys, with command and config practice.
     go: Open the infra track
+  - href: cloud-track.html
+    num: '<span class="dot cl"></span> Cloud'
+    t: AWS and cloud, zero to architect
+    d: Eight levels. Regions, IAM, VPCs, compute, storage, databases, serverless, containers, cost, cloud security and attacks, AWS beside Azure and Google Cloud, and secure designs for tier 0 to tier 4 apps. With a progress tracker and free hands on labs.
+    go: Open the cloud track
   - href: protocols.html
     num: "62 protocols"
     t: Protocols, animated

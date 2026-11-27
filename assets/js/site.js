@@ -8,6 +8,7 @@
     ["plan.html", "Plan"],
     ["learn/index.html", "Concepts"],
     ["infra/index.html", "Infra"],
+    ["cloud-track.html", "Cloud"],
     ["protocols.html", "Protocols"],
     ["design/index.html", "Design it"],
     ["interview.html", "Interview"],
@@ -16,7 +17,7 @@
   const REPO = "https://github.com/NucleiAv/sys-arch";
   const R = (document.body && document.body.dataset.root) || "";
   const TRACK = (document.body && document.body.dataset.track) || "";
-  const here = TRACK === "protocols" ? "protocols.html" : TRACK ? TRACK + "/index.html" : (location.pathname.split("/").pop() || "index.html").toLowerCase();
+  const here = TRACK === "protocols" ? "protocols.html" : TRACK === "cloud" ? "cloud-track.html" : TRACK ? TRACK + "/index.html" : (location.pathname.split("/").pop() || "index.html").toLowerCase();
 
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -58,7 +59,7 @@
         <div><p><b style="color:var(--ink)">Boxes and Arrows</b> teaches system design and architecture from zero to mastery, in plain words.</p>
         <p>Built and curated by <a href="https://anmol-vats-portfolio.vercel.app/" target="_blank" rel="noopener">Anmol Vats</a>. Links point to their own sites. Progress, ticks and answers you write here stay in this browser only.</p></div>
         <div><h4>Learn</h4>${NAV.slice(1, 7).map(([h, t]) => `<a href="${R}${h}">${t}</a>`).join("")}</div>
-        <div><h4>More</h4>${NAV.slice(7).map(([h, t]) => `<a href="${R}${h}">${t}</a>`).join("")}<a href="${REPO}" target="_blank" rel="noopener">GitHub repository</a><a href="https://anmol-vats-portfolio.vercel.app/" target="_blank" rel="noopener">Author portfolio</a></div>
+        <div><h4>More</h4>${NAV.slice(7).map(([h, t]) => `<a href="${R}${h}">${t}</a>`).join("")}<a href="${REPO}" target="_blank" rel="noopener">GitHub repository</a><a href="https://nucleiav.github.io/ai-cyber/index.html" target="_blank" rel="noopener">Prompt to Patch</a><a href="https://anmol-vats-portfolio.vercel.app/" target="_blank" rel="noopener">Author portfolio</a></div>
       </div>`;
     }
   }
@@ -173,6 +174,23 @@
       if (confirm("Clear every tick on this page? This cannot be undone.")) { store.clear("plan."); boxes.forEach(b => { b.checked = false; }); update(); }
     });
     setTimeout(update);
+  }
+
+  /* ---------- Cloud track progress ---------- */
+  function initTracker() {
+    const box = $("#cl-trk"); if (!box) return;
+    const rows = $$(".lesson-row[data-done]");
+    const done = rows.filter(r => store.get(r.dataset.done));
+    $("#cl-trk-n").textContent = done.length;
+    $("#cl-trk-bar").style.transform = `scaleX(${rows.length ? done.length / rows.length : 0})`;
+    const next = rows.find(r => !store.get(r.dataset.done));
+    const a = $("#cl-trk-next");
+    if (next && done.length) { a.href = next.getAttribute("href"); a.textContent = "Continue with " + next.querySelector(".mono").textContent; }
+    else if (!next) { a.textContent = "Track complete. Review the designs"; }
+    $$("[data-lvc]").forEach(el => {
+      const lv = el.dataset.lvc, mine = rows.filter(r => r.dataset.lv === lv);
+      el.textContent = `${mine.filter(r => store.get(r.dataset.done)).length}/${mine.length}`;
+    });
   }
 
   /* ---------- Home ---------- */
@@ -335,6 +353,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     chrome();
     initPlan();
+    initTracker();
     renderHome();
     drawRoute();
     initRail();

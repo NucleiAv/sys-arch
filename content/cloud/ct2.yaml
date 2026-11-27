@@ -1,0 +1,211 @@
+kind: design
+short: Tier 2, business critical store
+title: Tier 2. A business critical online store, multi AZ with a warm standby
+time: about 80 minutes
+tags: [tier 2, multi AZ, warm standby, Aurora, decoupling]
+lede: An online store loses money every hour it is down, but a short outage in a rare regional disaster is acceptable. Design a classic, secure three tier web app on AWS, multi AZ in Mumbai, with a warm standby in Hyderabad, decoupled order processing, and an RTO of one hour.
+
+ask: |
+  A retailer sells online across India. If the store is down, sales stop and customers go elsewhere. The business accepts up to an hour of outage in a full regional disaster, and up to a few minutes of lost data. Design the store as a **tier 2** system.
+
+reqs:
+  func:
+    - Browse products, search, cart, checkout and order history.
+    - Take payment through an external payment gateway.
+    - Send order confirmations and update stock.
+  nonfunc:
+    - Availability 99.95 percent. RTO 1 hour. RPO 5 minutes.
+    - Survive an AZ failure with no customer impact.
+    - p95 page load under 1 second for product pages.
+    - Peak of 200 orders a second during sales, 20 times normal.
+  out:
+    - Warehouse systems and the payment gateway itself.
+
+estimate:
+  intro: |
+    At normal load the store runs 40 app tasks in Mumbai. The warm standby runs at 25 percent of that. Each order record is about 2 KB, and there are 2 million orders a day at peak season.
+  items:
+    - type: num
+      q: How many app tasks run in the Hyderabad warm standby?
+      a: 10
+      tol: 0
+      unit: tasks
+      why: 40 × 0.25 = 10. It scales up during failover.
+    - type: num
+      q: Downtime allowed per year at 99.95 percent, in hours?
+      a: 4.38
+      tol: 0.05
+      unit: hours
+      why: 8,760 hours × 0.0005 = 4.38 hours.
+    - type: num
+      q: New order data per peak day, in GB?
+      a: 4
+      tol: 0.1
+      unit: GB
+      why: 2,000,000 × 2 KB = 4,000,000 KB, about 4 GB.
+  after: |
+    !key The data is small and the spikes are large. Caching, a CDN and a queue in front of order processing matter more than a huge database.
+
+api: |
+  ```
+  GET  /products?category=shoes&page=2        cached at CloudFront and ElastiCache
+  POST /cart/items        { "sku": "SH-42", "qty": 1 }
+  POST /checkout          Idempotency-Key: ...   { "cart_id": "...", "address_id": "..." }
+  202  { "order_id": "ord_...", "status": "pending_payment" }
+  POST /webhooks/payment  signed by the payment gateway
+  ```
+
+data: |
+  | Store | Holds |
+  | --- | --- |
+  | Aurora PostgreSQL, Multi AZ | Customers, orders, stock, with Aurora Global Database to Hyderabad |
+  | ElastiCache for Valkey or Redis OSS | Sessions, carts, hot product data |
+  | OpenSearch | Product search index, rebuilt from the database |
+  | S3 with CloudFront | Product images and static files, replicated to Hyderabad |
+  | SQS | Order jobs between checkout and fulfilment |
+
+scenes:
+  - title: A sale peak, then an AZ failure
+    stats: [Step, What happens, Orders, Customer impact]
+    nodes:
+      u: {label: Shoppers, x: 0, y: 1, kind: box}
+      cf: {label: CloudFront and WAF, x: 2, y: 0, kind: def}
+      alb: {label: Load balancer, x: 2, y: 2, kind: raised, tag: 3 AZs}
+      app: {label: App tasks, x: 4, y: 0, kind: raised, tag: ECS Fargate}
+      q: {label: Order queue, x: 4, y: 2, kind: box, tag: SQS}
+      db: {label: Aurora, x: 6, y: 1, kind: raised, tag: writer and replicas}
+    links: [[u, cf], [cf, alb], [alb, app], [app, q], [app, db], [q, db]]
+    steps:
+      - title: The sale starts
+        text: Product pages are served mostly from CloudFront and the cache, so the database sees a small part of the traffic.
+        on: [u, cf, alb, app]
+        flow: [[u, cf, ink], [cf, alb, ink], [alb, app, ink]]
+        stats: [Browse, CDN and cache, "20 per second", none]
+      - title: Checkouts spike
+        text: Checkout writes the order as pending and puts a job on SQS. Fulfilment workers drain the queue at a steady speed.
+        on: [app, q, db]
+        flow: [[app, db, ink], [app, q, ink]]
+        stats: [Peak, queue absorbs spike, "200 per second", none]
+      - title: An AZ fails
+        text: One AZ loses power. The load balancer stops sending traffic there. Auto scaling adds tasks in the other two AZs.
+        on: [alb, app]
+        mark: {app: warn}
+        stats: [AZ loss, health checks, "200 per second", a few retries]
+      - title: Database fails over
+        text: The Aurora writer was in the failed AZ. Aurora promotes a replica in a healthy AZ, usually within about a minute. Apps reconnect through the cluster endpoint.
+        on: [db]
+        flow: [[app, db, def]]
+        mark: {db: ok}
+        stats: [Failover, Aurora Multi AZ, brief pause, under a minute of errors]
+      - title: Queue catches up
+        text: Orders taken during the pause were safe on SQS. Workers finish them, and customers get confirmations a little late.
+        on: [q, db]
+        flow: [[q, db, def]]
+        mark: {q: ok, app: ok}
+        stats: [Recover, queue and idempotency, back to normal, no lost orders]
+
+hld: |
+  1. **Edge.** CloudFront with AWS WAF managed rules and rate limits, Shield Standard, static files from S3 through origin access control.
+  2. **Web and app tier.** An internet facing ALB in public subnets, ECS on Fargate tasks in private subnets across three AZs, with auto scaling on request count.
+  3. **Data tier.** Aurora PostgreSQL with replicas in other AZs, ElastiCache for sessions and hot data, OpenSearch for search, all in private data subnets.
+  4. **Decoupling.** Checkout writes a pending order and an SQS message. Workers handle payment confirmation, stock and email. A dead letter queue catches failures.
+  5. **Warm standby.** In Hyderabad, the same stack from the same infrastructure as code, at 25 percent size. Aurora Global Database replica, S3 replication, container images replicated in ECR.
+  6. **Failover.** A runbook, tested twice a year. Promote the Aurora secondary, scale up the standby, switch Route 53 records. Target under 1 hour.
+  7. **Operations.** CloudWatch dashboards and alarms on checkout errors and latency, X-Ray traces, AWS Backup for point in time recovery and a separate backup copy.
+
+diagrams:
+  - type: flow
+    title: The three tiers in one region
+    nodes: [["CloudFront and WAF", "def"], ["ALB, public subnets", "raised"], ["App tasks, private subnets", "raised", "3 AZs"], ["Aurora, cache, search", "box", "data subnets"], ["SQS and workers", "box"]]
+    edges: ["HTTPS", "HTTPS", "SQL and cache", "jobs"]
+    caption: Each tier sits in its own subnets with security groups that allow only the tier in front of it.
+
+deep:
+  - ["Why warm standby and not active active", "The business accepts an hour of RTO. Warm standby gives that at about a quarter to a third of the cost of a second full region, and avoids multi writer data problems."]
+  - ["Why a queue in checkout", "The payment gateway and warehouse can be slow or down. A queue lets checkout reply fast and lets workers retry safely. With idempotency keys, no order is created twice."]
+  - ["Cache safely", "Product pages are cached at CloudFront for a short time and in ElastiCache. Prices and stock are checked again at checkout, so a stale cache never sells at the wrong price."]
+  - ["Testing the warm standby", "A warm standby that is never used drifts. Deploy to it with every release, run synthetic checks against it all the time, and do a full failover drill twice a year."]
+
+tradeoffs:
+  - ["Warm standby", "1 hour RTO at moderate cost.", "Standby can drift if not tested."]
+  - ["Fargate", "No servers to patch.", "Higher unit price than EC2 at steady load."]
+  - ["Aurora", "Fast AZ failover, global replica.", "Costs more than plain RDS for small loads."]
+  - ["Async order processing", "Fast checkout, absorbs spikes.", "Confirmations can be delayed."]
+
+security: |
+  - WAF managed rules, bot control on login and checkout, rate limits per IP.
+  - No card data stored. The payment gateway's hosted page or SDK handles cards, keeping PCI scope small. Webhooks are signature checked.
+  - Security groups chain tier to tier. The database accepts only the app tasks' security group.
+  - Secrets in Secrets Manager with rotation. Task roles per service.
+  - Encryption at rest with KMS for Aurora, S3, cache and queues. TLS everywhere.
+  - Customer accounts with MFA options, and credential stuffing protection on login.
+  - GuardDuty, Inspector on images, and CloudTrail in the foundation accounts.
+
+task:
+  intro: |
+    Present the design to the retailer's head of e-commerce.
+  items:
+    - q: Walk through the store design and explain how it handles a sale peak, an AZ failure and a region failure.
+      keys:
+        - ["CloudFront, WAF and caching for peaks", [cloudfront, cdn, cache, waf]]
+        - ["ALB and Fargate across three AZs with auto scaling", [alb, load balancer, fargate, three az, auto scal]]
+        - ["Aurora Multi AZ failover", [aurora, multi az, failover, replica]]
+        - ["SQS to decouple checkout, idempotency", [sqs, queue, decoupl, idempot]]
+        - ["Warm standby in Hyderabad with Aurora Global Database", [warm standby, hyderabad, global database, second region]]
+        - ["Tested failover runbook, 1 hour RTO", [runbook, drill, test, one hour, rto]]
+      a: |
+        Shoppers reach CloudFront with WAF, which serves images and caches product pages, so peaks mostly hit the edge. Behind it an ALB spreads traffic to Fargate tasks in three AZs that scale on request count. Data lives in Aurora PostgreSQL with replicas in other AZs, ElastiCache for carts and hot data, and OpenSearch for search. Checkout writes a pending order and a message to SQS, so slow payments or warehouses never block shoppers, and idempotency keys stop duplicates. If an AZ fails, the ALB routes around it and Aurora promotes a replica in about a minute. For a regional disaster, Hyderabad runs the same stack at a quarter size with an Aurora Global Database replica and replicated S3 and images. A tested runbook promotes the database, scales up and switches DNS within an hour.
+      fb: Explaining each failure and its exact recovery path is the core of a tier 2 answer.
+
+interview:
+  - q: How would you change this design if the business asked for an RTO of 5 minutes?
+    keys:
+      - ["Move toward hot standby or active active", [hot standby, active active, full size]]
+      - ["Pre scale the second region", [pre scale, full capacity, pre provision]]
+      - ["Automate failover with routing controls and tested switch", [automat, routing control, recovery controller, switch]]
+      - ["Cost goes up, check with the business", [cost, double, business]]
+    a: |
+      Five minutes is tier 1 territory. I would run Hyderabad at full size, a hot standby, or serve traffic from both regions. Failover would be a pre tested one click switch with Application Recovery Controller routing controls, plus Aurora Global Database managed failover or a move to a multi region data design. Every dependency would need a copy in both regions. I would show the business the cost, roughly double, and confirm the impact really justifies tier 1.
+    fb: Pointing out the cost and asking if it is worth it is part of an architect's job.
+
+desk:
+  title: Black Friday review
+  lede: Two weeks before the biggest sale, review the store's readiness.
+  situation: |
+    Checkout calls the payment gateway and the warehouse API synchronously. The database has no replicas. Product pages are not cached. The Hyderabad standby has not received a deploy in four months.
+  rounds:
+    - title: Round 1. Find the risks
+      items:
+        - type: sort
+          q: What can go wrong because of each fact?
+          rows:
+            - ["Synchronous calls in checkout", "A slow warehouse API stalls every checkout"]
+            - ["No database replicas", "An AZ failure stops the store"]
+            - ["No caching of product pages", "The database is overloaded by browsing"]
+            - ["Stale standby", "Failover fails or runs old code"]
+          opts: ["A slow warehouse API stalls every checkout", "An AZ failure stops the store", "The database is overloaded by browsing", "Failover fails or runs old code"]
+          why: Each threatens the sale.
+        - q: Which change gives the biggest protection for the least work before the sale?
+          opts: ["Cache product pages at CloudFront and add Aurora replicas", "Rewrite in a new language", "Move to another cloud"]
+          a: 0
+          why: Quick, high impact fixes.
+    - title: Round 2. Plan
+      items:
+        - type: open
+          q: Write the two week plan.
+          a: "Week 1, add Aurora replicas in two other AZs, cache product pages at CloudFront with short TTLs and add ElastiCache, and move warehouse and email calls behind SQS. Week 2, deploy the current release to Hyderabad, run a failover drill, load test at three times expected peak, and add alarms on checkout errors and queue age."
+        - q: What is a benefit of load testing before the sale?
+          opts: ["You find the weakest part while there is still time to fix it", "It lowers the AWS bill", "It replaces monitoring"]
+          a: 0
+          why: Find limits before customers do.
+  card: |
+    - CloudFront and WAF, ALB, Fargate in three AZs.
+    - Aurora Multi AZ, cache, search, in data subnets.
+    - SQS between checkout and slow systems.
+    - Warm standby in Hyderabad at a quarter size.
+    - Runbook tested twice a year, RTO 1 hour.
+
+refs:
+  - "AWS. [Disaster recovery options, warm standby](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)."
+  - "AWS. [High availability for Amazon Aurora](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Concepts.AuroraHighAvailability.html)."
+  - "AWS. [Using Amazon Aurora Global Database](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database.html)."

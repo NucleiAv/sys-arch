@@ -1,0 +1,229 @@
+kind: design
+short: Tiers and the secure foundation
+title: Application tiers, and the tier 0 foundation every app stands on
+time: about 75 minutes
+tags: [tiers, landing zone, network hub, identity, logging]
+lede: Companies sort their applications into tiers by how much it hurts when they stop. Learn what tier 0 to tier 4 usually mean, the targets for each, and design the secure foundation, identity, network, logging and guardrails, that every tier depends on.
+
+ask: |
+  A bank is moving 300 applications to AWS. Leaders want every app placed in a tier with clear targets for availability, RPO and RTO, and a matching standard design. First, design the **tier 0 foundation**, the shared platform every app uses. If it fails, everything fails.
+
+  ### What the tiers usually mean
+
+  Tier numbers are **set by each company**, so always ask for the local definition. A common scheme looks like this.
+
+  | Tier | Meaning | Example | Availability | RPO | RTO |
+  | --- | --- | --- | --- | --- | --- |
+  | 0 | Foundation, everything depends on it | Identity, network, DNS, logging, keys | 99.99 percent or more | Near zero | Minutes |
+  | 1 | Mission critical, revenue or safety stops | Payments, trading, emergency systems | 99.99 percent | Seconds | Minutes |
+  | 2 | Business critical, big impact within hours | Online store orders, customer portal | 99.9 to 99.95 percent | Minutes | About 1 hour |
+  | 3 | Business operational, work slows down | HR, internal tools, reporting | 99.5 percent | Hours | About 1 day |
+  | 4 | Non critical, can wait | Batch analytics, dev tools, archives | Best effort | About 1 day | Days |
+
+  The rest of this level designs one app per tier, from 8.2 to 8.5.
+
+reqs:
+  func:
+    - Create accounts for 300 apps with the same baseline in minutes.
+    - Single sign on for 4,000 staff, with roles per team and environment.
+    - Shared network connecting all VPCs and the bank's data centers, with central inspection.
+    - Central DNS, logging, security findings and key management.
+  nonfunc:
+    - The foundation must be more available than any app on it, at least 99.99 percent.
+    - No workload team can turn off logging or security tools.
+    - Data stays in India, in the Mumbai and Hyderabad regions.
+    - Every change to the foundation is code, reviewed and logged.
+  out:
+    - The applications themselves, which follow in lessons 8.2 to 8.5.
+
+estimate:
+  intro: |
+    300 apps, each with 3 accounts, dev, test and prod. Each prod account sends about 20 GB of CloudTrail, VPC Flow Logs and other logs a day to the log archive. Logs are kept 1 year hot and 9 more years in archive.
+  items:
+    - type: num
+      q: How many accounts does the organization need for workloads?
+      a: 900
+      tol: 0
+      unit: accounts
+      why: 300 × 3 = 900, plus a handful of shared accounts.
+    - type: num
+      q: Log volume from 300 prod accounts per day, in TB?
+      a: 6
+      tol: 0.1
+      unit: TB
+      why: 300 × 20 GB = 6,000 GB, about 6 TB a day.
+    - type: num
+      q: For 99.99 percent availability, how many minutes of downtime are allowed per year?
+      a: 52.6
+      tol: 0.5
+      unit: minutes
+      why: 525,600 minutes × 0.0001 = 52.56 minutes.
+  after: |
+    !key At 6 TB of logs a day, lifecycle rules to cheaper classes matter. The foundation needs higher availability than any app, so it uses only regional, multi AZ services and is deployed in both regions.
+
+api: |
+  The foundation's interface is **self service**, as code.
+
+  ```
+  account-request   { app: "upi-switch", tier: 1, env: "prod", owner: "payments-team",
+                      data_class: "restricted", regions: ["ap-south-1", "ap-south-2"] }
+  network-request   { account: "...", cidr_size: "/20", needs: ["onprem", "shared-services"] }
+  access-request    { group: "payments-devs", permission_set: "Developer", accounts: ["...-dev"] }
+  ```
+
+  Requests run through a pipeline that creates the account in the right OU, attaches it to the network, and assigns SSO access.
+
+data: |
+  | Account | Holds |
+  | --- | --- |
+  | Management | Organizations, Control Tower, billing. No workloads. |
+  | Log Archive | Organization CloudTrail, Config, VPC Flow Logs, with Object Lock |
+  | Security tooling | Delegated admin for GuardDuty, Security Hub, Inspector, Macie, Detective |
+  | Network | Transit Gateway, Direct Connect, inspection VPC with Network Firewall, egress VPC |
+  | Shared services | Route 53 Resolver, directory, CI runners, golden images |
+  | Key management | KMS keys or CloudHSM for tier 1 apps, managed by a separate team |
+
+scenes:
+  - title: A new tier 1 account lands in the foundation
+    stats: [Step, Foundation part, Control, Time]
+    nodes:
+      req: {label: Account request, x: 0, y: 1, kind: box, tag: tier 1 prod}
+      ct: {label: Control Tower, x: 2, y: 1, kind: def, tag: account factory}
+      acct: {label: New account, x: 4, y: 1, kind: raised}
+      tgw: {label: Network hub, x: 6, y: 0, kind: def, tag: Transit Gateway}
+      sec: {label: Security and logs, x: 6, y: 2, kind: def}
+      sso: {label: Identity Center, x: 4, y: 3, kind: raised}
+    links: [[req, ct], [ct, acct], [acct, tgw], [acct, sec], [sso, acct]]
+    steps:
+      - title: Request as code
+        text: The payments team opens a pull request with an account request for a tier 1 prod app. A reviewer approves it.
+        on: [req]
+        stats: [Request, pull request, review, "0 min"]
+      - title: Account in the tier 1 OU
+        text: The Account Factory creates the account in the Prod Tier 1 OU. Its SCPs allow only Mumbai and Hyderabad and block turning off security services.
+        on: [req, ct, acct]
+        flow: [[req, ct, ink], [ct, acct, def]]
+        stats: [Create, OU and SCPs, preventive, "10 min"]
+      - title: Logs and detection from minute one
+        text: The organization trail, Config, GuardDuty and Security Hub cover the account automatically and report to the Log Archive and Security accounts.
+        on: [acct, sec]
+        flow: [[acct, sec, ink]]
+        mark: {sec: ok}
+        stats: [Observe, central logs and findings, detective, "12 min"]
+      - title: Network attached safely
+        text: A VPC with a non overlapping range is created from IP Address Manager and attached to the Transit Gateway. Traffic to on premises and the internet passes the inspection VPC.
+        on: [acct, tgw]
+        flow: [[acct, tgw, def]]
+        mark: {tgw: ok}
+        stats: [Connect, hub and inspection, network segmentation, "20 min"]
+      - title: People get access
+        text: Identity Center assigns permission sets to the team's groups from the bank's directory. No IAM users exist.
+        on: [sso, acct]
+        flow: [[sso, acct, ink]]
+        mark: {acct: ok}
+        stats: [Access, SSO and permission sets, least privilege, "25 min"]
+
+hld: |
+  1. **Organization and landing zone.** Control Tower with OUs by tier and environment, such as Prod Tier 1, Prod Tier 2 to 4, Non prod, Sandbox, Security, Infrastructure. Stricter SCPs on higher tiers.
+  2. **Identity.** IAM Identity Center federated with the bank's identity provider, with MFA, permission sets per role, and break glass users kept in a safe with alerts.
+  3. **Network hub.** Transit Gateway in each region, Direct Connect with two connections at two locations plus a backup VPN, an inspection VPC with AWS Network Firewall, a central egress VPC, and IPAM for address ranges.
+  4. **DNS.** Route 53 private hosted zones and Resolver endpoints to and from on premises.
+  5. **Logging and detection.** Organization CloudTrail, Config, VPC Flow Logs to Log Archive with Object Lock. GuardDuty, Security Hub, Inspector, Macie delegated to the security account. Logs stream to the SIEM.
+  6. **Keys.** Customer managed KMS keys per app and data class, with key policies that separate key admins from key users. CloudHSM where regulation requires single tenant hardware.
+  7. **Guardrails.** SCPs, Config conformance packs, CloudFormation hooks, tag policies, budgets.
+  8. **Two regions.** The foundation is deployed in both Mumbai and Hyderabad, since tier 1 apps need both.
+
+diagrams:
+  - type: layers
+    title: What a workload inherits from the foundation
+    attack: a new app account
+    layers:
+      - ["Organization SCPs", "Allowed regions, protect logging, no leaving the org", "stop"]
+      - ["Identity Center", "SSO, MFA, permission sets, no IAM users", "stop"]
+      - ["Network hub and inspection", "Private by default, central egress and firewall", "stop"]
+      - ["Central logging", "CloudTrail, Config, Flow Logs to Log Archive", "partial"]
+      - ["Security tooling", "GuardDuty, Security Hub, Inspector, Macie", "partial"]
+      - ["Keys and secrets", "KMS keys per app, Secrets Manager", "stop"]
+    caption: An app team gets all of this without writing it. Their design then adds what their tier needs.
+
+deep:
+  - ["Why tier the apps at all", "Not every app needs multi region active active. Tiers let the bank spend money and effort where outages hurt most, and give each team a standard design and checklist instead of arguing from scratch."]
+  - ["Who decides the tier", "The business owner, with risk and IT, does a business impact analysis. How much money, how many customers and what legal duty is lost per hour of outage. The answer sets the tier and its RPO and RTO."]
+  - ["Making the foundation more reliable than its apps", "Use only regional services in at least two AZs, deploy in both regions, keep Direct Connect redundant, and change the foundation slowly with staged rollouts and tested rollback. A bad SCP can break 900 accounts at once, so test changes in a sandbox OU first."]
+  - ["Break glass", "If the identity provider is down, nobody can sign in. Keep a few emergency users in the management and security accounts, with hardware MFA keys in a safe, alerts on every use, and a tested procedure."]
+
+tradeoffs:
+  - ["Central inspection VPC", "One place for firewall rules and logs.", "Extra hop, cost, and a shared component to keep highly available."]
+  - ["Strict SCPs by tier", "Strong, consistent controls.", "Teams need a clear and fast exception process."]
+  - ["Control Tower", "Faster start, AWS managed.", "Less freedom than fully custom landing zone code."]
+
+security: |
+  The foundation is the highest value target, since control of it means control of everything. Keep the management account nearly empty, admins few and on hardware MFA, and changes reviewed by two people. Separate duties. Network, security, key and workload admins are different groups. Log every change to the foundation to an account its own admins cannot alter.
+
+task:
+  intro: |
+    Present the foundation and the tier model to the bank's risk committee.
+  items:
+    - q: Explain the tier model and the foundation every app uses.
+      keys:
+        - ["Tiers by business impact with availability, RPO and RTO", [tier, business impact, rpo, rto, availability]]
+        - ["Multi account landing zone with OUs by tier", [landing zone, control tower, ou, account]]
+        - ["SSO with MFA and permission sets", [identity center, sso, mfa, permission set]]
+        - ["Network hub with inspection and redundant Direct Connect", [transit gateway, direct connect, inspection, network firewall, hub]]
+        - ["Central logging and security tools in separate accounts", [log archive, cloudtrail, guardduty, security hub, separate account]]
+        - ["Guardrails and data residency by SCP", [scp, guardrail, region, residency]]
+      a: |
+        We place every app in a tier from a business impact analysis. Tier 1 is mission critical with seconds of RPO and minutes of RTO, down to tier 4, which can wait days. Each tier has a standard design. All of them sit on a tier 0 foundation. A Control Tower landing zone with OUs by tier and environment, and an account per app per environment. People sign in once through IAM Identity Center with MFA and role based permission sets. A Transit Gateway hub in Mumbai and Hyderabad connects all VPCs and our data centers through redundant Direct Connect, with traffic inspected by Network Firewall and a single egress point. CloudTrail, Config and flow logs flow to a locked Log Archive account, and GuardDuty, Security Hub, Inspector and Macie report to a security account. SCPs keep data in India, protect logging and stop accounts leaving the organization. The foundation is code, deployed in both regions and changed with staged rollouts.
+      fb: Linking the tier to a business impact analysis, not to technical taste, is what a risk committee wants to hear.
+
+interview:
+  - q: Why should the foundation be more available than the most critical app on it?
+    keys:
+      - ["Every app depends on it, so its outage takes all apps down", [depend, all apps, everything, single]]
+      - ["Availability multiplies, a weaker foundation lowers every app", [multipl, chain, lower, combined]]
+    a: |
+      Every app depends on identity, network, DNS and keys. If the foundation is at 99.9 percent and a tier 1 app is designed for 99.99, the app can never really reach 99.99, because availability of dependent parts multiplies. 0.9999 × 0.999 is about 0.9989. So the foundation must be at least as available as the highest tier, and ideally better.
+    fb: Showing the multiplication makes the point concrete.
+
+desk:
+  title: Assign the tiers
+  lede: The bank's architects must tier five apps before migration.
+  situation: |
+    Apps are the UPI payment switch, the online banking portal, the HR leave system, the monthly risk report batch, and Active Directory with DNS.
+  rounds:
+    - title: Round 1. Tier each app
+      items:
+        - type: sort
+          q: Which tier fits each app?
+          rows:
+            - ["Active Directory and DNS", "Tier 0"]
+            - ["UPI payment switch", "Tier 1"]
+            - ["Online banking portal", "Tier 2"]
+            - ["HR leave system", "Tier 3"]
+            - ["Monthly risk report batch", "Tier 4"]
+          opts: ["Tier 0", "Tier 1", "Tier 2", "Tier 3", "Tier 4"]
+          why: By business impact per hour of outage. Some banks place the portal in tier 1. Use the local definition.
+        - q: Who should make the final tier decision?
+          opts: ["The business owner with risk and IT, from a business impact analysis", "The newest engineer", "AWS"]
+          a: 0
+          why: Tiers are a business decision.
+    - title: Round 2. Foundation check
+      items:
+        - type: open
+          q: Name four things the foundation must give every tier 1 account on day one.
+          a: "An account in a tier 1 OU with SCPs for allowed regions and protected logging. SSO access through Identity Center with MFA. Organization CloudTrail, Config and GuardDuty reporting to central accounts. A VPC attached to the Transit Gateway with inspection, in both Mumbai and Hyderabad. Customer managed KMS keys."
+        - q: What is a benefit of an account per app per environment?
+          opts: ["Small blast radius and clear cost and access boundaries", "Fewer accounts to manage", "No need for SSO"]
+          a: 0
+          why: Accounts are the strongest isolation boundary in AWS.
+  card: |
+    - Tier by business impact. Numbers are company defined.
+    - Tier 0, the foundation, must be the most available.
+    - Landing zone, OUs by tier, account per app per environment.
+    - SSO, network hub with inspection, central logs and security.
+    - SCPs for residency and protection of logging.
+
+refs:
+  - "AWS. [Disaster recovery of workloads on AWS](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-workloads-on-aws.html)."
+  - "AWS. [Security Reference Architecture](https://docs.aws.amazon.com/prescriptive-guidance/latest/security-reference-architecture/welcome.html)."
+  - "AWS. [Building a scalable and secure multi VPC network infrastructure](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/welcome.html)."

@@ -1,0 +1,228 @@
+short: Serverless and integration
+title: Lambda, API Gateway, SQS, SNS, EventBridge, Step Functions and Kinesis
+time: about 60 minutes
+tags: [Lambda, API Gateway, SQS, SNS, EventBridge, Step Functions]
+lede: Serverless means you write the code and AWS runs, scales and patches everything under it, and you pay per request. Learn Lambda's limits, how API Gateway fronts it, and how queues, topics, event buses, workflows and streams connect services so they can fail and scale on their own.
+
+idea: |
+  **AWS Lambda** runs your function when an event happens, such as an HTTP request, a file landing in S3, or a message on a queue. You do not manage servers. Lambda starts as many copies as needed and you pay for the number of requests and the time your code runs.
+
+  Lambda has limits to remember. A function can run for at most **15 minutes**, use **128 MB to 10,240 MB** of memory, and the first request to a new copy can be slower, a **cold start**.
+
+  **API Gateway** puts an HTTPS API in front of Lambda or other backends, with authentication, throttling and request checks.
+
+  To connect services without tight coupling, AWS has several **integration** services, the cloud versions of Concepts lessons 3.2 and 3.6.
+
+  - **SQS.** A queue. One consumer handles each message.
+  - **SNS.** A topic. One message fans out to many subscribers.
+  - **EventBridge.** An event bus with rules that route events to targets, including events from AWS services and SaaS apps.
+  - **Step Functions.** Workflows with steps, retries, branches and waits, drawn as a state machine.
+  - **Kinesis Data Streams.** An ordered stream with shards, like Kafka, for high volume real time data.
+
+  !eli5 Serverless is like ordering food delivery instead of running a kitchen. You choose the dish, they cook it when you order, and you pay per meal. SQS is a ticket rail, SNS is a loudspeaker, EventBridge is a post office sorting room, and Step Functions is the recipe card that says which step comes next.
+
+scenes:
+  - title: An image upload flows through serverless services
+    stats: [Step, Service, Servers you manage, Pay for]
+    nodes:
+      user: {label: User, x: 0, y: 1, kind: box}
+      api: {label: API Gateway, x: 2, y: 1, kind: def}
+      up: {label: Upload Lambda, x: 4, y: 0, kind: def}
+      s3: {label: S3 bucket, x: 4, y: 2, kind: raised}
+      eb: {label: EventBridge, x: 6, y: 2, kind: def}
+      sqs: {label: SQS queue, x: 6, y: 0, kind: raised, tag: with dead letter queue}
+    links: [[user, api], [api, up], [up, s3], [s3, eb], [eb, sqs]]
+    steps:
+      - title: Ask to upload
+        text: The app calls POST /uploads on API Gateway. It checks the user's token and throttles abusive clients.
+        on: [user, api]
+        flow: [[user, api, ink]]
+        stats: [API, API Gateway, none, per request]
+      - title: Lambda returns a pre signed URL
+        text: The upload Lambda creates a short lived pre signed S3 URL. The phone uploads the image straight to S3, so the big file never passes through Lambda.
+        on: [api, up, s3]
+        flow: [[api, up, ink], [up, s3, def]]
+        stats: [URL, Lambda and S3, none, ms of compute]
+      - title: An event is published
+        text: S3 sends an Object Created event to EventBridge. A rule matches images and routes them to an SQS queue.
+        on: [s3, eb, sqs]
+        flow: [[s3, eb, ink], [eb, sqs, ink]]
+        stats: [Event, EventBridge rule, none, per event]
+      - title: Workers drain the queue
+        text: A resize Lambda reads batches from SQS. During a spike, the queue absorbs the burst and Lambda scales up within its concurrency limit.
+        on: [sqs]
+        mark: {sqs: ok}
+        stats: [Process, SQS and Lambda, none, per batch]
+      - title: A broken file
+        text: One file is corrupt and fails every time. After 5 receives, SQS moves it to the dead letter queue, so it stops blocking the others, and an alarm fires.
+        on: [sqs]
+        mark: {sqs: warn}
+        stats: [DLQ, dead letter queue, none, tiny]
+
+terms:
+  - [Lambda, "Runs functions on events with no servers to manage, billed per request and duration."]
+  - [Cold start, "Extra delay when a new copy of a function starts for the first time."]
+  - [Concurrency, "How many copies of a function run at once. Accounts have a regional limit."]
+  - [API Gateway, "A managed front door for HTTP, REST and WebSocket APIs."]
+  - [SQS, "Simple Queue Service. Standard queues are at least once with best effort order. FIFO queues keep order."]
+  - [Visibility timeout, "How long a received SQS message is hidden from other consumers while it is processed."]
+  - [SNS, "Simple Notification Service. Pub sub topics that fan out to many subscribers."]
+  - [EventBridge, "An event bus that routes events by rules to targets."]
+  - [Step Functions, "Managed workflows built as state machines with retries and error handling."]
+  - [Kinesis Data Streams, "Ordered, replayable streams split into shards, for real time data."]
+
+how: |
+  ### Lambda facts worth remembering
+
+  | Limit or feature | Value |
+  | --- | --- |
+  | Maximum run time | 15 minutes |
+  | Memory | 128 MB to 10,240 MB, CPU grows with memory |
+  | Temporary disk, /tmp | 512 MB by default, up to 10 GB |
+  | Default concurrency per region | 1,000, can be raised |
+  | Cold start help | Provisioned concurrency, SnapStart for some runtimes, smaller packages |
+
+  Longer jobs go to Step Functions, ECS on Fargate or Batch.
+
+  ### Pick the integration service
+
+  | Need | Choose |
+  | --- | --- |
+  | Spread work across workers, retries, buffering | SQS standard |
+  | Strict order per group and exactly once processing | SQS FIFO |
+  | One message to many subscribers | SNS, often SNS fan out to several SQS queues |
+  | Route events by content from many sources | EventBridge |
+  | Multi step process with retries, waits and human steps | Step Functions |
+  | High volume ordered stream, replay, many readers | Kinesis Data Streams or Amazon MSK for Kafka |
+
+  ### SQS settings that matter
+
+  - **Visibility timeout** must be longer than processing time, or messages are handled twice. Default 30 seconds, up to 12 hours.
+  - **Message retention** from 1 minute to 14 days, default 4 days.
+  - **Dead letter queue** with a maximum receive count, so poison messages move aside.
+  - **Long polling** reduces empty responses and cost.
+
+  ### API Gateway types
+
+  - **HTTP API.** Cheaper, faster, simpler, good default for Lambda proxies.
+  - **REST API.** More features, such as usage plans, API keys and request validation.
+  - **WebSocket API.** Two way connections for chat and live updates.
+
+  Remember API Gateway's integration timeout, 29 seconds by default. Long work should be queued and answered later.
+
+  !key Serverless removes servers, not design. You still need idempotent handlers, dead letter queues, limits and timeouts, as in Concepts levels 3 and 4.
+
+diagrams:
+  - type: split
+    title: SNS fan out to SQS queues
+    source: ["Order placed, SNS topic", "def"]
+    targets:
+      - ["SQS for email", "raised", "own retries"]
+      - ["SQS for invoicing", "raised", "own pace"]
+      - ["SQS for analytics", "raised", "can lag"]
+      - ["Lambda for fraud check", "box", "direct"]
+    caption: Each consumer gets its own queue, so one slow or broken consumer does not affect the others.
+
+life:
+  - ["iRobot on serverless", "iRobot has described running much of the cloud backend for its connected robot vacuums on serverless AWS services, so a small team could serve millions of devices without managing servers."]
+  - ["The visibility timeout bug", "A team's function took 45 seconds per message, but the queue's visibility timeout was 30 seconds. Messages reappeared and were processed twice, sending duplicate emails. Raising the timeout and making the handler idempotent fixed it."]
+  - ["Recursive loop bill", "A Lambda triggered by S3 uploads wrote its output to the same bucket, which triggered it again and again. Lambda now detects and stops some recursive loops, but separate buckets or prefixes are the real fix."]
+
+tradeoffs:
+  - ["Lambda", "No servers, scales fast, pay per use.", "15 minute limit, cold starts, cost at very high steady load."]
+  - ["Containers on Fargate", "Long running, any runtime.", "Pay while running, slower scaling."]
+  - ["SQS", "Simple, durable buffering.", "One consumer per message, no replay."]
+  - ["Kinesis", "Ordered, replayable, many readers.", "Shards to size and manage."]
+  - ["EventBridge", "Content based routing from many sources.", "Higher latency than direct calls, per event cost."]
+
+mistakes:
+  - Long jobs in Lambda that hit the 15 minute limit.
+  - Visibility timeout shorter than processing time.
+  - No dead letter queue.
+  - A Lambda that writes to the bucket that triggers it.
+  - Synchronous chains of Lambdas calling each other through API Gateway.
+
+security: |
+  Give each Lambda its own execution role with least privilege, keep secrets in Secrets Manager, validate every event, since an S3 key or a queue message is still untrusted input, set reserved concurrency to cap cost and blast radius, and protect API Gateway with authorizers, WAF and throttling. Serverless still needs dependency scanning, as functions ship libraries too.
+
+quiz:
+  - type: num
+    q: What is Lambda's maximum run time per invocation, in minutes?
+    a: 15
+    tol: 0
+    unit: minutes
+    why: Use Step Functions, Fargate or Batch for longer work.
+  - type: sort
+    q: Pick the service.
+    rows:
+      - ["One order event must reach five independent services", "SNS fan out to SQS"]
+      - ["A refund process with approval, retries and a 3 day wait", "Step Functions"]
+      - ["Route events from many AWS services by their content", "EventBridge"]
+      - ["Clickstream with ordered replay for several consumers", "Kinesis Data Streams"]
+    opts: ["SNS fan out to SQS", "Step Functions", "EventBridge", "Kinesis Data Streams"]
+    why: Each integration service has a sweet spot.
+  - q: Messages take 50 seconds to process and some are processed twice. What is the likely cause?
+    opts: ["The visibility timeout is shorter than the processing time", "SQS lost the messages", "Lambda is too fast"]
+    a: 0
+    why: Set the timeout above the processing time and make handlers idempotent.
+  - type: fill
+    q: Messages that fail too many times should move to a dead ____ queue.
+    a: ["letter"]
+    why: So one bad message does not block the rest.
+  - q: Spot the problem. "Our S3 triggered Lambda saves the thumbnail into the same bucket and prefix it listens to."
+    opts: ["Each output triggers the function again, a recursive loop", "Thumbnails are too small", "Lambda cannot write to S3"]
+    a: 0
+    why: Write outputs to another bucket or a prefix that is not watched.
+
+interview:
+  - q: Design a serverless backend that processes uploaded documents reliably.
+    keys:
+      - ["Pre signed URL upload straight to S3", [pre signed, presigned, direct to s3, upload]]
+      - ["Events through EventBridge or S3 notifications to SQS", [eventbridge, notification, sqs, event]]
+      - ["Lambda workers with visibility timeout, idempotency and DLQ", [visibility, idempot, dead letter, dlq, retry]]
+      - ["Step Functions for multi step processing", [step functions, workflow, state machine]]
+      - ["Limits, concurrency and least privilege roles", [concurrency, limit, least privilege, role, throttl]]
+    a: |
+      The client gets a pre signed URL from a small Lambda behind API Gateway and uploads the document straight to S3. S3 sends an event to EventBridge, which routes it to an SQS queue. A Lambda consumer reads in batches, with the visibility timeout set above the processing time, idempotent handling keyed by the object key and version, and a dead letter queue after a few failures. If processing has several steps, such as OCR, classification and human review, I use Step Functions to orchestrate them with retries and waits. Each function has its own least privilege role, reserved concurrency protects downstream systems, and CloudWatch alarms watch queue age and the dead letter queue.
+    fb: Queue age and DLQ alarms show you think about running it, not just building it.
+
+desk:
+  title: The slow, flaky upload API
+  lede: A team's serverless upload API times out and sometimes processes files twice.
+  situation: |
+    Clients upload 40 MB files through API Gateway into Lambda. The same Lambda then resizes and scans the file, which can take 3 minutes. Messages from a second queue are sometimes handled twice.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What problem does each fact cause?
+          rows:
+            - ["40 MB through API Gateway and Lambda", "Hits payload and timeout limits"]
+            - ["3 minutes of work inside the API call", "Exceeds API Gateway's integration timeout"]
+            - ["Messages handled twice", "Visibility timeout too short or handler not idempotent"]
+          opts: ["Hits payload and timeout limits", "Exceeds API Gateway's integration timeout", "Visibility timeout too short or handler not idempotent"]
+          why: Each fact breaks a known limit or rule.
+        - q: What is the best upload design?
+          opts: ["Return a pre signed S3 URL and process the file asynchronously after upload", "Raise every limit", "Split the file into 1 KB parts through the API"]
+          a: 0
+          why: Big files go straight to S3, work happens later.
+    - title: Round 2. Fix
+      items:
+        - type: open
+          q: Write the new flow.
+          a: "POST /uploads returns a pre signed URL. The client uploads to S3. An S3 event goes through EventBridge to SQS. A worker Lambda with a visibility timeout of 6 minutes processes it idempotently, using the object key as an idempotency key, with a dead letter queue after 3 tries. The client polls or gets a WebSocket message when processing finishes."
+        - q: What is the benefit of putting SQS between S3 events and the worker?
+          opts: ["It buffers bursts, retries failures and isolates a slow worker", "It makes files smaller", "It removes the need for IAM"]
+          a: 0
+          why: Queues absorb spikes and failures.
+  card: |
+    - Lambda, 15 minutes, up to 10 GB memory, cold starts.
+    - API Gateway for the front door, 29 second integration timeout.
+    - SQS one consumer, SNS fan out, EventBridge routing.
+    - Step Functions for workflows, Kinesis for streams.
+    - Idempotent handlers, visibility timeout, DLQ.
+
+refs:
+  - "AWS. [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html)."
+  - "AWS. [Amazon SQS visibility timeout](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html)."
+  - "AWS. [Choosing between messaging services](https://docs.aws.amazon.com/decision-guides/latest/sns-or-sqs-or-eventbridge/sns-or-sqs-or-eventbridge.html)."

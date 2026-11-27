@@ -1,0 +1,210 @@
+short: Observability and operations
+title: CloudWatch, CloudTrail, Config, X-Ray and Systems Manager
+time: about 50 minutes
+tags: [CloudWatch, CloudTrail, Config, X-Ray, Systems Manager]
+lede: You cannot run what you cannot see. Learn which AWS service watches what, metrics and logs, API calls, configuration changes and traces, how to build alarms that matter, and how Systems Manager lets you operate servers without SSH.
+
+idea: |
+  Several AWS services watch different things. People often mix them up, so learn them as a set.
+
+  - **CloudWatch** watches **performance and health**. Metrics such as CPU and request counts, **logs** from apps and services, **alarms** that fire on thresholds, and dashboards.
+  - **CloudTrail** records **who did what**. Every API call, such as "user Asha deleted bucket X at 10:42 from this IP".
+  - **AWS Config** records **what changed in configuration** and checks resources against **rules**, such as "every bucket must block public access".
+  - **AWS X-Ray**, and CloudWatch's application monitoring features, show **traces**, the path of one request across services.
+  - **Systems Manager** helps **operate** servers. Session Manager for shell access without SSH, Patch Manager, Run Command and Parameter Store.
+
+  These map to Concepts lesson 4.2. Metrics tell you something is wrong, traces tell you where, logs tell you why, and CloudTrail tells you who changed something.
+
+  !eli5 CloudWatch is the car's dashboard with speed and warning lights. CloudTrail is the security camera recording who got in and what they touched. Config is a checklist that inspects the car every day and notes any change. X-Ray is a map of the trip that shows where you got stuck.
+
+scenes:
+  - title: Finding why checkout got slow
+    stats: [Step, Tool, Finding, Time spent]
+    nodes:
+      cw: {label: CloudWatch alarm, x: 0, y: 1, kind: atk, tag: p99 latency high}
+      dash: {label: Dashboard, x: 2, y: 0, kind: raised}
+      xray: {label: Traces, x: 2, y: 2, kind: def}
+      logs: {label: Logs Insights, x: 4, y: 1, kind: def}
+      trail: {label: CloudTrail, x: 6, y: 0, kind: raised}
+      cfg: {label: AWS Config, x: 6, y: 2, kind: raised}
+    links: [[cw, dash], [cw, xray], [xray, logs], [logs, trail], [trail, cfg]]
+    steps:
+      - title: The alarm fires
+        text: An alarm on checkout's 99th percentile latency, tied to the SLO, pages the on call engineer at 9:05.
+        on: [cw]
+        mark: {cw: warn}
+        stats: [Alert, CloudWatch alarm, p99 is 4 seconds, "0 min"]
+      - title: Dashboard narrows it
+        text: The dashboard shows latency rose only for checkout, starting at 9:01, and database connections jumped.
+        on: [cw, dash]
+        flow: [[cw, dash, ink]]
+        stats: [Narrow, dashboard, checkout only since 9:01, "3 min"]
+      - title: Traces find the slow hop
+        text: Traces show most of the time is spent in one query to the orders database.
+        on: [xray]
+        flow: [[cw, xray, ink]]
+        stats: [Locate, traces, slow orders query, "6 min"]
+      - title: Logs show why
+        text: Logs Insights shows the query plan changed to a full scan. Something removed an index.
+        on: [xray, logs]
+        flow: [[xray, logs, ink]]
+        stats: [Explain, logs, full table scan, "9 min"]
+      - title: Who changed what
+        text: CloudTrail shows a migration job ran at 9:00. Config shows the parameter group changed at the same time. Roll back, and latency returns to normal.
+        on: [logs, trail, cfg]
+        flow: [[logs, trail, def], [trail, cfg, def]]
+        mark: {cfg: ok}
+        stats: [Root cause, CloudTrail and Config, 9:00 migration, "14 min"]
+
+terms:
+  - [CloudWatch metrics, "Numbers over time, such as CPU, latency or queue length."]
+  - [CloudWatch Logs, "Stores and searches log lines from apps and AWS services."]
+  - [CloudWatch alarm, "Fires when a metric crosses a threshold, and can notify or act."]
+  - [CloudTrail, "Records API calls in your account, who, what, when and from where."]
+  - [Data events, "CloudTrail records of data access, such as S3 object reads. Off by default because of volume."]
+  - [AWS Config, "Records resource configuration over time and checks it against rules."]
+  - [X-Ray, "Distributed tracing for requests across services."]
+  - [Systems Manager, "Tools to operate servers at scale, including Session Manager and Patch Manager."]
+  - [Session Manager, "Shell access to instances through IAM, with no open SSH ports, and logged sessions."]
+
+how: |
+  ### Who watches what
+
+  | Question | Service |
+  | --- | --- |
+  | Is it healthy and fast? | CloudWatch metrics and alarms |
+  | What did the app say? | CloudWatch Logs, Logs Insights |
+  | Where is the slow step? | X-Ray or OpenTelemetry traces |
+  | Who called which API? | CloudTrail |
+  | What changed in a resource's settings, and is it compliant? | AWS Config |
+  | Is anything behaving like an attack? | GuardDuty, lesson 6.1 |
+
+  ### CloudTrail essentials
+
+  - **Event history** keeps 90 days of management events for free in each region.
+  - Create a **trail** to keep logs longer in S3, across all regions and, in an organization, all accounts.
+  - **Data events**, such as S3 GetObject and Lambda invoke, are off by default. Turn them on for sensitive buckets.
+  - Protect the log bucket with Object Lock, and enable **log file integrity validation**.
+
+  ### Alarms that matter
+
+  - Alarm on **user pain**, latency, error rate and SLO burn, Concepts lesson 4.2.
+  - Use **composite alarms** to reduce noise.
+  - Add alarms for **security events**, such as root sign in, IAM policy changes and CloudTrail being stopped.
+
+  ### Operate without SSH
+
+  - **Session Manager** for shell access with IAM control and full session logs.
+  - **Patch Manager** with maintenance windows.
+  - **Run Command** to run scripts across many instances.
+  - **Automation runbooks** for common fixes.
+
+  !key CloudWatch tells you how it runs. CloudTrail tells you who did what. Config tells you how it is set up. You need all three.
+
+diagrams:
+  - type: flow
+    title: From alert to root cause
+    nodes: [["CloudWatch alarm", "atk"], ["Dashboard", "raised"], ["Traces", "def"], ["Logs", "def"], ["CloudTrail and Config", "raised", "who changed what"]]
+    edges: ["", "", "", ""]
+    caption: Each tool answers a different question. Link them with a request id and timestamps.
+
+life:
+  - ["CloudTrail in breach investigations", "In most cloud incident investigations, CloudTrail is the first place responders look, to see which keys were used, from where, and what they called. Accounts without a long term trail often cannot answer those questions."]
+  - ["Config catches a public bucket", "An AWS Config rule flagged a bucket that became public after a policy change. An automatic remediation set Block Public Access within minutes."]
+  - ["Retiring the bastion", "A company replaced SSH bastion hosts with Session Manager. Port 22 closed everywhere, and every shell session was logged to S3 for audit."]
+
+tradeoffs:
+  - ["More logs and data events", "Better investigations.", "Storage and ingestion cost."]
+  - ["Many alarms", "Nothing is missed.", "Alert fatigue, real alerts ignored."]
+  - ["Native AWS tools", "Built in, easy to start.", "Less flexible than some third party platforms across clouds."]
+
+mistakes:
+  - No CloudTrail trail beyond the 90 day event history.
+  - CloudTrail logs in a bucket the same admins can delete.
+  - Alarms on CPU instead of user facing symptoms.
+  - Logs kept forever at full price.
+  - Opening SSH to debug instead of using Session Manager.
+
+security: |
+  Logging is a security control. Use an organization trail to a separate log archive account, with Object Lock and integrity validation. Turn on data events for sensitive S3 buckets. Alert on root sign ins, policy changes, disabled security services and access key creation. Send logs to your SIEM, and make sure responders can read them during an incident, lesson 6.2.
+
+quiz:
+  - type: sort
+    q: Which service answers each question?
+    rows:
+      - ["Who deleted this bucket?", "CloudTrail"]
+      - ["Is p99 latency above 1 second?", "CloudWatch"]
+      - ["When did this security group's rules change, and is it compliant?", "AWS Config"]
+      - ["Which service in the chain is slow?", "X-Ray"]
+    opts: ["CloudTrail", "CloudWatch", "AWS Config", "X-Ray"]
+    why: Each tool sees a different view.
+  - type: num
+    q: For how many days does CloudTrail event history keep management events for free?
+    a: 90
+    tol: 0
+    unit: days
+    why: Create a trail to keep logs longer.
+  - type: fill
+    q: Shell access to instances through IAM, with no open SSH port, is Systems Manager Session ____.
+    a: ["manager"]
+    why: Sessions are logged and port 22 can stay closed.
+  - q: Identify the GRC issue. "Our CloudTrail logs go to a bucket in the production account that all admins can delete."
+    opts: ["An attacker or insider with admin rights can erase the evidence", "Logs must not be in S3", "No issue"]
+    a: 0
+    why: Send logs to a separate, locked down log archive account.
+  - q: Why are S3 data events off by default?
+    opts: ["They can be very high volume and cost money", "They are illegal", "S3 does not support them"]
+    a: 0
+    why: Turn them on for sensitive buckets.
+
+interview:
+  - q: An S3 bucket was made public. How do you find out who did it and stop it happening again?
+    keys:
+      - ["CloudTrail to find the API call, who and when", [cloudtrail, putbucketpolicy, api call, who]]
+      - ["Config history and rules to see the change and detect it", [config, rule, history, compliance]]
+      - ["Fix with Block Public Access at account level", [block public access, account level]]
+      - ["Prevent with SCPs, alerts or automatic remediation", [scp, alert, remediat, eventbridge, automat]]
+    a: |
+      I search CloudTrail for PutBucketPolicy, PutBucketAcl and PutPublicAccessBlock calls on that bucket, which shows the identity, time and source IP. AWS Config's history shows exactly how the bucket's settings changed. I make it private again, check access logs or data events for any reads while it was public, and treat it as an incident if sensitive data was exposed. To prevent repeats, I turn on S3 Block Public Access at the account level, use an SCP so it cannot be turned off, add a Config rule with automatic remediation, and alert on the related API calls through EventBridge.
+    fb: Using CloudTrail to answer who and Config to answer what changed shows you know the difference.
+
+desk:
+  title: The blind production account
+  lede: After an outage, a team realizes it could not see what happened.
+  situation: |
+    Only default CloudWatch metrics exist. No app logs are shipped. CloudTrail has only the 90 day event history. Engineers SSH in with a shared key to debug.
+  rounds:
+    - title: Round 1. Find the gaps
+      items:
+        - type: sort
+          q: What can the team not answer because of each gap?
+          rows:
+            - ["No app logs", "Why did requests fail?"]
+            - ["No CloudTrail trail", "Who changed what more than 90 days ago, and with evidence kept safe?"]
+            - ["Shared SSH key", "Which person ran which command?"]
+          opts: ["Why did requests fail?", "Who changed what more than 90 days ago, and with evidence kept safe?", "Which person ran which command?"]
+          why: Each gap hides a different answer.
+        - q: Which alarm should come first?
+          opts: ["Error rate and latency on the main user journeys", "CPU above 50 percent", "Disk free on every server"]
+          a: 0
+          why: Alarm on what users feel.
+    - title: Round 2. Fix
+      items:
+        - type: open
+          q: Write the observability setup.
+          a: "Ship structured app logs to CloudWatch Logs with retention set. Add tracing with X-Ray or OpenTelemetry. Create dashboards and SLO based alarms on latency and errors. Create an organization CloudTrail trail to a log archive account with Object Lock. Turn on AWS Config with key rules. Replace SSH with Session Manager and log all sessions."
+        - q: What is a benefit of Session Manager over the shared SSH key?
+          opts: ["Each session is tied to a person through IAM and fully logged, with no open port", "It is faster", "It removes the need for IAM"]
+          a: 0
+          why: Accountability and a smaller attack surface.
+  card: |
+    - CloudWatch, how it runs. CloudTrail, who did what. Config, how it is set up.
+    - Traces show where. Logs show why.
+    - Trail to a separate account, data events for sensitive buckets.
+    - Alarm on user pain and security events.
+    - Session Manager instead of SSH.
+
+refs:
+  - "AWS. [What is AWS CloudTrail](https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-user-guide.html)."
+  - "AWS. [What is AWS Config](https://docs.aws.amazon.com/config/latest/developerguide/WhatIsConfig.html)."
+  - "AWS. [AWS Systems Manager Session Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html)."

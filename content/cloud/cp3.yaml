@@ -1,0 +1,66 @@
+kind: practice
+title: Cloud level 3 practice, networking
+time: about 30 minutes
+lede: Mixed questions on VPC design, security groups and NACLs, connecting networks, endpoints, DNS, CDN and edge protection.
+
+rounds:
+  - title: Round 1. Numbers and routes
+    items:
+      - type: num
+        q: A subnet is a /26, which has 64 addresses. How many can you use in AWS?
+        a: 59
+        tol: 0
+        why: AWS reserves 5 per subnet. 64 − 5 = 59.
+      - type: num
+        q: How many VPC peering connections do 10 VPCs need so that every pair can talk?
+        a: 45
+        tol: 0
+        why: 10 × 9 ÷ 2 = 45. A Transit Gateway needs 10 attachments.
+      - type: sort
+        q: Pick the right component.
+        rows:
+          - ["Private servers download patches", "NAT gateway"]
+          - ["Private, free access to DynamoDB", "Gateway endpoint"]
+          - ["Steady 10 Gbps link to a data center", "Direct Connect"]
+          - ["UDP game traffic with two static IPs", "Global Accelerator"]
+        opts: ["NAT gateway", "Gateway endpoint", "Direct Connect", "Global Accelerator"]
+        why: Each solves a different traffic problem.
+  - title: Round 2. Spot the bug
+    items:
+      - q: Find the issue in this route table for a private app subnet.
+        info: |
+          ```
+          Destination   Target
+          10.0.0.0/16   local
+          0.0.0.0/0     igw-0abc123
+          ```
+        opts: ["The default route goes to an internet gateway, so this subnet is public", "local routes are not allowed", "The CIDR is too big"]
+        a: 0
+        why: Private subnets send 0.0.0.0/0 to a NAT gateway in the same AZ.
+      - q: Find the issue. "Our network ACL allows inbound 443 but outbound only 443, and users get timeouts."
+        opts: ["NACLs are stateless, so return traffic on ephemeral ports 1024 to 65535 must be allowed outbound", "443 is the wrong port", "NACLs cannot allow 443"]
+        a: 0
+        why: Stateless rules need both directions.
+      - q: Find the security issue. "S3 traffic from private subnets goes through the NAT gateway to any bucket."
+        opts: ["Data could be copied to an attacker's bucket, use a gateway endpoint with a policy and restrict egress", "NAT is too slow", "S3 cannot be reached from private subnets"]
+        a: 0
+        why: Endpoint policies limit which buckets are reachable.
+  - title: Round 3. Benefits, risks and workarounds
+    items:
+      - q: What is a benefit of security groups referencing each other instead of IP ranges?
+        opts: ["Rules keep working as servers scale and change IPs", "They are free", "They encrypt traffic"]
+        a: 0
+        why: Membership, not addresses, decides access.
+      - q: Identify the GRC issue. "Our audit says customer data crosses an unencrypted private line to our data center."
+        opts: ["Direct Connect is not encrypted by default, add IPsec or MACsec to meet encryption in transit rules", "Private lines are always encrypted", "No issue"]
+        a: 0
+        why: Encryption in transit is often a compliance rule.
+      - type: open
+        q: A partner must call one internal API from their AWS account, and both sides use 10.0.0.0/16. How do you connect them?
+        a: "Expose the API behind a Network Load Balancer as a PrivateLink endpoint service, allow only the partner's account, and let them create an interface endpoint in their VPC. Overlapping ranges do not matter with PrivateLink, and the partner gets access to one service, not your network."
+card: |
+  - Public, private, isolated subnets in each AZ.
+  - NAT per AZ. Security groups stateful, NACLs stateless.
+  - Peering not transitive. Transit Gateway for many.
+  - Endpoints for private AWS access. PrivateLink for one service.
+  - Route 53 policies, CloudFront with private origins, WAF and Shield.

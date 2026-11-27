@@ -1,0 +1,53 @@
+kind: practice
+title: Cloud level 8 practice, designs by tier
+time: about 35 minutes
+lede: Place systems in tiers, match designs to targets, and spot weak points in tier claims.
+
+rounds:
+  - title: Round 1. Tier and target
+    items:
+      - type: sort
+        q: Which DR approach fits each tier?
+        rows:
+          - ["Tier 1, RTO minutes, RPO seconds", "Active active or hot standby in two regions"]
+          - ["Tier 2, RTO 1 hour", "Multi AZ plus warm standby"]
+          - ["Tier 3, RTO 24 hours", "Multi AZ plus backups copied to another region"]
+          - ["Tier 4, rerun tomorrow", "Re runnable jobs, single AZ compute is fine"]
+        opts: ["Active active or hot standby in two regions", "Multi AZ plus warm standby", "Multi AZ plus backups copied to another region", "Re runnable jobs, single AZ compute is fine"]
+        why: Spend matches the impact of an outage.
+      - type: num
+        q: Downtime allowed per year at 99.9 percent, in hours?
+        a: 8.76
+        tol: 0.05
+        unit: hours
+        why: 8,760 × 0.001 = 8.76 hours.
+  - title: Round 2. Spot it
+    items:
+      - q: Find the issue. "Our tier 1 app runs in two regions, but the identity provider it needs runs in one data center."
+        opts: ["A tier 1 app cannot be more available than its tier 0 dependencies", "Identity is never needed", "No issue"]
+        a: 0
+        why: Check every dependency's tier.
+      - q: Identify the GRC issue. "The HR app is tier 3, so we skipped encryption and access logs."
+        opts: ["Tier is about availability. Personal data still needs full protection.", "Tier 3 apps need no security", "Encryption is only for tier 1"]
+        a: 0
+        why: Data classification sets protection. Tier sets resilience.
+      - q: Find the issue. "Our tier 2 warm standby has not been deployed to or tested this year."
+        opts: ["It may not work when needed, and the real RTO is unknown", "Standbys never change", "Testing is only for tier 1"]
+        a: 0
+        why: Deploy to it with every release and drill it.
+  - title: Round 3. Benefits and workarounds
+    items:
+      - q: What is a benefit of cells in a tier 1 system?
+        opts: ["A failure or bad deploy affects only one slice of customers", "It removes the need for a second region", "It is cheaper than one stack"]
+        a: 0
+        why: Smaller blast radius.
+      - type: open
+        q: A tier 4 batch keeps failing because Spot capacity for one instance type runs out. What do you change?
+        a: "Allow many instance types and sizes across several AZs, use a capacity optimized allocation strategy, keep tasks small so retries are cheap, and add a small On Demand fallback for the final steps if the deadline is close."
+card: |
+  - Tier by business impact. Numbers are company defined.
+  - Tier 0 foundation must be the most available.
+  - Tier 1 two active regions, cells, static stability.
+  - Tier 2 multi AZ and warm standby. Tier 3 backups to another region.
+  - Tier 4 Spot and re runnable jobs.
+  - Every tier protects data by its class, not its tier.

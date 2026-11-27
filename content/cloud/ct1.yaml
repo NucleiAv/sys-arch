@@ -1,0 +1,233 @@
+kind: design
+short: Tier 1, mission critical payments
+title: Tier 1. A mission critical payments API across two regions
+time: about 90 minutes
+tags: [tier 1, multi region, active active, cells, static stability]
+lede: A bank's payment API must keep working when a whole AWS region fails, with seconds of data loss at most and no double payments. Design it active active across Mumbai and Hyderabad, with cells, static stability, controlled failover and PCI grade security.
+
+ask: |
+  The bank runs a payment API that apps and partners call to send money and approve card payments. If it stops, customers cannot pay and the bank breaks its rules with the regulator. Design it as a **tier 1** system on AWS.
+
+  This is a fictional design for learning. Real national payment switches, such as UPI, run in their operators' own data centers.
+
+reqs:
+  func:
+    - Accept a payment request, check balance and limits, run fraud checks, record it and reply.
+    - Return the same result if a client retries the same request.
+    - Send events for settlement, notifications and the ledger.
+  nonfunc:
+    - Availability 99.99 percent. RTO under 5 minutes. RPO a few seconds.
+    - Survive the loss of one AZ with no impact and one region with a short, controlled failover.
+    - p99 latency under 300 ms inside India.
+    - Never pay twice. Data stays in India. PCI DSS for card data.
+  out:
+    - Interbank settlement and the core banking ledger internals.
+
+estimate:
+  intro: |
+    Peak load is 6,000 payments a second in total during festival sales. Each payment writes 3 records. Each region must be able to take all traffic alone. Each region has 3 AZs and must keep full speed if one AZ fails.
+  items:
+    - type: num
+      q: Peak record writes per second one region must handle alone?
+      a: 18000
+      tol: 0
+      unit: writes per second
+      why: 6,000 × 3 = 18,000, since either region may carry everything.
+    - type: num
+      q: If any 2 of 3 AZs must carry 6,000 payments a second, how many payments a second must each AZ be sized for?
+      a: 3000
+      tol: 0
+      unit: payments per second
+      why: 6,000 / 2 = 3,000 per AZ, so the region runs 9,000 of capacity, 150 percent of peak. This is static stability.
+    - type: num
+      q: Downtime allowed per 30 day month at 99.99 percent, in minutes?
+      a: 4.32
+      tol: 0.1
+      unit: minutes
+      why: 30 × 24 × 60 = 43,200 minutes × 0.0001 = 4.32 minutes.
+  after: |
+    !key Tier 1 is expensive on purpose. Each region is sized for the whole peak, and each region for an AZ loss, so failure needs no scaling during the crisis.
+
+api: |
+  ```
+  POST /v1/payments
+  Idempotency-Key: 7f3c...        (required, unique per payment)
+  { "from": "acct_123", "to": "vpa:asha@bank", "amount": 1250.00, "currency": "INR" }
+
+  201 { "payment_id": "pay_9x...", "status": "approved", "region": "ap-south-1" }
+  409 same key with a different body
+  GET /v1/payments/{id}
+  ```
+
+  Partners call over **mutual TLS** with signed requests. Retries with the same key always return the first result.
+
+data: |
+  | Store | Holds | Notes |
+  | --- | --- | --- |
+  | Payments table, DynamoDB global table | Payment by id and idempotency key | Written in the customer's home region, replicated to the other region in about a second |
+  | Limits and balances cache | Per account daily limits | Rebuilt from the ledger, never the source of truth |
+  | Event stream | Payment approved and failed events | Kinesis or MSK per region, consumed by ledger and settlement |
+  | Cell map | Which cell and home region each customer belongs to | Small, replicated, cached in every service |
+  | Tokens vault | Card numbers replaced by tokens | Separate PCI account, CloudHSM backed |
+
+scenes:
+  - title: Mumbai fails during a festival sale
+    stats: [Step, What happens, Payments served, Data at risk]
+    nodes:
+      cl: {label: Apps and partners, x: 0, y: 1, kind: box}
+      r53: {label: DNS and routing control, x: 2, y: 1, kind: def, tag: health checks}
+      bom: {label: Mumbai cells, x: 4, y: 0, kind: raised, tag: home for half}
+      hyd: {label: Hyderabad cells, x: 4, y: 2, kind: raised, tag: home for half}
+      dbb: {label: Payments table Mumbai, x: 6, y: 0, kind: box}
+      dbh: {label: Payments table Hyderabad, x: 6, y: 2, kind: box}
+    links: [[cl, r53], [r53, bom], [r53, hyd], [bom, dbb], [hyd, dbh], [dbb, dbh]]
+    steps:
+      - title: Normal day, both regions active
+        text: Each customer has a home region. Requests go to the nearest healthy region, which forwards to the home region if needed. Tables replicate both ways.
+        on: [cl, r53, bom, hyd, dbb, dbh]
+        flow: [[cl, r53, ink], [r53, bom, ink], [r53, hyd, ink], [dbb, dbh, def], [dbh, dbb, def]]
+        stats: [Normal, active active, "6,000 per second", none]
+      - title: Mumbai degrades
+        text: Error rates in Mumbai rise sharply. Health checks and the bank's own canary payments fail there.
+        on: [bom, dbb]
+        mark: {bom: bad, dbb: warn}
+        stats: [Detect, health checks fail, "falling in Mumbai", last second of writes]
+      - title: Controlled failover
+        text: The on call lead flips a routing control. All traffic goes to Hyderabad, and the cell map marks Hyderabad as home for every customer. No scaling is needed because each region is sized for full peak.
+        on: [r53, hyd]
+        flow: [[cl, r53, ink], [r53, hyd, def]]
+        mark: {r53: ok}
+        stats: [Fail over, routing control and cell map, "6,000 per second in Hyderabad", seconds of writes]
+      - title: Retries are safe
+        text: Clients retry timed out payments with the same idempotency key. If the payment had replicated, Hyderabad returns the saved result. If not, it is processed once, and reconciliation checks the few payments in the gap.
+        on: [cl, hyd, dbh]
+        flow: [[cl, r53, ink], [r53, hyd, ink], [hyd, dbh, def]]
+        mark: {dbh: ok}
+        stats: [Recover, idempotency and reconciliation, all, a few payments checked]
+      - title: Fail back later, slowly
+        text: When Mumbai is healthy, replication catches up, data is compared, and cells move back one at a time in quiet hours.
+        on: [bom, hyd, dbb, dbh]
+        flow: [[dbh, dbb, def]]
+        mark: {bom: ok, dbb: ok}
+        stats: [Fail back, one cell at a time, full, none]
+
+hld: |
+  1. **Two regions, both active.** Mumbai and Hyderabad, three AZs each, each sized for full peak. No region depends on the other to serve its own cells.
+  2. **Cells.** Customers are split into cells, each a full copy of the stack with its own capacity. A bad deploy or poison request hurts one cell, not everyone.
+  3. **Home region per customer.** All writes for one customer go to one region at a time, which avoids conflicting writes. DynamoDB global tables replicate to the other region.
+  4. **Routing.** Route 53 with health checks, and Application Recovery Controller routing controls for a deliberate, tested failover switch that does not need the failing region's control plane.
+  5. **Compute.** EKS or ECS on Fargate across three AZs per region, with pre scaled capacity, not waiting for auto scaling in a crisis.
+  6. **Idempotency.** Every write is keyed by the client's idempotency key, stored with the result.
+  7. **Async side work.** Ledger posting, settlement and notifications run from events, so they cannot slow the payment path.
+  8. **Operations.** Deploy one cell and one region at a time with automatic rollback, game days every quarter, and regional failover tested in production with real traffic.
+
+diagrams:
+  - type: split
+    title: Failure domains and what contains each one
+    source: ["Failure", "atk"]
+    targets:
+      - ["One server or pod", "def", "Load balancer health checks, replacement"]
+      - ["One AZ", "def", "Each AZ sized at half of peak, static stability"]
+      - ["One cell", "def", "Other cells unaffected, deploy cells one by one"]
+      - ["One region", "def", "Routing control moves all cells to the other region"]
+    caption: Tier 1 designs name every failure domain and the exact mechanism that contains it.
+
+deep:
+  - ["Why not let both regions write the same customer", "With async replication, two regions could approve two payments from the same balance at the same moment. A home region per customer gives one writer at a time. The cost is a tiny window of unreplicated writes during a sudden region loss, handled by idempotency and reconciliation."]
+  - ["Static stability", "A system is statically stable when it keeps working through a failure without needing to change anything, such as launching instances or changing DNS in the failing region. Pre provisioned capacity and data plane routing give that."]
+  - ["Why a manual switch for regions", "Automatic region failover can flip back and forth on noisy health checks and cause more harm. Many tier 1 teams use automatic AZ failover but a deliberate, rehearsed one click region failover, with clear criteria."]
+  - ["Dependencies must be tier 1 too", "If fraud scoring, keys or DNS live in one region, the payment API cannot really survive that region. Every dependency in the payment path is checked for its own multi region design, or removed from the critical path with a safe fallback."]
+
+tradeoffs:
+  - ["Active active in two regions", "Minutes of RTO, seconds of RPO.", "About double the cost, complex data design."]
+  - ["Home region per customer", "No write conflicts.", "Small RPO on sudden region loss, needs reconciliation."]
+  - ["Cells", "Small blast radius for bugs and overload.", "More stacks to deploy and watch."]
+  - ["Pre scaled capacity", "No scaling during failure.", "Paying for idle capacity every day."]
+
+security: |
+  - **PCI DSS scope kept small.** Card numbers are tokenized in a separate PCI account. The payment API sees only tokens.
+  - **Keys.** Customer managed KMS keys per region, multi Region keys only where needed, CloudHSM for card and PIN related keys.
+  - **Edge.** AWS WAF with rate limits per partner, Shield Advanced, mutual TLS and request signing for partners.
+  - **Network.** No inbound internet to app subnets. Private endpoints for AWS services. Egress only to named partners through the inspection VPC.
+  - **Identity.** Workload roles per service, no human write access to production data, just in time access with approval for break glass.
+  - **Fraud and abuse.** Velocity limits and fraud scoring inline with a strict time budget, and a safe default if the scorer times out.
+  - **Evidence.** CloudTrail, data events on sensitive tables, and all failover actions logged for the regulator.
+
+task:
+  intro: |
+    Present the design to the bank's CTO and risk committee.
+  items:
+    - q: Walk through the tier 1 design and explain how it survives a region failure without paying twice.
+      keys:
+        - ["Two active regions, each sized for full peak", [two region, active active, full peak, mumbai, hyderabad]]
+        - ["AZ static stability, pre provisioned capacity", [static stab, pre provision, three az, half, 150]]
+        - ["Cells for blast radius", [cell]]
+        - ["Home region per customer, global tables replication", [home region, global table, one writer, replicat]]
+        - ["Idempotency keys and reconciliation", [idempot, reconcil, retry, same key]]
+        - ["Routing control for a tested failover", [routing control, recovery controller, failover, route 53, game day]]
+        - ["PCI scope, tokens, keys, mTLS, WAF", [pci, token, hsm, mtls, waf, shield]]
+      a: |
+        The API runs active in Mumbai and Hyderabad. Each region has three AZs and is sized to take the whole festival peak alone, and each AZ is sized so any two can carry the region, so no scaling is needed during a failure. Customers are split into cells, so a bad deploy or overload hurts only one cell. Each customer has a home region that does all writes for them, which avoids conflicting balances, and DynamoDB global tables replicate payments to the other region in about a second. Every request has an idempotency key stored with its result, so retries return the same answer. If a region fails, the on call lead flips an Application Recovery Controller routing control and the cell map makes the other region home for everyone. Payments in the replication gap are found by reconciliation, and client retries with the same key are processed once. Card data is tokenized in a separate PCI account with CloudHSM. Partners use mutual TLS behind WAF and Shield Advanced, app subnets have no internet ingress, and every action is logged.
+      fb: Naming the one writer per customer and idempotency together is what answers the double payment question.
+
+interview:
+  - q: Why not simply use Aurora Global Database and fail over when the region fails?
+    keys:
+      - ["Single writer region, writes stop until failover", [single writer, one writer, primary, writes stop]]
+      - ["Failover takes time and needs care", [minutes, failover time, promote]]
+      - ["Can be a good fit, depends on RTO and data model", [good fit, depends, valid, option]]
+    a: |
+      Aurora Global Database is a valid choice, and many tier 1 systems use it. It has one writer region, with a typical replication lag under a second, and a managed failover that promotes the secondary. During that failover, writes stop for a short time, and both apps and connection strings must move. If the team can accept that RTO, it is simpler than a cell and home region design. If the business needs both regions taking writes all the time, a partitioned design with DynamoDB global tables fits better.
+    fb: Calling it valid and explaining when it fits is better than dismissing it.
+  - q: How do you prove to the regulator that region failover works?
+    keys:
+      - ["Regular game days and real failover tests", [game day, test, drill, rehearse, quarter]]
+      - ["Measured RTO and RPO against targets", [measure, rto, rpo, target, evidence]]
+      - ["Logged evidence and runbooks", [log, evidence, runbook, report]]
+    a: |
+      We run planned regional failovers on a schedule, for example every quarter, with real production traffic in a quiet window. Each test measures actual RTO and data lag against the targets, follows a written runbook, and is logged end to end. Results, issues found and fixes go into a report for risk and the regulator. Unplanned events are reviewed the same way.
+    fb: Evidence from real tests is what regulators ask for.
+
+desk:
+  title: Review the tier 1 claim
+  lede: A team says its payment API is tier 1 ready. Review the design.
+  situation: |
+    The API runs in two regions. Fraud scoring and the KMS keys exist only in Mumbai. Auto scaling in Hyderabad starts from 10 percent of peak. Failover is automatic on any failed health check. Nobody has tested it.
+  rounds:
+    - title: Round 1. Find the gaps
+      items:
+        - type: sort
+          q: Which problem does each fact cause?
+          rows:
+            - ["Fraud scoring and keys only in Mumbai", "Hyderabad cannot work without Mumbai"]
+            - ["Hyderabad starts at 10 percent of peak", "Overload while scaling during failover"]
+            - ["Automatic failover on any failed check", "Flapping and needless failovers"]
+            - ["Never tested", "Unknown real RTO, no evidence"]
+          opts: ["Hyderabad cannot work without Mumbai", "Overload while scaling during failover", "Flapping and needless failovers", "Unknown real RTO, no evidence"]
+          why: Each breaks a tier 1 promise.
+        - q: Which fix comes first?
+          opts: ["Make every dependency in the payment path available in both regions", "Add more dashboards", "Change the logo"]
+          a: 0
+          why: A hidden regional dependency defeats the whole design.
+    - title: Round 2. Fix it
+      items:
+        - type: open
+          q: Write the changes to make the claim true.
+          a: "Deploy fraud scoring in both regions with a safe fallback if it times out, and use region local KMS keys or multi Region keys. Pre provision Hyderabad for full peak. Replace automatic region failover with a routing control switch and clear criteria, keeping automatic AZ failover. Run a planned regional failover every quarter and record RTO and RPO."
+        - q: What is a benefit of cells for this API?
+          opts: ["A bad deploy or bad request affects only one cell's customers", "It removes the need for two regions", "It makes requests free"]
+          a: 0
+          why: Smaller blast radius.
+  card: |
+    - Two active regions, each sized for full peak.
+    - Any two AZs carry the region. Static stability.
+    - Cells. Home region per customer. Global tables.
+    - Idempotency keys and reconciliation.
+    - Routing control failover, tested every quarter.
+    - Tokens, HSM, mTLS, WAF, no internet ingress.
+
+refs:
+  - "AWS. [Disaster recovery options in the cloud](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)."
+  - "AWS. [Static stability using Availability Zones](https://aws.amazon.com/builders-library/static-stability-using-availability-zones/)."
+  - "AWS. [Reducing the scope of impact with cell based architecture](https://docs.aws.amazon.com/wellarchitected/latest/reducing-scope-of-impact-with-cell-based-architecture/reducing-scope-of-impact-with-cell-based-architecture.html)."
+  - "AWS. [Amazon Application Recovery Controller](https://docs.aws.amazon.com/r53recovery/latest/dg/what-is-route53-recovery.html)."

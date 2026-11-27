@@ -1,0 +1,234 @@
+short: VPC design
+title: VPC design, subnets, routes and firewalls
+time: about 60 minutes
+tags: [VPC, subnets, NAT, security groups, NACLs]
+lede: A VPC is your own private network inside AWS. Learn how to plan IP ranges, split public and private subnets across zones, route traffic to the internet safely, and use security groups and network ACLs as two layers of firewall.
+
+idea: |
+  A **VPC**, Virtual Private Cloud, is a private network you create inside a region. You choose its IP range, for example `10.0.0.0/16`, which gives 65,536 addresses.
+
+  You split the VPC into **subnets**, and each subnet lives in **one** Availability Zone.
+
+  - A **public subnet** has a route to an **internet gateway**. Load balancers and NAT gateways live here.
+  - A **private subnet** has no direct route from the internet. App servers and databases live here.
+
+  Servers in private subnets often still need to reach the internet, for example to download updates. A **NAT gateway** in a public subnet lets them make outbound connections, while nothing on the internet can start a connection to them.
+
+  Two firewalls protect traffic.
+
+  - **Security groups** attach to each resource, such as a server or database. They are **stateful**, so if you allow a request in, the reply goes out automatically. They only have allow rules.
+  - **Network ACLs** attach to a subnet. They are **stateless**, so you must allow both directions, and they can have allow and deny rules, checked in number order.
+
+  !eli5 A VPC is a gated housing estate. Public subnets are the houses near the gate, where visitors are allowed. Private subnets are houses deep inside, where only residents go. The NAT gateway is a delivery hatch. Residents can send letters out and get replies, but strangers cannot walk in.
+
+scenes:
+  - title: A three tier VPC across two AZs
+    stats: [Step, Tier, Reachable from internet, Firewall]
+    nodes:
+      net: {label: Internet, x: 0, y: 2, kind: box}
+      igw: {label: Internet gateway, x: 2, y: 2, kind: def}
+      alb: {label: Load balancer, x: 4, y: 0, kind: def, tag: public subnets}
+      app: {label: App servers, x: 4, y: 2, kind: raised, tag: private subnets}
+      db: {label: Database, x: 4, y: 4, kind: raised, tag: isolated subnets}
+      nat: {label: NAT gateway, x: 6, y: 1, kind: def, tag: one per AZ}
+    links: [[net, igw], [igw, alb], [alb, app], [app, db], [app, nat], [nat, igw]]
+    steps:
+      - title: Requests come in
+        text: A user's request enters through the internet gateway to the load balancer in the public subnets. Its security group allows only HTTPS on port 443.
+        on: [net, igw, alb]
+        flow: [[net, igw, ink], [igw, alb, ink]]
+        stats: [Public, load balancer, yes, "SG allows 443 from anywhere"]
+      - title: To the app tier
+        text: The load balancer forwards to app servers in private subnets. Their security group allows port 8080 only from the load balancer's security group, not from any IP.
+        on: [alb, app]
+        flow: [[alb, app, def]]
+        stats: [Private, app servers, no, "SG allows 8080 from the ALB SG"]
+      - title: To the database
+        text: App servers query the database in isolated subnets. The database security group allows port 5432 only from the app servers' security group.
+        on: [app, db]
+        flow: [[app, db, def]]
+        mark: {db: ok}
+        stats: [Isolated, database, no, "SG allows 5432 from the app SG"]
+      - title: App needs an update
+        text: An app server downloads a security patch. Traffic goes out through the NAT gateway and internet gateway. The reply comes back the same way.
+        on: [app, nat, igw]
+        flow: [[app, nat, ink], [nat, igw, ink]]
+        stats: [Outbound, app servers, only outbound, NAT translates]
+      - title: An attacker probes
+        text: An attacker tries to reach an app server or the database directly. There is no route from the internet to private subnets, and the security groups would refuse anyway.
+        on: [net, igw]
+        flow: [[net, igw, atk]]
+        mark: {app: ok, db: ok}
+        stats: [Blocked, private tiers, no route, two layers]
+
+terms:
+  - [VPC, "A logically isolated private network in one AWS region."]
+  - [CIDR block, "A way to write an IP range, such as 10.0.0.0/16. Smaller number after the slash means more addresses."]
+  - [Subnet, "A range of IPs inside a VPC, in one Availability Zone."]
+  - [Route table, "Rules that say where traffic for each destination goes."]
+  - [Internet gateway, "Connects a VPC to the internet. A subnet whose route table points to it is public."]
+  - [NAT gateway, "Lets private resources start outbound connections to the internet, but blocks inbound ones."]
+  - [Security group, "A stateful firewall on a resource, with allow rules only."]
+  - [Network ACL, "A stateless firewall on a subnet, with numbered allow and deny rules."]
+  - [VPC Flow Logs, "Records of IP traffic going to and from network interfaces in a VPC."]
+  - [Elastic IP, "A static public IPv4 address you can attach to resources."]
+
+how: |
+  ### Plan the IP ranges
+
+  - Pick a VPC range that does **not overlap** with your office networks or other VPCs you may connect later. Overlaps block peering and VPNs.
+  - A VPC can be from `/16`, 65,536 addresses, to `/28`, 16 addresses.
+  - AWS reserves **5 addresses** in every subnet, the first four and the last one.
+  - Leave room to grow. Changing ranges later is painful.
+
+  ### A standard layout
+
+  | Subnet type | In each AZ | Route to internet | Holds |
+  | --- | --- | --- | --- |
+  | Public | Yes | Internet gateway | Load balancers, NAT gateways, bastion if any |
+  | Private | Yes | NAT gateway in the same AZ | App servers, containers, Lambda in VPC |
+  | Isolated, sometimes called data | Yes | None | Databases, caches |
+
+  Put **one NAT gateway in each AZ**, with each private subnet routing to the NAT in its own AZ. One shared NAT gateway is a single point of failure and adds cross AZ cost.
+
+  ### Security groups versus network ACLs
+
+  | | Security group | Network ACL |
+  | --- | --- | --- |
+  | Applies to | A resource's network interface | A whole subnet |
+  | State | Stateful, replies allowed automatically | Stateless, both directions need rules |
+  | Rules | Allow only | Allow and deny, checked by number |
+  | Typical use | Main firewall, reference other security groups | Coarse extra layer, block known bad ranges |
+
+  Referencing another **security group** as the source, such as "allow 5432 from app-sg", is better than IP ranges, because it follows servers as they scale.
+
+  ### See the traffic
+
+  Turn on **VPC Flow Logs** to S3 or CloudWatch Logs. They help debug "why can't A reach B?" and they are evidence during incidents.
+
+  !key Public subnets only for things that must face the internet. Everything else private, with security groups that name each other.
+
+diagrams:
+  - type: layers
+    title: Layers between the internet and the database
+    attack: a request from the internet
+    layers:
+      - ["Internet gateway and public subnet", "Only the load balancer is reachable", "partial"]
+      - ["Load balancer security group", "Only HTTPS 443", "partial"]
+      - ["No route into private subnets", "Servers cannot be reached directly", "stop"]
+      - ["App security group", "Only from the load balancer", "stop"]
+      - ["Database security group in isolated subnets", "Only from the app tier", "stop"]
+    caption: Each layer narrows who can talk to whom. The database is three hops from the internet and allows one source.
+
+life:
+  - ["The open database", "Security researchers regularly find databases such as Elasticsearch and MongoDB on cloud servers with public IPs and open ports, holding millions of records. A private subnet and a tight security group would have prevented each one."]
+  - ["The overlapping ranges", "Two companies merged and tried to connect their AWS networks. Both used 10.0.0.0/16, so routing between them was impossible without re-addressing. Planning ranges centrally avoids this."]
+  - ["The NAT gateway bill", "A team ran one NAT gateway for three AZs and pulled large container images through it every deploy. Cross AZ and NAT data charges grew big. A NAT per AZ, VPC endpoints for S3 and ECR, and image caching cut the cost."]
+
+tradeoffs:
+  - ["NAT gateway per AZ", "No single point of failure, no cross AZ charges.", "Hourly cost for each one."]
+  - ["One NAT gateway", "Cheaper for dev.", "An AZ outage cuts outbound traffic for all."]
+  - ["Security groups only", "Simple, stateful, easy to reason about.", "No explicit deny rules."]
+  - ["Adding network ACLs", "Extra layer, can block ranges.", "Stateless rules are easy to get wrong."]
+
+mistakes:
+  - Putting databases or app servers in public subnets.
+  - "Security group rules like \"0.0.0.0/0 on port 22\"."
+  - VPC ranges that overlap with offices or other VPCs.
+  - One NAT gateway for all AZs in production.
+  - Forgetting return traffic rules in network ACLs.
+
+security: |
+  Network controls are a second line behind identity. Keep management ports closed to the internet and use Systems Manager Session Manager instead of SSH bastions, enable VPC Flow Logs, and use VPC endpoints so traffic to AWS services stays private, lesson 3.2. Review security groups regularly for 0.0.0.0/0 rules, which tools such as AWS Config and Security Hub can flag automatically.
+
+quiz:
+  - type: num
+    q: How many usable IP addresses does a /24 subnet have in AWS? A /24 has 256 addresses in total.
+    a: 251
+    tol: 0
+    why: AWS reserves 5 addresses in every subnet, so 256 − 5 = 251.
+  - q: What makes a subnet public?
+    opts: ["Its route table has a route to an internet gateway", "Its name contains public", "It has more IPs"]
+    a: 0
+    why: The route, not the name, decides.
+  - type: sort
+    q: Security group or network ACL?
+    rows:
+      - ["Stateful, allow rules only", "Security group"]
+      - ["Stateless, numbered allow and deny rules", "Network ACL"]
+      - ["Can reference another group as a source", "Security group"]
+    opts: ["Security group", "Network ACL"]
+    why: They work at different levels and in different ways.
+  - q: Find the problem in this security group rule for a database.
+    info: |
+      ```
+      Inbound  TCP 5432  Source 0.0.0.0/0
+      ```
+    opts: ["The database port is open to the whole internet", "5432 is the wrong port for PostgreSQL", "Inbound rules are not allowed"]
+    a: 0
+    why: Allow 5432 only from the app tier's security group.
+  - type: fill
+    q: To let private servers download updates without being reachable from the internet, use a ____ gateway.
+    a: ["nat"]
+    why: NAT allows outbound connections only.
+
+interview:
+  - q: Design a VPC for a three tier web application.
+    keys:
+      - ["Non overlapping CIDR with room to grow", [cidr, overlap, range, room]]
+      - ["Public, private and isolated subnets in at least two AZs", [public subnet, private subnet, isolated, two az, three az]]
+      - ["Internet gateway for public, NAT gateway per AZ for private outbound", [internet gateway, nat gateway, per az, outbound]]
+      - ["Security groups that reference each other", [security group, reference, from the alb, least]]
+      - ["Flow logs, endpoints, no SSH from the internet", [flow log, endpoint, session manager, no ssh, bastion]]
+    a: |
+      I pick a CIDR such as 10.20.0.0/16 that does not overlap with offices or other VPCs. In each of three AZs I create a public subnet for the load balancer and NAT gateway, a private subnet for app servers, and an isolated subnet for the database with no internet route. Public subnets route to the internet gateway, and each private subnet routes to the NAT gateway in its own AZ. Security groups chain the tiers. The ALB allows 443 from anywhere, the app allows its port only from the ALB's group, and the database allows its port only from the app's group. I add VPC endpoints for S3 and other AWS services, enable flow logs, and use Session Manager instead of open SSH.
+    fb: Chaining security groups by reference and NAT per AZ are the two details that show production experience.
+  - q: What is the difference between a security group and a network ACL?
+    keys:
+      - ["Security group is per resource and stateful", [stateful, resource, instance, eni]]
+      - ["NACL is per subnet and stateless", [stateless, subnet]]
+      - ["SG allow only, NACL allow and deny with order", [allow only, deny, numbered, order]]
+    a: |
+      A security group is attached to a resource's network interface and is stateful, so return traffic is allowed automatically, and it only has allow rules, which can reference other security groups. A network ACL is attached to a subnet, is stateless, so you must allow both directions including ephemeral return ports, and has numbered allow and deny rules evaluated in order. I use security groups as the main firewall and NACLs as a coarse extra layer.
+    fb: Mentioning ephemeral ports for NACL return traffic shows hands on experience.
+
+desk:
+  title: The flat network
+  lede: A startup's VPC has one subnet. Everything has a public IP. Review it.
+  situation: |
+    One public subnet in one AZ holds the web servers, the database and a Redis cache. Security groups allow 22 and 5432 from 0.0.0.0/0 "for debugging".
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: What risk does each fact create?
+          rows:
+            - ["Database in a public subnet with 5432 open", "Data exposed to the internet"]
+            - ["SSH open to 0.0.0.0/0", "Brute force and exploit attempts on every server"]
+            - ["One subnet in one AZ", "An AZ outage takes everything down"]
+          opts: ["Data exposed to the internet", "Brute force and exploit attempts on every server", "An AZ outage takes everything down"]
+          why: Network layout, firewall rules and zones all need fixing.
+        - q: Which change cuts the most risk today?
+          opts: ["Remove 0.0.0.0/0 rules for 22 and 5432 and allow only the needed security groups", "Add more servers", "Rename the subnet"]
+          a: 0
+          why: Closing open ports is fast and removes the main exposure.
+    - title: Round 2. Redesign
+      items:
+        - type: open
+          q: Describe the target VPC.
+          a: "Public subnets in two or three AZs for the load balancer and NAT gateways. Private subnets for web servers with no public IPs. Isolated subnets for the database and Redis with no internet route. Security groups chained by reference. Session Manager for shell access instead of SSH. Flow logs on, and an S3 gateway endpoint."
+        - q: Engineers say they need SSH to debug. What is a safe workaround?
+          opts: ["Use Systems Manager Session Manager, with IAM controlled access and logged sessions", "Keep port 22 open to the world", "Share one SSH key"]
+          a: 0
+          why: No open ports, and every session is audited.
+  card: |
+    - VPC per region. Subnet per AZ.
+    - Public for the edge, private for apps, isolated for data.
+    - NAT gateway per AZ.
+    - Security groups stateful, reference each other.
+    - NACLs stateless. Flow logs on.
+
+refs:
+  - "AWS. [How Amazon VPC works](https://docs.aws.amazon.com/vpc/latest/userguide/how-it-works.html)."
+  - "AWS. [Subnet CIDR blocks and reserved addresses](https://docs.aws.amazon.com/vpc/latest/userguide/subnet-sizing.html)."
+  - "AWS. [Security groups](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html) and [network ACLs](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-network-acls.html)."

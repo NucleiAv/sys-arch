@@ -1,0 +1,216 @@
+short: DNS, CDN and the edge
+title: Route 53, CloudFront, Global Accelerator, WAF and Shield
+time: about 55 minutes
+tags: [Route 53, CloudFront, Global Accelerator, WAF, Shield]
+lede: Before a request reaches your servers, it meets DNS, a content delivery network and edge protection. Learn the Route 53 routing policies, how CloudFront caches and protects origins, when to use Global Accelerator instead, and how WAF and Shield stop attacks at the edge.
+
+idea: |
+  **Route 53** is AWS's DNS service. It answers "what address is shop.example.com?" and it can answer differently depending on rules, called **routing policies**, and on **health checks**. Route 53 has a 100 percent availability service level agreement.
+
+  **CloudFront** is AWS's content delivery network. It caches content in edge locations near users, so images, scripts and even API responses come from a city nearby instead of your region. It also hides and protects your origin.
+
+  **Global Accelerator** gives you two fixed **anycast** IP addresses. Users connect to the nearest edge location, and traffic then rides AWS's private global network to your app. It speeds up and stabilizes traffic that cannot be cached, such as gaming, voice or TCP and UDP services, and fails over between regions in seconds.
+
+  **AWS WAF** is a web application firewall. It filters HTTP requests with rules, such as blocking SQL injection patterns, bad bots or too many requests from one IP. **AWS Shield** protects against distributed denial of service attacks. Shield Standard is on for every customer at no extra cost. Shield Advanced adds more protection, a response team and cost protection.
+
+  !eli5 Route 53 is the phone book that can send callers to the nearest open branch. CloudFront is a chain of small shops that keep copies of popular items near every neighbourhood. Global Accelerator is an express road from your street to the main shop. WAF and Shield are the guards at the door.
+
+scenes:
+  - title: A request through the edge to a protected origin
+    stats: [Step, Service, What it did, Origin load]
+    nodes:
+      user: {label: User in Delhi, x: 0, y: 1, kind: box}
+      r53: {label: Route 53, x: 2, y: 0, kind: def}
+      cf: {label: CloudFront edge in Delhi, x: 2, y: 2, kind: def, tag: WAF attached}
+      s3: {label: S3 bucket, x: 5, y: 1, kind: raised, tag: "private, OAC only"}
+      alb: {label: ALB in Mumbai, x: 5, y: 3, kind: raised}
+      bot: {label: Bad bot, x: 0, y: 3, kind: atk}
+    links: [[user, r53], [user, cf], [cf, s3], [cf, alb], [bot, cf]]
+    steps:
+      - title: Resolve the name
+        text: The browser asks Route 53 for shop.example.com. An alias record points to the CloudFront distribution, and Route 53 answers with nearby edge addresses.
+        on: [user, r53]
+        flow: [[user, r53, ink], [r53, user, def]]
+        stats: [DNS, Route 53, alias to CloudFront, none]
+      - title: Image from the edge
+        text: The browser asks the Delhi edge for a product image. It is in the cache, so it comes back in a few milliseconds.
+        on: [user, cf]
+        flow: [[user, cf, ink], [cf, user, def]]
+        mark: {cf: ok}
+        stats: [Cache hit, CloudFront, served from Delhi, none]
+      - title: Cache miss goes to a private bucket
+        text: A new image is not cached yet. CloudFront fetches it from S3 using origin access control. The bucket is private and allows only this distribution.
+        on: [cf, s3]
+        flow: [[cf, s3, def], [s3, cf, def]]
+        stats: [Cache miss, CloudFront and S3, fetched once, one request]
+      - title: Dynamic request to the API
+        text: The cart API cannot be cached. CloudFront forwards it to the load balancer in Mumbai over AWS's network, with TLS kept open between them.
+        on: [cf, alb]
+        flow: [[cf, alb, ink]]
+        stats: [Dynamic, CloudFront and ALB, forwarded, one request]
+      - title: A bot attack is filtered
+        text: A bot sends thousands of login attempts and SQL injection strings. WAF rate limit and managed rules block it at the edge. Shield Standard absorbs network floods.
+        on: [bot, cf]
+        flow: [[bot, cf, atk]]
+        mark: {bot: bad, cf: ok}
+        stats: [Attack, WAF and Shield, blocked at edge, none]
+
+terms:
+  - [Route 53, "AWS's DNS service with health checks and routing policies."]
+  - [Alias record, "A Route 53 record that points to AWS resources, works at the zone apex, and has no charge for queries to AWS resources."]
+  - [Health check, "Route 53 tests an endpoint and stops sending traffic to it if it fails."]
+  - [CloudFront, "AWS's content delivery network, caching at edge locations."]
+  - [Origin, "Where CloudFront fetches content on a cache miss, such as S3 or a load balancer."]
+  - [Origin access control, "Lets only your CloudFront distribution read a private S3 bucket."]
+  - [Global Accelerator, "Two static anycast IPs that route users over AWS's network to the best healthy endpoint."]
+  - [AWS WAF, "A web application firewall with rules for HTTP requests."]
+  - [AWS Shield, "DDoS protection. Standard is free for all. Advanced is a paid upgrade."]
+
+how: |
+  ### Route 53 routing policies
+
+  | Policy | Answers with | Use |
+  | --- | --- | --- |
+  | Simple | One record | One resource |
+  | Weighted | Records by weight, such as 90 and 10 | Canary releases, A/B tests |
+  | Latency | The region with the lowest latency for the user | Multi region apps |
+  | Failover | Primary, or secondary if the primary's health check fails | Active passive disaster recovery |
+  | Geolocation | By the user's country or continent | Legal or language rules |
+  | Geoproximity | By distance, with a bias to grow or shrink areas | Shifting traffic between regions |
+  | Multivalue answer | Up to 8 healthy records | Simple client side spreading |
+  | IP based | By the user's IP range | Routing by known networks |
+
+  **CNAME versus alias.** A CNAME cannot be used at the zone apex, such as example.com. An alias can, and points to AWS resources like CloudFront, load balancers and S3 websites.
+
+  ### CloudFront essentials
+
+  - **Cache behaviours** per path, such as long caching for /images/* and no caching for /api/*.
+  - **Origin access control** keeps S3 buckets private.
+  - **Signed URLs or signed cookies** for paid or private content.
+  - **TLS** with a free ACM certificate, which must be in us-east-1 for CloudFront.
+  - **Invalidations** remove cached files early, but versioned file names are cheaper and faster.
+
+  ### CloudFront or Global Accelerator?
+
+  | | CloudFront | Global Accelerator |
+  | --- | --- | --- |
+  | Works at | HTTP and HTTPS, layer 7 | TCP and UDP, layer 4 |
+  | Caches | Yes | No |
+  | Gives | Edge caching and HTTP features | Two static anycast IPs, fast regional failover |
+  | Fits | Websites, APIs, video | Games, VoIP, IoT, non HTTP apps, IP allow lists |
+
+  ### WAF and Shield
+
+  - WAF attaches to CloudFront, ALB, API Gateway, AppSync and Cognito.
+  - Start with **AWS managed rule groups**, such as the core rule set and known bad inputs, then add **rate based rules** and bot control.
+  - Shield Standard defends common network and transport layer attacks for everyone. Shield Advanced adds application layer DDoS help, a response team and protection from scaling costs during an attack.
+
+  !key Put CloudFront and WAF in front of public apps, keep origins private, and let DNS health checks steer traffic away from failures.
+
+diagrams:
+  - type: flow
+    title: The path of a request at the edge
+    nodes: [["Route 53", "def", "which address"], ["CloudFront edge", "def", "cache, TLS"], ["WAF and Shield", "atk", "filter"], ["Origin", "raised", "ALB or private S3"]]
+    edges: ["", "", "cache miss only"]
+    caption: Most requests for static content end at the edge. Only misses and dynamic calls reach your region.
+
+life:
+  - ["The 2.3 Tbps DDoS, 2020", "AWS reported that Shield mitigated a DDoS attack peaking at 2.3 terabits per second in February 2020, a reflection attack using CLDAP servers. Customers behind AWS's edge did not have to absorb it themselves."]
+  - ["The bucket behind the CDN", "A company served files through CloudFront but left the S3 bucket public too. Attackers skipped the CDN and its WAF and downloaded everything directly. Origin access control and a private bucket closed the gap."]
+  - ["Failover by DNS", "A company used Route 53 failover records with health checks for its primary and standby regions. During a regional incident, DNS moved users to the standby within minutes, limited mainly by DNS caching and the TTL."]
+
+tradeoffs:
+  - ["Long CDN cache times", "Fast and cheap.", "Changes appear late unless file names are versioned."]
+  - ["DNS based failover", "Simple and cheap.", "Clients cache answers for the TTL, so switching is not instant."]
+  - ["Global Accelerator", "Fast failover and static IPs.", "Extra cost, no caching."]
+  - ["Shield Advanced", "Expert help and cost protection.", "High monthly fee, worth it mainly for large or targeted businesses."]
+
+mistakes:
+  - Leaving the S3 origin public behind CloudFront.
+  - Using a CNAME at the zone apex.
+  - Very long DNS TTLs on records you may need to fail over.
+  - No WAF rate limits on login and checkout.
+  - Invalidating the whole cache on every deploy instead of versioning file names.
+
+security: |
+  The edge is where most attacks first arrive. Use WAF managed rules plus rate based rules on sensitive paths, keep origins reachable only from CloudFront, for example with origin access control for S3 and a secret header or the CloudFront managed prefix list for load balancers, enforce HTTPS, and log WAF and CloudFront requests for investigations.
+
+quiz:
+  - type: sort
+    q: Which Route 53 policy fits each need?
+    rows:
+      - ["Send 10 percent of users to a new version", "Weighted"]
+      - ["Send users to the region with the lowest latency", "Latency"]
+      - ["Use a standby region only if the primary is unhealthy", "Failover"]
+      - ["German users must see the EU site", "Geolocation"]
+    opts: ["Weighted", "Latency", "Failover", "Geolocation"]
+    why: Each policy answers a different question.
+  - q: A multiplayer game uses UDP and needs fast failover between regions and fixed IPs for partners. Which service fits?
+    opts: ["Global Accelerator", "CloudFront", "S3 website hosting"]
+    a: 0
+    why: Global Accelerator works at layer 4 with static anycast IPs.
+  - type: fill
+    q: To let only your CloudFront distribution read a private S3 bucket, use origin access ____.
+    a: ["control"]
+    why: OAC replaces the older origin access identity.
+  - q: Spot the problem. "CloudFront with WAF serves our files, and the S3 bucket also allows public read for simplicity."
+    opts: ["Attackers can skip CloudFront and WAF and read the bucket directly", "Public read is faster, no problem", "CloudFront cannot read public buckets"]
+    a: 0
+    why: Keep the origin private.
+  - q: Which record type can point the zone apex, example.com, to a CloudFront distribution?
+    opts: ["An alias record", "A CNAME", "A TXT record"]
+    a: 0
+    why: CNAMEs are not allowed at the zone apex.
+
+interview:
+  - q: How would you put a global website on AWS so it is fast and protected?
+    keys:
+      - ["Route 53 with alias records and health checks", [route 53, alias, health check, dns]]
+      - ["CloudFront with cache behaviours and versioned assets", [cloudfront, cdn, cache, edge, version]]
+      - ["Private origins, OAC for S3", [private, oac, origin access, origin]]
+      - ["WAF managed rules and rate limits, Shield", [waf, rate, managed rule, shield, ddos]]
+      - ["Multi region with latency or failover routing if needed", [latency, failover, multi region, global accelerator]]
+    a: |
+      Route 53 hosts the domain, with alias records to a CloudFront distribution. CloudFront serves static assets from S3 with long cache times and versioned file names, and forwards API paths to an Application Load Balancer with caching off. The S3 bucket is private and readable only through origin access control, and the load balancer accepts traffic only from CloudFront. WAF on CloudFront uses AWS managed rule groups, bot control and rate limits on login and checkout, and Shield Standard covers network floods. For global users or disaster recovery, I run the API in two regions with Route 53 latency or failover routing and health checks, or Global Accelerator for non HTTP traffic.
+    fb: Keeping origins private behind the edge is the detail that shows security thinking.
+
+desk:
+  title: Black Friday at the edge
+  lede: An online shop expects 20 times normal traffic and a bot attack on its login page.
+  situation: |
+    The site is served straight from an ALB with no CDN. Images come from a public S3 bucket. DNS records have a TTL of 86,400 seconds.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What risk does each fact create?
+          rows:
+            - ["No CDN in front of the ALB", "All traffic hits the region, slower and costlier"]
+            - ["Public S3 bucket for images", "Content can be scraped and the bucket is exposed"]
+            - ["DNS TTL of one day", "Failover could take up to a day for cached clients"]
+          opts: ["All traffic hits the region, slower and costlier", "Content can be scraped and the bucket is exposed", "Failover could take up to a day for cached clients"]
+          why: Speed, exposure and recovery all depend on the edge.
+        - q: Which control best slows the login bot?
+          opts: ["A WAF rate based rule and bot control on the login path", "A bigger ALB", "A longer TTL"]
+          a: 0
+          why: Stop abusive traffic before it reaches your servers.
+    - title: Round 2. Plan and work around
+      items:
+        - type: open
+          q: Write the edge plan for the sale.
+          a: "Put CloudFront in front of both the ALB and S3. Cache images and scripts with versioned names and long TTLs, and pass API paths through uncached. Make the bucket private with origin access control. Attach WAF with managed rules, bot control and rate limits on login and checkout. Lower DNS TTLs to 60 seconds a few days before the sale, and add Route 53 health checks."
+        - q: There is no time to set up CloudFront for the whole site. What is a quick workaround for images?
+          opts: ["Put CloudFront in front of the image bucket only and make the bucket private", "Make the bucket bigger", "Turn off images"]
+          a: 0
+          why: Static images are the biggest and easiest win.
+  card: |
+    - Route 53 policies. Weighted, latency, failover, geo, multivalue.
+    - Alias at the apex.
+    - CloudFront caches, origins stay private.
+    - Global Accelerator for TCP and UDP with static IPs.
+    - WAF rules and rate limits. Shield Standard for all.
+
+refs:
+  - "AWS. [Choosing a routing policy](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-policy.html)."
+  - "AWS. [Restricting access to an S3 origin with OAC](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html)."
+  - "AWS. [AWS Shield](https://docs.aws.amazon.com/waf/latest/developerguide/shield-chapter.html)."

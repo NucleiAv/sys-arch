@@ -1,0 +1,33 @@
+levels:
+  - n: 1
+    t: Cloud foundations
+    d: What the cloud is, where it lives, who is responsible for what, and how you start safely.
+    items: [cl-what, cl-global, cl-shared, cl-start, cp1]
+  - n: 2
+    t: Identity and keys
+    d: Who can do what. IAM in depth, many accounts with Organizations and single sign on, and encryption keys and secrets.
+    items: [cl-iam, cl-org, cl-kms, cp2]
+  - n: 3
+    t: Networking
+    d: How traffic flows. VPC design, connecting VPCs and data centers, private endpoints, DNS, CDN and edge protection.
+    items: [cl-vpc, cl-hybrid, cl-edge, cp3]
+  - n: 4
+    t: Compute, storage and data
+    d: The building blocks. EC2 and scaling, storage and S3 classes, managed databases and caches, and serverless with integration services.
+    items: [cl-compute, cl-storage, cl-db, cl-serverless, cp4]
+  - n: 5
+    t: Running it
+    d: Operate what you build. Containers, observability and operations, backup and disaster recovery, migration, and cost control with FinOps.
+    items: [cl-containers, cl-observe, cl-dr, cl-cost, cp5]
+  - n: 6
+    t: Cloud security
+    d: Defend the whole estate. Security services and posture, real attack paths and incident response, and governance with landing zones and compliance.
+    items: [cl-posture, cl-attack, cl-gov, cp6]
+  - n: 7
+    t: The architect
+    d: Think across clouds and decisions. AWS, Azure and Google Cloud side by side, and the method architects and the Solutions Architect exam use to choose.
+    items: [cl-multi, cl-exam, cp7]
+  - n: 8
+    t: Real designs by tier
+    d: Put it all together. How companies tier their apps, then a secure design for each tier, from the shared foundation to mission critical payments, a business critical store, an internal app and a nightly batch.
+    items: [ct0, ct1, ct2, ct3, ct4, cp8]

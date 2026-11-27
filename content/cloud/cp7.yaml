@@ -1,0 +1,54 @@
+kind: practice
+title: Cloud level 7 practice, the architect
+time: about 30 minutes
+lede: Exam style stories across all four domains, plus multi cloud mapping.
+
+rounds:
+  - title: Round 1. Secure and resilient
+    items:
+      - q: An app in private subnets must call DynamoDB. Traffic must not go over the internet.
+        opts: ["A gateway VPC endpoint for DynamoDB", "A NAT gateway", "A public IP on each instance"]
+        a: 0
+        why: Gateway endpoints exist for S3 and DynamoDB.
+      - q: A database must survive the loss of one Availability Zone with automatic failover.
+        opts: ["RDS Multi AZ", "A read replica in the same AZ", "Daily snapshots"]
+        a: 0
+        why: Multi AZ gives a synchronous standby and automatic failover.
+      - q: A partner account must read one S3 bucket. Least privilege.
+        opts: ["A role the partner account can assume, with an external ID and access to that bucket only", "Share an IAM user's access key", "Make the bucket public"]
+        a: 0
+        why: Roles and external IDs for third parties.
+  - title: Round 2. Performance and cost
+    items:
+      - q: Product pages are read 1,000 times for each write. The database is overloaded.
+        opts: ["Add ElastiCache in front of the database", "Make the database Multi AZ", "Move to Glacier"]
+        a: 0
+        why: Caching fits read heavy load.
+      - q: A nightly batch job can restart if stopped. It runs 3 hours a night. Most cost effective?
+        opts: ["Spot Instances", "On Demand Instances", "Dedicated Hosts"]
+        a: 0
+        why: Interruptible work fits Spot.
+      - q: Find the cost issue. "Every service writes debug logs to CloudWatch Logs with no retention setting."
+        opts: ["Logs are kept forever and cost grows without limit", "CloudWatch deletes logs daily", "No issue"]
+        a: 0
+        why: Set retention and export old logs to S3 if needed.
+  - title: Round 3. Multi cloud
+    items:
+      - type: sort
+        q: Match each AWS service to its Google Cloud equivalent.
+        rows:
+          - ["EC2", "Compute Engine"]
+          - ["S3", "Cloud Storage"]
+          - ["EKS", "GKE"]
+          - ["CloudTrail", "Cloud Audit Logs"]
+        opts: ["Compute Engine", "Cloud Storage", "GKE", "Cloud Audit Logs"]
+        why: Same building blocks, different names.
+      - type: open
+        q: Give one good reason and one bad reason to use a second cloud.
+        a: "Good, a specific service that is much better for a clear need, such as BigQuery for analytics, or a regulatory or customer requirement. Bad, running everything on two clouds only to avoid lock in, which doubles cost, skills and testing."
+card: |
+  - The constraint decides between working answers.
+  - Multi AZ for availability, replicas and caches for reads.
+  - Spot for interruptible, Savings Plans for steady.
+  - Endpoints for private AWS access.
+  - Learn the names in sets across clouds.

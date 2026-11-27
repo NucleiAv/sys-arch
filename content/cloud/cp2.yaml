@@ -1,0 +1,73 @@
+kind: practice
+title: Cloud level 2 practice, identity and keys
+time: about 30 minutes
+lede: Mixed questions on IAM policies, roles, Organizations, SCPs, single sign on, KMS and secrets.
+
+rounds:
+  - title: Round 1. Read the policy
+    items:
+      - q: What does this policy allow?
+        info: |
+          ```json
+          {"Effect": "Allow", "Action": "s3:GetObject",
+           "Resource": "arn:aws:s3:::invoices/2026/*",
+           "Condition": {"Bool": {"aws:MultiFactorAuthPresent": "true"}}}
+          ```
+        opts: ["Reading objects under invoices/2026/ only when signed in with MFA", "Writing any object in any bucket", "Listing all buckets"]
+        a: 0
+        why: Action, resource and condition together decide the scope.
+      - q: A role has an Allow for ec2:* and an SCP on its OU denies ec2:RunInstances. Can it start instances?
+        opts: ["No, the SCP is the ceiling", "Yes, the role allows it", "Only in us-east-1"]
+        a: 0
+        why: SCPs limit every identity in the account.
+      - type: fill
+        q: The policy attached to a KMS key that controls who can use it is the key ____.
+        a: ["policy"]
+        why: KMS key policies are resource policies.
+  - title: Round 2. Spot the security bug
+    items:
+      - q: Find the bug in this role trust policy.
+        info: |
+          ```json
+          {"Effect": "Allow", "Principal": {"AWS": "*"}, "Action": "sts:AssumeRole"}
+          ```
+        opts: ["Any AWS principal in any account could try to assume the role", "sts:AssumeRole is not a real action", "Principal must be a list"]
+        a: 0
+        why: Name the exact account or role, and add conditions such as an external id or organization id.
+      - q: Find the bug in this GitHub Actions setup.
+        info: |
+          ```yaml
+          env:
+            AWS_ACCESS_KEY_ID: ${{ secrets.ADMIN_KEY_ID }}
+            AWS_SECRET_ACCESS_KEY: ${{ secrets.ADMIN_SECRET }}
+          ```
+        opts: ["Long lived admin keys stored outside AWS, use OIDC federation to a least privilege role", "YAML cannot hold secrets", "Nothing is wrong"]
+        a: 0
+        why: OIDC gives short lived credentials and no stored keys.
+      - type: sort
+        q: Which control is each?
+        rows:
+          - ["Deny all regions except ap-south-1 for every prod account", "Service control policy"]
+          - ["Most permissions a developer's role can ever have", "Permissions boundary"]
+          - ["Who may read this bucket", "Bucket policy"]
+        opts: ["Service control policy", "Permissions boundary", "Bucket policy"]
+        why: Different layers limit at different levels.
+  - title: Round 3. GRC, benefits and workarounds
+    items:
+      - q: Identify the GRC issue. "Former staff still have IAM users in 12 accounts because nobody tracks them."
+        opts: ["Access is not removed on leaving, a basic identity governance failure", "IAM users expire on their own", "No issue"]
+        a: 0
+        why: Central sign on lets you remove access in one place.
+      - q: What is the benefit of a separate log archive account?
+        opts: ["Workload admins cannot delete or alter audit logs", "Logs cost nothing", "Logs are faster"]
+        a: 0
+        why: Separation of duties protects evidence.
+      - type: open
+        q: A partner company needs to read one bucket in your account. How do you grant it safely?
+        a: "Create a role in your account that the partner's account can assume, with a trust policy naming their account and requiring an external id. The role's policy allows only s3:GetObject and ListBucket on that bucket. If the data uses a customer managed KMS key, allow that role to decrypt. Log access and review it regularly, and set a date to remove it."
+card: |
+  - Default deny, explicit deny wins.
+  - SCPs and boundaries only limit.
+  - Roles and OIDC over stored keys.
+  - Accounts as walls, one sign on to revoke.
+  - KMS decrypt is a second lock. Secrets never in code.

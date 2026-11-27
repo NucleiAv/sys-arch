@@ -1,0 +1,209 @@
+short: Regions, zones and the edge
+title: Regions, Availability Zones and edge locations
+time: about 45 minutes
+tags: [region, AZ, edge location, data residency, latency]
+lede: AWS runs data centers all over the world, grouped into regions and Availability Zones. Learn what each one is, how they fail, how to pick a region, and why "deploy in two zones" is the first rule of high availability.
+
+idea: |
+  AWS splits the world into **regions**, such as Mumbai `ap-south-1` or Frankfurt `eu-central-1`. A region is a separate geographic area. Regions are isolated from each other, so a problem in one should not affect another.
+
+  Inside each region there are several **Availability Zones**, or AZs. An AZ is one or more data centers with their own power, cooling and network. AZs in a region are miles apart, so a fire or flood rarely hits two, but close enough to connect with very fast, low latency links. AWS says each region has at least three AZs.
+
+  Then there are many **edge locations** in cities around the world. They run services that must be close to users, such as the CloudFront content delivery network and Route 53 DNS.
+
+  Why it matters. If you run one server in one AZ and that AZ has an outage, your app is down. If you run copies in two or three AZs behind a load balancer, the app keeps working.
+
+  !eli5 A region is a city where AWS has buildings. Each Availability Zone is a different neighbourhood with its own power plant. If one neighbourhood loses power, the others keep working. Edge locations are small shops on street corners all over the world that hand out copies of popular things fast.
+
+scenes:
+  - title: One AZ fails, the app keeps running
+    stats: [Step, Healthy AZs, Servers serving, Users affected]
+    nodes:
+      users: {label: Users, x: 0, y: 2, kind: box}
+      lb: {label: Load balancer, x: 2, y: 2, kind: def, tag: spans all AZs}
+      a: {label: AZ a, x: 5, y: 0, kind: raised, tag: 2 servers}
+      b: {label: AZ b, x: 5, y: 2, kind: raised, tag: 2 servers}
+      c: {label: AZ c, x: 5, y: 4, kind: raised, tag: 2 servers}
+    links: [[users, lb], [lb, a], [lb, b], [lb, c]]
+    steps:
+      - title: Spread across three AZs
+        text: The app runs 6 servers, 2 in each of 3 AZs in the Mumbai region. The load balancer sends traffic to all of them.
+        on: [users, lb, a, b, c]
+        flow: [[users, lb, ink], [lb, a, ink], [lb, b, ink], [lb, c, ink]]
+        stats: [Normal, "3", "6", none]
+      - title: AZ b loses power
+        text: A power problem takes AZ b down. Its 2 servers stop answering health checks.
+        on: [b]
+        flow: [[lb, b, atk]]
+        mark: {b: bad}
+        stats: [Outage, "2", "4", a few slow requests]
+      - title: The load balancer reroutes
+        text: Within seconds the load balancer stops sending to AZ b. All traffic goes to AZ a and AZ c.
+        on: [lb, a, c]
+        flow: [[lb, a, def], [lb, c, def]]
+        mark: {a: ok, c: ok}
+        stats: [Reroute, "2", "4", none]
+      - title: Auto scaling refills
+        text: Auto scaling sees fewer servers and starts 2 new ones in the healthy AZs, so capacity is back to 6.
+        on: [a, c]
+        flow: [[lb, a, def], [lb, c, def]]
+        stats: [Recover, "2", "6", none]
+      - title: Single AZ design, for contrast
+        text: If all 6 servers had been in AZ b, the whole app would be down until AWS fixed the power. One choice at design time decides this.
+        on: [b]
+        mark: {b: bad}
+        stats: [Single AZ, "0", "0", everyone]
+
+terms:
+  - [Region, "A separate geographic area with several Availability Zones, such as ap-south-1 in Mumbai."]
+  - [Availability Zone, "One or more data centers in a region with independent power, cooling and networking."]
+  - [Edge location, "A site in a city used by services like CloudFront and Route 53 to be close to users."]
+  - [Local Zone, "A small AWS site near a large city, for very low latency to users there."]
+  - [Multi AZ, "Running copies across two or more AZs in a region, so one AZ failure does not stop you."]
+  - [Multi region, "Running in two or more regions, for disaster recovery or global users."]
+  - [Data residency, "A rule that some data must stay in a certain country or region."]
+  - [Regional service, "A service that lives in one region, like most AWS services. Some, like IAM, are global."]
+
+how: |
+  ### How to choose a region
+
+  1. **Law and data residency.** Some data must stay in a country. Check first.
+  2. **Latency to users.** Closer is faster. Users in India get lower latency from Mumbai or Hyderabad than from Virginia.
+  3. **Services.** New services arrive in some regions first. Check the service is available.
+  4. **Price.** Prices differ between regions.
+
+  ### Where each service lives
+
+  | Scope | Examples |
+  | --- | --- |
+  | Global | IAM, Route 53, CloudFront, AWS Organizations |
+  | Regional | S3 buckets, Lambda, DynamoDB tables, VPCs |
+  | Per AZ | EC2 instances, EBS volumes, subnets |
+
+  An EBS disk lives in one AZ. To move data to another AZ, you copy a snapshot. A subnet lives in one AZ, so a VPC spread over 3 AZs has at least 3 subnets of each kind.
+
+  ### Levels of resilience
+
+  | Design | Survives | Cost |
+  | --- | --- | --- |
+  | Single AZ | Server failures, if you have spares | Lowest |
+  | Multi AZ | One data center or AZ outage | Moderate |
+  | Multi region | A whole region outage | Highest, and hardest to build |
+
+  Most production apps should be at least **multi AZ**. Multi region is for the most critical systems, see level 8.
+
+  ### Data transfer is not free
+
+  Traffic between AZs and between regions is usually charged. Chatty services that call across AZs all day can add real cost. Design for it.
+
+  !key Deploy every production system in at least two AZs. It is the cheapest big step in reliability you can take.
+
+diagrams:
+  - type: layers
+    title: From the whole world to one server
+    attack: your request
+    layers:
+      - ["Edge locations", "Cache and DNS close to users", "partial"]
+      - ["Region", "Geographic area, isolated from other regions", "partial"]
+      - ["Availability Zones", "Separate data centers inside the region", "partial"]
+      - ["Subnet", "A network slice inside one AZ", "partial"]
+      - ["Instance", "Your server", "stop"]
+    caption: Each layer is a different blast radius. Spread copies across the layer you want to survive.
+
+life:
+  - ["US East 1 in December 2021", "An AWS outage in the Northern Virginia region, us-east-1, caused problems for many large apps for hours. Teams that depended on one region, or on services whose control plane ran there, were hit. It is a common lesson in knowing your region dependencies."]
+  - ["S3 in us-east-1, 2017", "In February 2017 a typo in a command during maintenance took down a large part of S3 in us-east-1 for about four hours. Many websites broke, including AWS's own status page images. AWS changed its tools to remove capacity more slowly."]
+  - ["Data residency in banking", "Many countries require some banking data to stay inside the country. Banks choose regions in that country and block other regions with organization policies."]
+
+tradeoffs:
+  - ["Single AZ", "Cheapest, simplest, no cross AZ traffic.", "An AZ outage takes you down."]
+  - ["Multi AZ", "Survives data center failures, standard for production.", "Some cross AZ cost and more resources."]
+  - ["Multi region", "Survives a regional outage, serves global users.", "Much harder data consistency, double cost, complex failover."]
+
+mistakes:
+  - Running production in one AZ.
+  - Picking a region by habit, ignoring law and user location.
+  - Forgetting that EBS volumes and subnets live in one AZ.
+  - Ignoring cross AZ and cross region transfer costs.
+  - Assuming a global service has no regional dependency.
+
+security: |
+  Turn off regions you do not use with organization policies, lesson 2.2. Attackers who steal keys often start servers in far away regions where nobody looks, for crypto mining. Enable security monitoring, such as GuardDuty and CloudTrail, in every enabled region, not only your main one.
+
+quiz:
+  - q: What is an Availability Zone?
+    opts: ["One or more data centers in a region with independent power, cooling and network", "A country", "A single server rack"]
+    a: 0
+    why: AZs are isolated failure domains inside a region.
+  - type: sort
+    q: Global, regional or per AZ?
+    rows:
+      - ["IAM", "Global"]
+      - ["An S3 bucket", "Regional"]
+      - ["An EBS volume", "Per AZ"]
+    opts: ["Global", "Regional", "Per AZ"]
+    why: The scope decides how a failure affects you.
+  - type: fill
+    q: Running copies across two or more AZs in one region is called ____ AZ.
+    a: ["multi", "multiple"]
+    why: Multi AZ is the baseline for production.
+  - q: Users are in India and the law requires customer data to stay in India. Which region fits?
+    opts: ["Mumbai, ap-south-1, or Hyderabad, ap-south-2", "Virginia, us-east-1", "Any region with the lowest price"]
+    a: 0
+    why: Law comes first, then latency, services and price.
+  - q: Spot the risk. "All our servers are in subnet-a in AZ ap-south-1a to keep things simple."
+    opts: ["An outage in that one AZ takes the whole app down", "Too many subnets", "Subnets cannot hold servers"]
+    a: 0
+    why: Spread across at least two AZs behind a load balancer.
+
+interview:
+  - q: How do regions and Availability Zones help you design for high availability?
+    keys:
+      - ["AZs are isolated data centers in a region, connected with low latency", [az, availability zone, isolated, data center, low latency]]
+      - ["Deploy across multiple AZs behind a load balancer", [multi az, load balancer, spread, two az, three az]]
+      - ["Regions for disaster recovery and global users", [region, disaster, global, multi region]]
+      - ["Service scope, global, regional, per AZ", [global, regional, scope, ebs, subnet]]
+    a: |
+      A region is an isolated geographic area with at least three Availability Zones. Each AZ has its own power, cooling and network, and AZs are linked with fast, low latency connections. So I run every production tier in at least two AZs, servers behind a load balancer, databases in multi AZ mode, and subnets in each AZ, which survives a data center outage. For a whole region failure or for users on several continents, I add a second region with replication and a failover plan, which costs far more. I also check each service's scope, because things like EBS volumes and subnets live in one AZ.
+    fb: Mentioning that some resources are per AZ shows practical experience.
+
+desk:
+  title: Choose a home for the app
+  lede: A health startup in Germany is launching a patient portal. Users are in Germany and Austria.
+  situation: |
+    The plan is one EC2 server and one database in us-east-1, because a tutorial used it.
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: What is wrong with each choice?
+          rows:
+            - ["us-east-1 for German patient data", "Likely breaks data residency expectations and adds latency"]
+            - ["One server", "No redundancy"]
+            - ["One AZ", "An AZ outage stops the portal"]
+          opts: ["Likely breaks data residency expectations and adds latency", "No redundancy", "An AZ outage stops the portal"]
+          why: Region, redundancy and zones are three separate decisions.
+        - q: Which region fits best?
+          opts: ["Frankfurt, eu-central-1", "Sao Paulo", "Tokyo"]
+          a: 0
+          why: Close to users, inside the EU.
+    - title: Round 2. Design and cost
+      items:
+        - type: open
+          q: Describe a multi AZ setup for the portal.
+          a: "In eu-central-1, an Application Load Balancer across three AZs, an Auto Scaling group with at least two servers in different AZs, a managed database with multi AZ standby, and private subnets in each AZ. Backups copied to a second EU region for disaster recovery."
+        - q: The founders worry about cost. What is a fair middle ground for launch?
+          opts: ["Multi AZ in one region, with backups to a second region", "Single AZ with no backups", "Active active in four regions"]
+          a: 0
+          why: Multi AZ is the cheapest big step in reliability. Add more as the business grows.
+  card: |
+    - Region, AZs, edge locations.
+    - Pick a region by law, latency, services, price.
+    - Production in at least two AZs.
+    - Know which resources are per AZ.
+    - Multi region for the most critical systems.
+
+refs:
+  - "AWS. [Global infrastructure](https://aws.amazon.com/about-aws/global-infrastructure/)."
+  - "AWS. [Regions and Availability Zones](https://aws.amazon.com/about-aws/global-infrastructure/regions_az/)."
+  - "AWS. [Summary of the Amazon S3 service disruption, February 2017](https://aws.amazon.com/message/41926/)."

@@ -1,0 +1,209 @@
+kind: design
+short: Tier 4, non critical batch
+title: Tier 4. A nightly analytics batch on Spot, cheap and still secure
+time: about 65 minutes
+tags: [tier 4, batch, Spot, data lake, Lake Formation]
+lede: Some work can wait. A nightly report that runs late by a day hurts no customer. Design a cheap, re runnable batch pipeline on Spot Instances and S3, accept single AZ compute and slow recovery, and still keep the data locked down.
+
+ask: |
+  A retailer wants a nightly job that reads the day's orders, clicks and stock, joins them, and builds sales reports and a file for the marketing team. If a run fails, it can run again the next morning, or even the next day. Design it as a **tier 4** system with the lowest sensible cost.
+
+reqs:
+  func:
+    - Copy daily exports from the store's databases and logs into a data lake.
+    - Run transformation jobs and write curated tables.
+    - Let analysts query the results with SQL.
+  nonfunc:
+    - Best effort availability. RTO 2 days. RPO 1 day, since raw data can be exported again.
+    - Finish by 8 am on most days.
+    - Cost as low as possible.
+    - Customer personal data must be protected and only shared in masked form.
+  out:
+    - Real time dashboards and machine learning models.
+
+estimate:
+  intro: |
+    Each night the job needs 100 instances for 4 hours. On Demand costs 0.40 dollars an hour per instance. Assume Spot saves 70 percent on average for this instance family, which varies. It runs 30 nights a month.
+  items:
+    - type: num
+      q: On Demand cost per month, in dollars?
+      a: 4800
+      tol: 0
+      unit: dollars
+      why: 100 × 4 × 0.40 = 160 a night, × 30 = 4,800 dollars.
+    - type: num
+      q: Spot cost per month at a 70 percent saving, in dollars?
+      a: 1440
+      tol: 0
+      unit: dollars
+      why: 4,800 × 0.30 = 1,440 dollars.
+    - type: num
+      q: How many seconds of warning does EC2 give before reclaiming a Spot Instance?
+      a: 120
+      tol: 0
+      unit: seconds
+      why: A two minute interruption notice. Jobs must checkpoint or retry.
+  after: |
+    !key Cheap compute is safe here only because the jobs can be stopped and restarted. Make every step re runnable before you buy Spot.
+
+api: |
+  The pipeline has no public API. It is a set of scheduled steps.
+
+  ```
+  01:00  export      databases -> s3://lake-raw/orders/dt=2026-11-27/
+  01:30  transform   raw -> curated, Spark on EMR Serverless or AWS Batch on Spot
+  05:30  publish     curated tables registered in the Glue Data Catalog
+  05:45  masked file s3://lake-share/marketing/dt=2026-11-27/ (no names, hashed ids)
+  ```
+
+  Each step is a state in AWS Step Functions with retries and alerts.
+
+data: |
+  | Zone | Holds | Access |
+  | --- | --- | --- |
+  | Raw | Exact copies of exports, partitioned by date | Pipeline only |
+  | Curated | Clean, joined tables in Parquet or Iceberg | Analysts through Athena, by Lake Formation permission |
+  | Shared | Masked extracts for marketing | Marketing role, read only |
+  | Glue Data Catalog | Table definitions and partitions | Governed by Lake Formation |
+
+scenes:
+  - title: A night with Spot interruptions
+    stats: [Step, What happens, Progress, Cost so far]
+    nodes:
+      sf: {label: Step Functions, x: 0, y: 1, kind: def, tag: schedule and retries}
+      raw: {label: S3 raw zone, x: 2, y: 0, kind: box}
+      spot: {label: Spot workers, x: 2, y: 2, kind: raised, tag: one AZ ok}
+      cur: {label: S3 curated zone, x: 4, y: 1, kind: box}
+      lf: {label: Lake Formation, x: 6, y: 0, kind: def}
+      ath: {label: Athena, x: 6, y: 2, kind: raised, tag: analysts}
+    links: [[sf, raw], [sf, spot], [raw, spot], [spot, cur], [lf, cur], [ath, cur]]
+    steps:
+      - title: Exports land
+        text: At 1 am the export step writes the day's data into the raw zone, in a new date folder.
+        on: [sf, raw]
+        flow: [[sf, raw, ink]]
+        stats: [Export, raw data in S3, 10 percent, low]
+      - title: Workers start on Spot
+        text: The transform step starts 100 Spot workers from several instance types, so a shortage of one type does not stop the job.
+        on: [sf, spot, raw]
+        flow: [[sf, spot, ink], [raw, spot, ink]]
+        stats: [Transform, Spot fleet, 30 percent, about 30 percent of On Demand]
+      - title: Some workers are reclaimed
+        text: AWS sends a two minute notice to 20 workers. They finish or drop their current task. The job's tasks are small, so only a few minutes of work is lost.
+        on: [spot]
+        mark: {spot: warn}
+        stats: [Interruption, two minute notice, 55 percent, small rework]
+      - title: Retries finish the job
+        text: Lost tasks are retried on new Spot capacity. Output is written to a new date partition, so a retry never doubles data.
+        on: [spot, cur]
+        flow: [[spot, cur, def]]
+        mark: {spot: ok}
+        stats: [Finish, idempotent writes, 100 percent, still low]
+      - title: Publish with permissions
+        text: Tables are registered in the catalog. Lake Formation lets analysts query only the columns their role allows. Marketing gets the masked file.
+        on: [lf, cur, ath]
+        flow: [[lf, cur, def], [ath, cur, ink]]
+        mark: {cur: ok}
+        stats: [Publish, column level access, done by 6 am, "about 48 dollars"]
+
+hld: |
+  1. **Storage.** An S3 data lake with raw, curated and shared zones, SSE-KMS, Block Public Access, lifecycle rules to cheaper classes, and partitions by date.
+  2. **Compute.** EMR Serverless, AWS Glue jobs, or AWS Batch on Spot. Many instance types and a Spot allocation strategy that favours capacity. Single AZ is acceptable for compute, while S3 already stores data across AZs.
+  3. **Orchestration.** Step Functions with retries, timeouts, and an alert if the run is not done by 7 am.
+  4. **Re runnable steps.** Each step reads one date partition and overwrites its own output partition, so running it again gives the same result.
+  5. **Catalog and access.** Glue Data Catalog with Lake Formation permissions down to columns and rows. Analysts use Athena with workgroup limits on data scanned.
+  6. **Recovery.** If the account or region has a problem, rerun from the source exports later. Raw data is versioned and replicated only if the business asks.
+
+diagrams:
+  - type: flow
+    title: The nightly pipeline
+    nodes: [["Exports", "box"], ["S3 raw", "box"], ["Spot transform", "raised", "retries"], ["S3 curated", "box"], ["Athena with Lake Formation", "def"]]
+    edges: ["1 am", "read", "write partition", "query"]
+    caption: Each arrow is a step that can be run again safely.
+
+deep:
+  - ["Why Spot fits here", "Spot uses spare EC2 capacity at a large discount but can be reclaimed with two minutes notice. The job has no customers waiting and can retry, so interruptions cost minutes, not money or trust."]
+  - ["Make work small and restartable", "Split the job into many small tasks, checkpoint long ones, and write outputs to a fresh partition before swapping it in. Then an interruption or a full rerun is safe."]
+  - ["Lower tier, same data rules", "The data lake holds the same customer data as tier 1 systems. Lake Formation, masking, encryption and audit apply in full. Tier is about availability, not about how carefully data is handled."]
+  - ["Athena cost control", "Athena charges by data scanned. Parquet files, partitions and workgroup limits keep a careless query from scanning the whole lake."]
+
+tradeoffs:
+  - ["Spot", "Large savings.", "Interruptions, needs restartable jobs."]
+  - ["Single AZ compute", "Cheaper, simpler networking.", "An AZ outage delays the run."]
+  - ["Serverless Spark or Glue", "No clusters to manage.", "Less tuning control, can cost more for very large steady jobs."]
+  - ["No cross region copy", "Lowest cost.", "A region loss means waiting or re exporting."]
+
+security: |
+  - Lake Formation for table, column and row permissions. No direct S3 access for analysts.
+  - Personal data columns tagged and masked or hashed in curated and shared zones.
+  - SSE-KMS with a key per zone. The marketing role cannot decrypt raw data.
+  - VPC endpoints for S3 and Glue, workers in private subnets with no internet.
+  - Job roles limited to their input and output paths.
+  - CloudTrail data events on the raw bucket, Macie scans for unexpected personal data in shared zones.
+
+task:
+  intro: |
+    Present the pipeline to the analytics lead and the data protection officer.
+  items:
+    - q: Explain why this pipeline is cheap, how it handles failures, and how it protects customer data.
+      keys:
+        - ["Spot with many instance types for low cost", [spot, instance type, discount, cheap]]
+        - ["Small, re runnable, idempotent steps", [re run, rerun, idempot, partition, retry, checkpoint]]
+        - ["Step Functions orchestration and alerts", [step functions, orchestrat, alert, retry]]
+        - ["S3 zones with encryption and lifecycle", [s3, raw, curated, zone, kms, lifecycle]]
+        - ["Lake Formation and masking for personal data", [lake formation, column, mask, hash, personal data]]
+      a: |
+        The pipeline is cheap because it runs only at night on Spot workers spread across many instance types, saving most of the On Demand price, and because it stores data in S3 with lifecycle rules. It handles failures by being re runnable. Step Functions runs each step with retries and timeouts, tasks are small, and each step overwrites its own date partition, so a retry or a full rerun gives the same result. Spot interruptions only cost a few minutes. If a run fails completely, we run it again in the morning, which fits the tier 4 targets. Customer data stays protected. Encryption with a key per zone, Lake Formation permissions down to columns and rows, masked or hashed personal data in anything shared, private subnets with VPC endpoints, and CloudTrail plus Macie for audit.
+      fb: Tying Spot safety to re runnable steps shows you understand why the discount is safe here.
+
+interview:
+  - q: The marketing team wants to put this job on a 15 minute schedule for near real time reports. What changes?
+    keys:
+      - ["Becomes a different tier with tighter targets", [tier, target, higher, sla]]
+      - ["Move to streaming or micro batches", [stream, kinesis, kafka, micro batch, incremental]]
+      - ["Spot still possible with fallback to On Demand", [spot, on demand, fallback, mix]]
+      - ["Higher cost, confirm the business need", [cost, business, need, worth]]
+    a: |
+      That is a different system with tighter targets, probably tier 3 or tier 2. I would move to incremental processing, either micro batches every few minutes with an Iceberg table, or streaming with Kinesis or Kafka. Capacity must always be there, so I would mix On Demand for a base with Spot on top, across AZs. Monitoring, alerts and on call support grow too. I would show the extra cost and confirm the business value before building it.
+    fb: Recognizing that a new freshness need changes the tier is the main insight.
+
+desk:
+  title: The surprise bill
+  lede: The analytics account's bill jumped and a personal data file was found in the wrong place.
+  situation: |
+    The batch runs On Demand all day, not just at night. Analysts query raw JSON with Athena and often scan the whole lake. A CSV with customer phone numbers sits in the shared marketing folder.
+  rounds:
+    - title: Round 1. Find the causes
+      items:
+        - type: sort
+          q: What does each fact cause?
+          rows:
+            - ["On Demand all day", "Paying for idle and full price compute"]
+            - ["Athena on raw JSON scanning everything", "High cost per query"]
+            - ["Phone numbers in the shared folder", "Personal data exposed to a team that should not see it"]
+          opts: ["Paying for idle and full price compute", "High cost per query", "Personal data exposed to a team that should not see it"]
+          why: Two cost problems and one data protection problem.
+        - q: Which issue must be handled first?
+          opts: ["The personal data in the shared folder", "The compute bill", "The query speed"]
+          a: 0
+          why: Data protection before cost.
+    - title: Round 2. Fix
+      items:
+        - type: open
+          q: Write the fixes.
+          a: "Remove the file, check access logs for who downloaded it, and follow the breach process if needed. Mask or hash phone numbers in the shared zone and run Macie on it. Schedule the batch only at night on Spot with many instance types. Convert curated data to partitioned Parquet or Iceberg and set Athena workgroup scan limits."
+        - q: What is a benefit of Lake Formation here?
+          opts: ["Analysts get only the tables, columns and rows their role allows, managed in one place", "It makes queries free", "It replaces encryption"]
+          a: 0
+          why: Central fine grained access.
+  card: |
+    - Tier 4, best effort, rerun next day.
+    - Spot with many instance types, two minute notice.
+    - Small, re runnable steps writing fresh partitions.
+    - S3 zones, Parquet, Athena limits.
+    - Lake Formation, masking, KMS. Same data care as tier 1.
+
+refs:
+  - "AWS. [Spot Instance interruptions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-interruptions.html)."
+  - "AWS. [What is AWS Lake Formation](https://docs.aws.amazon.com/lake-formation/latest/dg/what-is-lake-formation.html)."
+  - "AWS. [Best practices for Amazon Athena performance](https://docs.aws.amazon.com/athena/latest/ug/performance-tuning.html)."

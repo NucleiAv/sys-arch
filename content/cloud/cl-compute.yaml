@@ -1,0 +1,223 @@
+short: Compute and scaling
+title: EC2, pricing options, Auto Scaling and load balancers
+time: about 60 minutes
+tags: [EC2, Spot, Savings Plans, Auto Scaling, ALB, NLB]
+lede: Virtual servers are the oldest cloud building block and still run a huge share of workloads. Learn how to pick an instance type, the four ways to pay, how Auto Scaling keeps the right number of servers, and which load balancer to use.
+
+idea: |
+  **Amazon EC2** rents virtual servers, called **instances**. You pick an **instance type**, which sets CPU, memory, network and sometimes GPUs, and an **AMI**, the disk image with the operating system.
+
+  How you pay matters as much as what you run.
+
+  - **On Demand.** Pay by the second or hour, no commitment. Most expensive per hour, most flexible.
+  - **Savings Plans and Reserved Instances.** Commit to a steady amount of use for 1 or 3 years for a large discount.
+  - **Spot.** Use spare AWS capacity at a big discount, but AWS can take it back with a **two minute warning**. Great for work that can stop and restart.
+  - **Dedicated Hosts.** A whole physical server for you, for some licences and compliance needs.
+
+  An **Auto Scaling group** keeps the number of instances right. It replaces unhealthy ones, spreads them across AZs, and adds or removes instances as load changes. A **load balancer** spreads requests across them and only sends to healthy ones.
+
+  !eli5 EC2 is renting cars. On Demand is a taxi, pay per ride. Savings Plans are a yearly car lease, cheaper if you drive a lot. Spot is a cheap ride share that can drop you off early. Auto Scaling is a manager who calls more cars when the queue grows and sends them away when it shrinks.
+
+scenes:
+  - title: Auto Scaling handles a lunch rush and a broken server
+    stats: [Step, Instances, CPU average, Pricing mix]
+    nodes:
+      users: {label: Users, x: 0, y: 2, kind: box}
+      alb: {label: Application Load Balancer, x: 2, y: 2, kind: def}
+      asg: {label: Auto Scaling group, x: 5, y: 2, kind: def, tag: "min 2, max 10"}
+      cw: {label: CloudWatch alarm, x: 5, y: 0, kind: raised, tag: target 50 percent CPU}
+      bad: {label: Broken instance, x: 5, y: 4, kind: atk}
+    links: [[users, alb], [alb, asg], [cw, asg], [alb, bad]]
+    steps:
+      - title: Quiet morning
+        text: Two instances in two AZs serve traffic. Target tracking keeps average CPU near 50 percent.
+        on: [users, alb, asg]
+        flow: [[users, alb, ink], [alb, asg, ink]]
+        stats: [Steady, "2", "30 percent", "2 on Savings Plan"]
+      - title: Lunch rush
+        text: Traffic triples. CPU climbs to 85 percent. The scaling policy asks for more instances.
+        on: [cw, asg]
+        flow: [[cw, asg, pen]]
+        mark: {asg: warn}
+        stats: [Rush, "2", "85 percent", scaling out]
+      - title: Scale out
+        text: The group launches four more instances, two in each AZ, from the launch template. After they pass health checks, the load balancer sends them traffic.
+        on: [alb, asg]
+        flow: [[alb, asg, def]]
+        mark: {asg: ok}
+        stats: [Scaled, "6", "48 percent", "2 Savings Plan, 4 On Demand"]
+      - title: One instance breaks
+        text: One instance stops answering its health check. The load balancer stops sending to it, and the group terminates it and launches a replacement.
+        on: [alb, bad, asg]
+        flow: [[alb, bad, atk]]
+        mark: {bad: bad}
+        stats: [Heal, "6", "50 percent", replaced automatically]
+      - title: Afternoon
+        text: Traffic falls. The group scales in slowly, back to two instances, and the bill falls with it.
+        on: [asg]
+        stats: [Scale in, "2", "35 percent", back to base]
+
+terms:
+  - [Instance type, "The size and kind of an EC2 server, such as m7g.large. The letter is the family, the number the generation."]
+  - [AMI, "Amazon Machine Image. The template disk an instance boots from."]
+  - [Launch template, "Saved settings for launching instances, such as AMI, type, network and role."]
+  - [On Demand, "Pay per second or hour with no commitment."]
+  - [Savings Plans, "A 1 or 3 year commitment to spend per hour, for large discounts."]
+  - [Spot Instance, "Spare capacity at a big discount that AWS can reclaim with a two minute notice."]
+  - [Auto Scaling group, "Keeps a healthy number of instances, spread across AZs, scaling with load."]
+  - [ALB, "Application Load Balancer. Layer 7, routes HTTP and HTTPS by path, host and headers."]
+  - [NLB, "Network Load Balancer. Layer 4, TCP and UDP, very high throughput, static IP per AZ."]
+  - [Placement group, "Controls how instances are placed, cluster for low latency, spread for isolation, partition for big distributed systems."]
+
+how: |
+  ### Instance families, the first letter
+
+  | Family | Good for |
+  | --- | --- |
+  | General purpose, such as M and T | Web apps, small databases. T types are burstable |
+  | Compute optimized, C | Batch, video encoding, high CPU |
+  | Memory optimized, R and X | Large caches, in memory databases |
+  | Storage optimized, I and D | High disk throughput, local NVMe |
+  | Accelerated, such as G, P, Inf, Trn | GPUs and AI chips, ML training and inference |
+
+  A **g** after the generation number, such as m7**g**, means an AWS Graviton ARM processor, often cheaper for the same work.
+
+  ### Paying for compute
+
+  | Option | Discount versus On Demand | Fits |
+  | --- | --- | --- |
+  | On Demand | None | Spiky, short, unknown workloads |
+  | Savings Plans or Reserved Instances | Up to about 72 percent | Steady base load |
+  | Spot | Up to about 90 percent | Batch, CI, stateless workers that can be stopped |
+
+  A common mix is Savings Plans for the base, On Demand for peaks, and Spot for anything that can be interrupted.
+
+  ### Scaling policies
+
+  - **Target tracking.** Keep a metric near a target, such as 50 percent CPU. The simplest good default.
+  - **Step scaling.** Add more instances as an alarm gets worse.
+  - **Scheduled.** Scale before known events, such as 9 am on weekdays.
+  - **Predictive.** Uses past patterns to scale ahead of daily cycles.
+
+  ### Load balancer types
+
+  | Type | Layer | Use |
+  | --- | --- | --- |
+  | Application Load Balancer | 7, HTTP and HTTPS | Web apps, path and host routing, WAF |
+  | Network Load Balancer | 4, TCP, UDP, TLS | Extreme throughput, static IPs, non HTTP |
+  | Gateway Load Balancer | 3, IP packets | Third party firewalls and inspection appliances |
+
+  ### Make instances disposable
+
+  Build images or launch templates so any instance can be replaced at any time. Keep no important data on the instance. Use **user data** or configuration tools for setup, and Systems Manager for access instead of SSH.
+
+  !key Treat servers like cattle, not pets. If any instance can die and be replaced automatically, Auto Scaling, Spot and multi AZ all become easy.
+
+diagrams:
+  - type: flow
+    title: How a scaling decision happens
+    nodes: [["Metric rises", "box", "CPU, requests, queue length"], ["CloudWatch alarm", "raised"], ["Scaling policy", "def"], ["Launch from template", "def", "in several AZs"], ["Pass health checks", "raised"], ["Load balancer sends traffic", "box"]]
+    edges: ["", "", "", "", ""]
+    caption: New instances take a few minutes to be ready. Warm up time and scheduled scaling help with sudden spikes.
+
+life:
+  - ["Spot for big batch jobs", "Many companies run CI builds, rendering and data processing on Spot, saving most of the On Demand price. Jobs save progress often, so an interruption only repeats a few minutes of work."]
+  - ["The burstable surprise", "A team ran a busy API on a small T instance. It was fast for an hour, then very slow, because it used up its CPU credits. Moving to an M instance gave steady speed."]
+  - ["Scaling on the wrong metric", "An app was limited by database connections, not CPU. Scaling on CPU added servers that only opened more connections and made things worse. Scaling on request latency and fixing the connection pool solved it, see Concepts lesson 2.8."]
+
+tradeoffs:
+  - ["On Demand", "No commitment.", "Highest price per hour."]
+  - ["Savings Plans", "Large discount for steady use.", "1 or 3 year commitment."]
+  - ["Spot", "Very cheap.", "Can be stopped with two minutes notice."]
+  - ["Larger instances, fewer of them", "Fewer things to manage.", "Each failure removes more capacity."]
+  - ["Smaller instances, more of them", "Finer scaling and smaller failures.", "More instances to run."]
+
+mistakes:
+  - Keeping important data only on an instance's local disk.
+  - Running all instances in one AZ.
+  - Using Spot for work that cannot be interrupted.
+  - Scaling on a metric that is not the real bottleneck.
+  - Paying On Demand for a steady base load for years.
+
+security: |
+  Instances need patching, so build images regularly and replace instances instead of patching by hand. Require IMDSv2, give each instance a least privilege role, keep instances in private subnets, use Systems Manager Session Manager instead of open SSH, encrypt EBS volumes by default, and scan images with Amazon Inspector.
+
+quiz:
+  - q: A nightly video encoding job can restart if stopped. Which pricing fits best?
+    opts: ["Spot", "Dedicated Host", "On Demand only"]
+    a: 0
+    why: Interruptible work is ideal for Spot's large discount.
+  - type: sort
+    q: Which load balancer fits?
+    rows:
+      - ["Route /api to one service and /images to another", "Application Load Balancer"]
+      - ["Millions of TCP connections with a static IP per AZ", "Network Load Balancer"]
+      - ["Send all traffic through third party firewall appliances", "Gateway Load Balancer"]
+    opts: ["Application Load Balancer", "Network Load Balancer", "Gateway Load Balancer"]
+    why: Pick by layer and features.
+  - type: fill
+    q: AWS gives a ____ minute warning before reclaiming a Spot Instance.
+    a: ["two", "2"]
+    why: Save work and drain within that time.
+  - q: The simplest good default scaling policy is?
+    opts: ["Target tracking, such as keep CPU near 50 percent", "Scale by hand every morning", "Never scale"]
+    a: 0
+    why: Target tracking adjusts both ways automatically.
+  - q: Spot the problem. "Our Auto Scaling group spans one AZ and stores uploads on each instance's disk."
+    opts: ["One AZ is a single point of failure, and uploads are lost when instances are replaced", "Auto Scaling cannot use one AZ", "Uploads are faster"]
+    a: 0
+    why: Spread across AZs and store uploads in S3.
+
+interview:
+  - q: How would you run a web tier on EC2 so it is reliable and cost effective?
+    keys:
+      - ["Auto Scaling group across multiple AZs from a launch template", [auto scaling, multiple az, launch template, multi az]]
+      - ["Load balancer with health checks", [load balancer, alb, health check]]
+      - ["Stateless instances, data in S3 or databases", [stateless, disposable, s3, no data on instance, cattle]]
+      - ["Pricing mix, Savings Plans base, On Demand peaks, Spot where possible", [savings plan, reserved, spot, on demand, mix]]
+      - ["Right metric and scaling policy", [target tracking, metric, policy, latency, cpu]]
+    a: |
+      I make instances stateless and disposable, built from a launch template with a tested AMI, keeping sessions in a shared store and files in S3. An Auto Scaling group spreads them across three AZs with a minimum that survives one AZ loss, behind an Application Load Balancer with health checks, so broken instances are replaced automatically. I scale with target tracking on the metric that really limits the app, such as requests per target or latency, and add scheduled scaling for known peaks. For cost, I cover the steady base with Savings Plans, let peaks run On Demand, and put interruptible workers on Spot. Graviton instances often lower cost further.
+    fb: Choosing the scaling metric that matches the real bottleneck is the mark of experience.
+
+desk:
+  title: The expensive, fragile web tier
+  lede: A company runs 12 large On Demand instances all day, in one AZ, and still crashes at peaks.
+  situation: |
+    Traffic is low at night and high from 10 am to 8 pm. Instances store user uploads locally. Scaling is done by hand.
+  rounds:
+    - title: Round 1. Find the problems
+      items:
+        - type: sort
+          q: What problem does each fact cause?
+          rows:
+            - ["12 large instances all night", "Paying for idle capacity"]
+            - ["One AZ", "An AZ outage stops the site"]
+            - ["Uploads on local disks", "Data lost when instances are replaced"]
+            - ["Manual scaling", "Slow reaction to peaks"]
+          opts: ["Paying for idle capacity", "An AZ outage stops the site", "Data lost when instances are replaced", "Slow reaction to peaks"]
+          why: Cost, reliability, data safety and speed.
+        - q: What is the first change that makes the others possible?
+          opts: ["Move uploads to S3 so instances become stateless", "Buy bigger instances", "Add a second hand scaling team"]
+          a: 0
+          why: Stateless instances can scale and be replaced freely.
+    - title: Round 2. Plan
+      items:
+        - type: open
+          q: Design the new web tier and pricing.
+          a: "Uploads go to S3 and sessions to a shared cache. An Auto Scaling group across three AZs with a minimum of 3 and maximum of 15, target tracking on requests per target, plus scheduled scale out at 9:45 am. An Application Load Balancer with health checks. A Savings Plan covers the 3 instance base, peaks run On Demand, and background jobs move to Spot."
+        - q: What is the benefit of scheduled scaling at 9:45 am?
+          opts: ["Instances are ready before the 10 am rush instead of starting during it", "It is free", "It removes health checks"]
+          a: 0
+          why: New instances need minutes to be ready.
+  card: |
+    - Pick the family, then the size. Graviton often saves money.
+    - On Demand, Savings Plans, Spot, Dedicated.
+    - Auto Scaling across AZs with target tracking.
+    - ALB for HTTP, NLB for TCP and UDP, GWLB for appliances.
+    - Stateless, disposable instances.
+
+refs:
+  - "AWS. [Amazon EC2 instance types](https://aws.amazon.com/ec2/instance-types/)."
+  - "AWS. [Spot Instance interruptions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-interruptions.html)."
+  - "AWS. [Elastic Load Balancing features](https://aws.amazon.com/elasticloadbalancing/features/)."

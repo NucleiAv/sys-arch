@@ -1019,3 +1019,22 @@ i.lg.k-req { background: var(--k-req); } i.lg.k-res { background: var(--k-res); 
 .px-hexkey .mono { font-size: 11.5px; color: var(--ink-3); }
 .seclens { border-left: 3px solid var(--atk); padding-left: 16px; }
 .sim-out .verdict.warn { color: var(--pencil); }
+
+/* cloud track */
+.tag.cl { color: var(--ok); background: color-mix(in srgb, var(--ok) 13%, transparent); }
+.dot.cl { background: var(--ok); }
+.trk { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 16px 18px; box-shadow: var(--shadow-2); }
+.trk-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.trk-top b { font: 400 36px var(--serif); color: var(--pencil); }
+.trk-top .btn { margin-left: auto; }
+.trk-bar { height: 8px; border-radius: 4px; background: var(--line-2); overflow: hidden; margin: 12px 0; }
+.trk-bar i { display: block; height: 100%; background: var(--ok); transform: scaleX(0); transform-origin: left; transition: transform 500ms var(--ease); }
+.trk-lv { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px 14px; }
+.trk-lv span { display: flex; gap: 8px; align-items: baseline; font-size: 13px; color: var(--ink-2); }
+.trk-lv b { color: var(--ink-3); font-size: 11px; }
+.trk-lv em { margin-left: auto; font-style: normal; font-size: 11.5px; color: var(--ok); }
+.labs { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin: 10px 0 22px; }
+.lab { display: grid; gap: 6px; align-content: start; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); text-decoration: none; color: var(--ink); transition: border-color 150ms var(--ease); }
+.lab:hover { border-color: var(--ink-3); }
+.lab .tag { justify-self: start; }
+.lab small { color: var(--ink-2); font-size: 13px; line-height: 1.45; }

@@ -1,0 +1,59 @@
+kind: practice
+title: Cloud level 6 practice, cloud security
+time: about 30 minutes
+lede: Mixed questions on security services, attack paths, incident response, landing zones and compliance.
+
+rounds:
+  - title: Round 1. Pick and match
+    items:
+      - type: sort
+        q: Which service or control fits each need?
+        rows:
+          - ["Alert on stolen keys used from a strange place", "GuardDuty"]
+          - ["Never allow anyone to stop CloudTrail", "An SCP"]
+          - ["See all findings from 80 accounts in one place", "Security Hub"]
+          - ["Download AWS's SOC 2 report for an auditor", "AWS Artifact"]
+        opts: ["GuardDuty", "An SCP", "Security Hub", "AWS Artifact"]
+        why: Detection, prevention, aggregation and evidence.
+      - type: sort
+        q: Which control breaks each attack step?
+        rows:
+          - ["SSRF reads instance credentials", "Require IMDSv2"]
+          - ["Leaked CI access key", "OIDC federation, no long term keys"]
+          - ["Passing an admin role to a new Lambda", "Restrict iam:PassRole to specific roles"]
+          - ["Deleting backups for ransom", "Backups in a separate account with vault lock"]
+        opts: ["Require IMDSv2", "OIDC federation, no long term keys", "Restrict iam:PassRole to specific roles", "Backups in a separate account with vault lock"]
+        why: One control per step, several for depth.
+  - title: Round 2. Spot it
+    items:
+      - q: Find the issue in this policy attached to a web server role.
+        info: |
+          ```json
+          { "Effect": "Allow", "Action": "s3:*", "Resource": "*" }
+          ```
+        opts: ["The web server can read and delete every bucket, so one SSRF exposes everything", "S3 actions need a star", "Nothing, roles are safe"]
+        a: 0
+        why: Least privilege. Name the bucket and the actions it needs.
+      - q: Identify the GRC issue. "Security findings have no owners. The same public bucket finding has been open for 6 months."
+        opts: ["No accountability or time to fix, so known risks stay open", "Findings close themselves", "Six months is normal"]
+        a: 0
+        why: Route to owners with deadlines by severity.
+      - q: Find the incident response mistake. "We found the compromised instance and terminated it at once."
+        opts: ["Evidence is lost. Isolate and snapshot first.", "Terminating is the first step", "No mistake"]
+        a: 0
+        why: Contain without destroying evidence.
+  - title: Round 3. Benefits and workarounds
+    items:
+      - q: What is a benefit of a delegated security account?
+        opts: ["Member account admins cannot change or hide the security findings", "It makes accounts free", "It removes the need for logs"]
+        a: 0
+        why: Separation of duties.
+      - type: open
+        q: A vendor needs read access to one bucket in your account. How do you give it safely?
+        a: "Create a role in your account that trusts only the vendor's AWS account and requires an external ID. Give the role read access to that one bucket, or one prefix, and nothing else. Monitor its use in CloudTrail and IAM Access Analyzer, and review or remove it when the contract ends."
+card: |
+  - Detect with GuardDuty, see all in Security Hub, check settings with Config.
+  - IMDSv2, no long term keys, least privilege, limit PassRole.
+  - Isolate and snapshot, then investigate in every region.
+  - Landing zone with Log Archive and Audit accounts.
+  - Preventive, detective, proactive controls. Compliance is shared.

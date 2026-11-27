@@ -1,0 +1,236 @@
+short: What the cloud is
+title: What the cloud is, and what people use it for
+time: about 45 minutes
+tags: [IaaS, PaaS, SaaS, pay as you go, elasticity]
+lede: The cloud is computers, storage and networks that you rent over the internet, by the minute, instead of buying and running them yourself. Learn the service models, why companies move to the cloud, and how cloud work splits into infrastructure and architecture.
+
+idea: |
+  Before the cloud, a company that wanted a website bought servers, put them in a data center, paid for power and cooling, and waited weeks for new hardware. If traffic doubled at Diwali, the site slowed down. If traffic dropped, the servers sat idle but were already paid for.
+
+  **Cloud computing** means you rent these things from a **cloud provider**, such as Amazon Web Services, Microsoft Azure or Google Cloud, over the internet. You ask for a server and get it in a minute. You pay only while you use it. When you stop, you stop paying.
+
+  The US standards body NIST describes five key traits of cloud computing.
+
+  1. **On demand self service.** You get resources yourself, with no person to call.
+  2. **Broad network access.** You reach them over the network from anywhere.
+  3. **Resource pooling.** Many customers share the provider's huge pool of hardware.
+  4. **Rapid elasticity.** You can grow or shrink fast, even automatically.
+  5. **Measured service.** Use is measured, so you pay for what you use.
+
+  !eli5 Owning servers is like owning a car. You pay for it even when it sits in the garage. The cloud is like a taxi. You call one when you need it, pay for the trip, and never worry about oil changes.
+
+scenes:
+  - title: A shop before and after the cloud during a festival sale
+    stats: [Step, Servers, Cost this hour, Site]
+    nodes:
+      users: {label: Shoppers, x: 0, y: 1, kind: box}
+      own: {label: Own data center, x: 3, y: 0, kind: raised, tag: 10 servers bought}
+      lb: {label: Cloud load balancer, x: 3, y: 2, kind: def}
+      asg: {label: Rented servers, x: 6, y: 2, kind: def, tag: scale automatically}
+    links: [[users, own], [users, lb], [lb, asg]]
+    steps:
+      - title: Owning servers, normal day
+        text: The shop owns 10 servers, sized for the biggest sale of the year. On a normal day 8 of them do nothing, but they are already paid for.
+        on: [users, own]
+        flow: [[users, own, ink]]
+        stats: [Own, "10", fixed, fine]
+      - title: Owning servers, festival sale
+        text: Traffic jumps 5 times. 10 servers are not enough. Buying more takes weeks. The site slows down and customers leave.
+        on: [users, own]
+        flow: [[users, own, atk]]
+        mark: {own: bad}
+        stats: [Own, "10", fixed, slow]
+      - title: Cloud, normal day
+        text: The shop moves to the cloud. A load balancer spreads traffic across 2 rented servers. It pays for 2.
+        on: [users, lb, asg]
+        flow: [[users, lb, ink], [lb, asg, ink]]
+        stats: [Cloud, "2", low, fine]
+      - title: Cloud, festival sale
+        text: Traffic jumps 5 times. Auto scaling adds servers in minutes, up to 10. The site stays fast.
+        on: [users, lb, asg]
+        flow: [[users, lb, def], [lb, asg, def]]
+        mark: {asg: ok}
+        stats: [Cloud, "10", higher for a few hours, fast]
+      - title: After the sale
+        text: Traffic falls. Auto scaling removes the extra servers, and the bill falls with them. This is elasticity.
+        on: [lb, asg]
+        flow: [[lb, asg, ink]]
+        stats: [Cloud, "2", low again, fine]
+
+terms:
+  - [Cloud provider, "A company that rents computing resources over the internet, such as AWS, Microsoft Azure or Google Cloud."]
+  - [IaaS, "Infrastructure as a service. You rent servers, storage and networks and manage the operating system and apps yourself. Example, Amazon EC2."]
+  - [PaaS, "Platform as a service. The provider runs the servers and operating system. You bring your code or data. Example, AWS Elastic Beanstalk, Amazon RDS."]
+  - [SaaS, "Software as a service. A finished app you just use. Example, Gmail, Zoom."]
+  - [Elasticity, "Growing and shrinking resources quickly to match demand."]
+  - [Pay as you go, "Paying only for what you use, often by the second or hour."]
+  - [CapEx and OpEx, "Capital expense, buying hardware up front, versus operating expense, paying as you use."]
+  - [Public cloud, "Resources shared by many customers on the provider's hardware."]
+  - [Private cloud, "Cloud style resources used by one organization only."]
+  - [Hybrid cloud, "A mix of your own data center and a public cloud, connected together."]
+
+how: |
+  ### The three service models
+
+  | Model | You manage | Provider manages | Example |
+  | --- | --- | --- | --- |
+  | IaaS | Operating system, runtime, app, data | Hardware, network, data center, virtualization | Amazon EC2 |
+  | PaaS | App and data | Everything below, including the operating system | Amazon RDS, Elastic Beanstalk |
+  | SaaS | Your data and settings | The whole app | Gmail, Microsoft 365 |
+
+  Serverless services, such as AWS Lambda, go one step further than PaaS. You give only a function and pay per run.
+
+  ### What people use the cloud for
+
+  | Use | Example |
+  | --- | --- |
+  | Running apps and websites | Backends for shops, banks, games |
+  | Storing data and backups | S3, Google Drive, offsite backups |
+  | Data and analytics | Data warehouses such as BigQuery or Snowflake |
+  | AI and ML | Training models on rented GPUs, calling hosted models |
+  | Ready made software, SaaS | Gmail, Microsoft 365, Salesforce, Zoom |
+  | Dev and test machines | Short lived environments for engineers |
+  | Big computing jobs | Science simulations, video rendering |
+  | Remote desktops and company IT | Virtual desktops, email, file sharing |
+  | IoT and streaming | Device data, video delivery |
+
+  ### Cloud as infrastructure, and cloud as architecture
+
+  - **Cloud as infrastructure.** At its base, the cloud is rented servers, disks and networks. Setting them up, securing them, automating them and running them is **infra** work. IAM, VPCs, Terraform, CI/CD, monitoring and cost.
+  - **Cloud as system design building blocks.** Providers also sell ready made parts that are exactly the boxes in a design diagram.
+
+  | Design idea on this site | Cloud service that provides it |
+  | --- | --- |
+  | Load balancer, Concepts lesson 1.10 | AWS Application Load Balancer, Google Cloud Load Balancing |
+  | Queue or stream, Concepts lessons 3.2 and 3.6 | Amazon SQS, Kinesis, Pub/Sub, managed Kafka |
+  | Cache, Concepts lesson 2.5 | Amazon ElastiCache, Memorystore |
+  | Object storage and CDN, Concepts lesson 2.6 | Amazon S3, CloudFront |
+  | Managed database and replicas | Amazon RDS, Aurora, DynamoDB, Spanner |
+  | Serverless workers | AWS Lambda, Cloud Run |
+  | Model serving, Concepts level 8 | Amazon Bedrock, Vertex AI, Azure OpenAI |
+
+  - **Cloud as an architecture decision.** Regions and zones decide how you design for failure. "Managed or self run" is a trade-off. Pay per use makes cost a design choice. Shared responsibility splits security between you and the provider.
+
+  ### Why companies move, and why some do not
+
+  Benefits. Speed, no up front hardware cost, scaling, global reach in minutes, managed services. Concerns. Bills that grow without control, lock in to one provider, data location laws, and new skills to learn.
+
+  !key The cloud does not remove work. It moves your work from racking servers to choosing services, designing for failure, securing identities and controlling cost.
+
+diagrams:
+  - type: layers
+    title: Who manages what in each model
+    attack: the full stack
+    layers:
+      - ["Your data and access rules", "Always yours, in every model", "stop"]
+      - ["Application", "Yours in IaaS and PaaS", "partial"]
+      - ["Operating system and runtime", "Yours only in IaaS", "partial"]
+      - ["Virtualization and servers", "The provider's", "partial"]
+      - ["Network, buildings, power", "The provider's", "partial"]
+    caption: Moving from IaaS to PaaS to SaaS hands more layers to the provider, but your data and who can access it stay your job.
+
+life:
+  - ["Amazon Web Services starts, 2006", "Amazon launched S3 storage and EC2 servers for rent in 2006. Developers could get a server with a credit card in minutes, which changed how startups were built."]
+  - ["Netflix moves to AWS", "After a major database corruption in its own data center in 2008 stopped DVD shipments for three days, Netflix moved its streaming service to AWS over about seven years and finished in 2016."]
+  - ["The forgotten test servers", "A team started large GPU servers for an experiment and forgot them over a long weekend. The bill was thousands of dollars. Budgets with alerts and auto stop schedules now prevent it."]
+
+tradeoffs:
+  - ["Cloud", "Fast, elastic, no up front cost, managed services.", "Costs can grow quietly, provider lock in, new skills."]
+  - ["Own data center", "Full control, predictable cost at steady high use.", "Slow to change, big up front spend, you run everything."]
+  - ["More managed services, PaaS and serverless", "Less to operate.", "Less control, more lock in."]
+  - ["More IaaS", "More control and portability.", "More work patching and running."]
+
+mistakes:
+  - Thinking the provider secures everything for you.
+  - Moving servers to the cloud unchanged and expecting lower cost.
+  - No budgets or alerts on the bill.
+  - Ignoring where data is stored when laws require a country.
+  - Picking a service without checking how it fails.
+
+security: |
+  In the cloud, **identity is the new perimeter**. Anyone with valid keys can reach your resources from anywhere, so stolen access keys are as bad as a stolen data center key. Turn on MFA for the root user and never use it day to day, use roles instead of long lived keys, and keep audit logs from day one. Lesson 2.1 covers this in depth.
+
+quiz:
+  - q: You rent virtual servers and install and patch the operating system yourself. Which model is this?
+    opts: ["IaaS", "PaaS", "SaaS"]
+    a: 0
+    why: In IaaS you manage the operating system and everything above it.
+  - type: sort
+    q: Which model is each service?
+    rows:
+      - ["Gmail", "SaaS"]
+      - ["Amazon RDS, a managed database", "PaaS"]
+      - ["Amazon EC2 virtual servers", "IaaS"]
+    opts: ["IaaS", "PaaS", "SaaS"]
+    why: The more the provider manages, the further right you move.
+  - type: fill
+    q: Growing and shrinking resources quickly to match demand is called ____.
+    a: ["elasticity", "elastic"]
+    why: Elasticity is one of the five NIST traits of cloud computing.
+  - q: A company moves its servers to the cloud exactly as they are and keeps them running all day. The bill is higher than before. Why is this common?
+    opts: ["Savings come from scaling down, managed services and right sizing, not from moving unchanged servers", "The cloud is always more expensive", "Cloud servers are slower"]
+    a: 0
+    why: Lift and shift alone often costs more. Optimize after you move.
+  - q: Which is always the customer's responsibility, in every model?
+    opts: ["Their data and who can access it", "The physical data center", "The hypervisor"]
+    a: 0
+    why: The provider never decides who should see your data.
+
+interview:
+  - q: Explain IaaS, PaaS and SaaS with an example of each and when you would choose them.
+    keys:
+      - ["IaaS rents servers, you manage OS and up, like EC2", [iaas, ec2, virtual machine, operating system, server]]
+      - ["PaaS manages platform, you bring code or data, like RDS or Beanstalk", [paas, rds, beanstalk, app engine, platform]]
+      - ["SaaS is a finished app, like Gmail", [saas, gmail, salesforce, finished, office]]
+      - ["Choice is control versus effort", [control, effort, manage, trade, lock in]]
+    a: |
+      IaaS rents raw building blocks, virtual servers, disks and networks, such as Amazon EC2. You patch the operating system and run everything above it, which gives the most control. PaaS hands the operating system and runtime to the provider, so you bring only code or data, such as Amazon RDS for databases or Elastic Beanstalk for web apps. SaaS is a complete application, such as Gmail, where you only manage your data and settings. I pick IaaS when I need special software or full control, PaaS when I want less operations work, and SaaS when a ready product fits the need. The trade-off is control and portability against effort and lock in.
+    fb: Linking each model to who patches what makes the answer concrete.
+  - q: Is the cloud mostly infrastructure or mostly architecture?
+    keys:
+      - ["It is rented infrastructure at the base", [infrastructure, rented, server, network, storage]]
+      - ["It offers managed building blocks for designs", [building block, managed, service, queue, database, cache]]
+      - ["It shapes architecture decisions like regions, cost and responsibility", [region, failure, cost, shared responsibility, decision]]
+    a: |
+      Both. At the base it is rented infrastructure, and provisioning, securing and operating it is infra work. On top, providers sell managed building blocks, load balancers, queues, caches, databases and serverless functions, which map directly to the boxes in a system design. And it changes architecture decisions, such as how to use regions and zones for failure, whether to use a managed service or run your own, how cost shapes the design, and how security is shared with the provider.
+    fb: The three part framing, infra, building blocks and decisions, is clear and memorable.
+
+desk:
+  title: Should the school move to the cloud?
+  lede: A school runs exam results on two old servers in a cupboard. Help them decide.
+  situation: |
+    Results day brings 50 times normal traffic for one day a year. Last year the site crashed. The servers are 7 years old. The school has one part time IT person.
+  rounds:
+    - title: Round 1. Pick the model
+      items:
+        - type: sort
+          q: Which model fits each need?
+          rows:
+            - ["Staff email", "SaaS"]
+            - ["The results database", "PaaS, a managed database"]
+            - ["An old custom app that needs a special OS setting", "IaaS"]
+          opts: ["SaaS", "PaaS, a managed database", "IaaS"]
+          why: With one part time IT person, use the most managed option that works.
+        - q: What is the biggest benefit of the cloud for results day?
+          opts: ["Scale up for one day and pay for it only that day", "Free servers forever", "No need for passwords"]
+          a: 0
+          why: Elasticity matches a once a year spike.
+    - title: Round 2. Risks and workarounds
+      items:
+        - q: What is the most important first security step?
+          opts: ["Turn on MFA for the main account and create named admin users with least privilege", "Share one password with all teachers", "Make the database public for easy access"]
+          a: 0
+          why: Identity protects everything else in the cloud.
+        - type: open
+          q: The school worries about a surprise bill. What do you suggest?
+          a: "Set a monthly budget with email alerts at 50, 80 and 100 percent. Use managed services that scale to zero or near zero outside results day. Tag every resource with an owner. Review the bill each month, and schedule test servers to stop at night."
+  card: |
+    - Rent, do not buy. Pay for what you use.
+    - IaaS, PaaS, SaaS. Control versus effort.
+    - Cloud is infra and building blocks and design decisions.
+    - Your data and access are always your job.
+
+refs:
+  - "NIST. [SP 800-145, The NIST definition of cloud computing](https://csrc.nist.gov/pubs/sp/800/145/final)."
+  - "AWS. [What is cloud computing](https://aws.amazon.com/what-is-cloud-computing/)."
+  - "Netflix. [Completing the Netflix cloud migration](https://about.netflix.com/en/news/completing-the-netflix-cloud-migration)."

@@ -1,0 +1,222 @@
+short: Thinking like an architect
+title: The Solutions Architect exam and how architects choose
+time: about 50 minutes
+tags: [SAA-C03, Well-Architected, decision patterns, keywords]
+lede: The AWS Certified Solutions Architect Associate exam tests whether you can pick the right design for a short business story. Learn its four domains, the keywords that point to an answer, the common traps, and a simple method that works both in the exam and in real design reviews.
+
+idea: |
+  The **AWS Certified Solutions Architect Associate** exam, code **SAA-C03**, has 65 multiple choice and multiple response questions in 130 minutes. 50 are scored and 15 are unscored trial questions you cannot tell apart. Scores run from 100 to 1,000, and 720 passes. Check the official exam guide for the current version and price before you book.
+
+  It has four domains.
+
+  | Domain | Weight |
+  | --- | --- |
+  | Design secure architectures | 30 percent |
+  | Design resilient architectures | 26 percent |
+  | Design high performing architectures | 24 percent |
+  | Design cost optimized architectures | 20 percent |
+
+  Most questions are a short story. A company has a need and a **constraint**, such as "least operational overhead", "most cost effective" or "without changing the application". Usually two answers work. The **constraint picks the winner**.
+
+  !eli5 It is like a riddle where every answer can reach the shop, but the riddle says "the cheapest way" or "the fastest way" or "without a car". Read the last line twice, because that is where the riddle hides the real question.
+
+scenes:
+  - title: Solving one exam question step by step
+    stats: [Step, Look at, Clue, Answers left]
+    nodes:
+      q: {label: The story, x: 0, y: 1, kind: box, tag: needs and limits}
+      key: {label: Keywords, x: 2, y: 0, kind: raised}
+      con: {label: Constraint, x: 2, y: 2, kind: atk, tag: least overhead}
+      elim: {label: Eliminate, x: 4, y: 1, kind: def}
+      ans: {label: Best answer, x: 6, y: 1, kind: def}
+    links: [[q, key], [q, con], [key, elim], [con, elim], [elim, ans]]
+    steps:
+      - title: Read the story
+        text: "A company stores uploaded images in S3. It must create a thumbnail for each new image, with the least operational overhead."
+        on: [q]
+        stats: [Read, the whole question, images and thumbnails, 4]
+      - title: Find the keywords
+        text: '"Each new image" points to an event. "Thumbnail" is short work.'
+        on: [q, key]
+        flow: [[q, key, ink]]
+        stats: [Keywords, event and short task, event driven, 4]
+      - title: Find the constraint
+        text: '"Least operational overhead" means managed and serverless beat servers you run.'
+        on: [q, con]
+        flow: [[q, con, pen]]
+        mark: {con: warn}
+        stats: [Constraint, least overhead, prefer serverless, 4]
+      - title: Remove wrong answers
+        text: An EC2 cron job that scans the bucket works but adds servers. A Kubernetes cluster is far too much. Both are removed.
+        on: [key, con, elim]
+        flow: [[key, elim, ink], [con, elim, ink]]
+        stats: [Eliminate, servers to manage, overhead, 2]
+      - title: Pick the best
+        text: S3 event notifications invoking a Lambda function beats a queue with EC2 workers, because nothing needs patching or scaling.
+        on: [elim, ans]
+        flow: [[elim, ans, def]]
+        mark: {ans: ok}
+        stats: [Choose, S3 event and Lambda, fully managed, 1]
+
+terms:
+  - [SAA-C03, "The current code of the AWS Solutions Architect Associate exam."]
+  - [Scaled score, "A score from 100 to 1,000. 720 passes the associate exam."]
+  - [Constraint, "The phrase in a question that decides between working answers."]
+  - [Operational overhead, "The work to run something, such as patching, scaling and backups."]
+  - [Distractor, "A wrong answer designed to look right."]
+  - [Well-Architected review, "A structured check of a workload against the six pillars."]
+
+how: |
+  ### Keywords that point to answers
+
+  | The question says | Think of |
+  | --- | --- |
+  | Least operational overhead | Managed or serverless, Lambda, Fargate, Aurora Serverless, DynamoDB |
+  | Most cost effective, interruptible, flexible | Spot, S3 lifecycle, Savings Plans for steady load |
+  | Decouple, absorb spikes | SQS, SNS, EventBridge |
+  | Highly available in one region | Multi AZ, Auto Scaling across AZs, ALB |
+  | Survive a region failure | Cross region replication, Aurora Global Database, Route 53 failover |
+  | Read heavy database | Read replicas, ElastiCache, DAX for DynamoDB |
+  | Millisecond key value at any scale | DynamoDB |
+  | Static content worldwide | S3 plus CloudFront |
+  | Private access to S3 from a VPC | Gateway endpoint |
+  | Temporary credentials, cross account | IAM roles, STS |
+  | Encryption with audit of key use | KMS customer managed key |
+  | Store secrets with rotation | Secrets Manager |
+  | Shared file system for Linux | EFS. For Windows, FSx for Windows File Server |
+  | Rarely accessed, cheapest, hours to restore is fine | S3 Glacier Deep Archive |
+  | Without changing the application | Lift and shift, managed equivalents, no code changes |
+
+  ### Common traps
+
+  - An answer that works but uses **more servers** when "least overhead" was asked.
+  - **Multi AZ** chosen for read scaling. It is for availability. Read replicas scale reads.
+  - **Security groups** to deny a specific IP. They only allow. Use a NACL or WAF.
+  - **Glacier** chosen when data is needed in milliseconds.
+  - Long term **access keys** in code instead of a role.
+  - **NAT gateway** for S3 traffic instead of a gateway endpoint.
+
+  ### A method that also works in real design reviews
+
+  1. Restate the need and the **one main constraint**.
+  2. List the **must haves**, such as security, availability target and data size.
+  3. Remove answers that break a must have.
+  4. From what is left, pick the one that best fits the constraint, usually the **most managed** that works.
+  5. In real life, also write down what you give up, the trade off.
+
+  ### Study plan
+
+  - Learn the core services in this track, levels 1 to 6.
+  - Do hands on labs, such as Skill Builder, Cloud Quest and workshops, listed on the track page.
+  - Take the official practice question set, then timed practice exams, and review every wrong answer until you know **why** it was wrong.
+
+  !key Find the constraint, remove what breaks the must haves, then choose the most managed option that fits. That wins most exam questions and most design reviews.
+
+diagrams:
+  - type: flow
+    title: The architect's choice
+    nodes: [["Need and constraint", "box"], ["Must haves", "raised", "security, availability, data"], ["Remove what breaks them", "atk"], ["Most managed that fits", "def"], ["Write the trade off", "raised"]]
+    edges: ["", "", "", ""]
+    caption: The same steps apply to an exam question and to a real architecture decision.
+
+life:
+  - ["Why the exam leans on security", "Design secure architectures is the largest domain, at 30 percent. This matches real life, where most cloud incidents come from identity and configuration mistakes."]
+  - ["From exam to review", "Many teams use the same Well-Architected questions from the exam in real design reviews. The AWS Well-Architected Tool in the console records the answers and risks for each workload."]
+  - ["Passing is a start", "Hiring managers often say the certificate gets an interview, and hands on stories get the job. Pair study with a real project, such as hosting a secure three tier app with infrastructure as code."]
+
+tradeoffs:
+  - ["Most managed option", "Less work and fewer mistakes.", "Less control, sometimes higher unit price."]
+  - ["Cheapest option", "Lower bill.", "Often more work or less resilience."]
+  - ["Most resilient option", "Survives more failures.", "Higher cost and complexity."]
+
+mistakes:
+  - Choosing an answer that works but ignores the constraint.
+  - Reading only the first half of a long question.
+  - Memorising answers instead of understanding why.
+  - Studying without any hands on practice.
+  - Not reading the official exam guide for the current version.
+
+security: |
+  Security questions often hide in other domains. When two answers both work, prefer the one with roles instead of keys, encryption on, private networking, least privilege and logging. Practise in your own Free Tier or sandbox account with budgets and MFA on, and delete resources after each lab.
+
+quiz:
+  - type: sort
+    q: Match the constraint to the best direction.
+    rows:
+      - ["Least operational overhead", "Managed or serverless services"]
+      - ["Workload can be interrupted, lowest cost", "Spot Instances"]
+      - ["Absorb sudden spikes between services", "SQS queue"]
+      - ["Private S3 access without internet", "Gateway endpoint"]
+    opts: ["Managed or serverless services", "Spot Instances", "SQS queue", "Gateway endpoint"]
+    why: The constraint decides.
+  - type: num
+    q: What scaled score passes the SAA-C03 exam?
+    a: 720
+    tol: 0
+    unit: points
+    why: Out of 1,000.
+  - q: Which domain has the largest weight?
+    opts: ["Design secure architectures", "Design cost optimized architectures", "Design high performing architectures"]
+    a: 0
+    why: 30 percent.
+  - type: fill
+    q: To scale reads on RDS you add read ____. Multi AZ is for availability.
+    a: ["replicas", "replica"]
+    why: A classic trap.
+  - q: Spot the problem. "Block one attacking IP with a security group deny rule."
+    opts: ["Security groups have no deny rules. Use a NACL or WAF.", "That works fine", "Security groups only work for S3"]
+    a: 0
+    why: Security groups only allow.
+
+interview:
+  - q: How do you choose between several AWS designs that all meet the requirement?
+    keys:
+      - ["Identify the main constraint and must haves", [constraint, must have, requirement, priority]]
+      - ["Remove options that fail security or availability needs", [remove, eliminat, fail, security]]
+      - ["Prefer managed services that fit, lower overhead", [managed, serverless, overhead, operat]]
+      - ["Compare cost and trade offs, Well-Architected pillars", [cost, trade off, pillar, well-architected]]
+      - ["Write the decision and what you give up", [document, adr, decision record, give up, write]]
+    a: |
+      I start by asking which constraint matters most, such as time to market, cost, latency or a compliance rule, and list the must haves like availability target, data residency and security controls. I remove options that break a must have. For the rest, I compare them across the Well-Architected pillars, especially operational overhead, cost at expected scale, and how they fail. I usually prefer the most managed service that fits, because it reduces work and mistakes, unless it blocks a need such as control or portability. I write the decision down with the trade offs, so we can revisit it when the situation changes.
+    fb: Saying you write the decision and its trade offs down is what separates an architect from a service picker.
+
+desk:
+  title: Exam style drill
+  lede: Answer four short stories the way the exam asks them.
+  situation: |
+    Each question has two answers that work. Use the constraint to choose.
+  rounds:
+    - title: Round 1. Pick the best
+      items:
+        - q: A web app on EC2 must keep user sessions when instances are replaced. The team wants the least change to the app.
+          opts: ["Store sessions in ElastiCache", "Use sticky sessions on the load balancer only", "Store sessions on the instance disk"]
+          a: 0
+          why: Shared session storage survives instance replacement. Sticky sessions lose data when an instance goes.
+        - q: Logs must be kept for 7 years and are almost never read. A retrieval time of 12 hours is acceptable. What is most cost effective?
+          opts: ["S3 Glacier Deep Archive with a lifecycle rule", "S3 Standard", "EBS snapshots"]
+          a: 0
+          why: Cheapest storage class, long retrieval is acceptable.
+        - q: A Lambda function needs a database password. The password must rotate automatically.
+          opts: ["AWS Secrets Manager with rotation", "An environment variable", "A file in S3"]
+          a: 0
+          why: Rotation is built in.
+    - title: Round 2. Explain
+      items:
+        - q: An order system must not lose orders when the payment service is slow. Least operational overhead.
+          opts: ["Put orders on an SQS queue processed by Lambda", "Add more EC2 servers to the order service", "Write orders to a local file"]
+          a: 0
+          why: A managed queue decouples and absorbs spikes.
+        - type: open
+          q: Explain in two sentences why "least operational overhead" usually points to serverless.
+          a: "Serverless and managed services remove work such as patching, scaling and capacity planning, because AWS does it. When several answers meet the need, the one with the fewest servers to run has the least operational overhead."
+  card: |
+    - 65 questions, 130 minutes, 720 of 1,000 to pass.
+    - Secure 30, Resilient 26, Performing 24, Cost 20.
+    - Read the last line. The constraint decides.
+    - Remove answers that break must haves.
+    - Prefer the most managed option that fits.
+
+refs:
+  - "AWS. [AWS Certified Solutions Architect Associate](https://aws.amazon.com/certification/certified-solutions-architect-associate/)."
+  - "AWS. [SAA-C03 exam guide](https://docs.aws.amazon.com/aws-certification/latest/solutions-architect-associate-03/solutions-architect-associate-03.html)."
+  - "AWS. [AWS Well-Architected Tool](https://docs.aws.amazon.com/wellarchitected/latest/userguide/intro.html)."

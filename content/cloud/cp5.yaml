@@ -1,0 +1,59 @@
+kind: practice
+title: Cloud level 5 practice, running it
+time: about 30 minutes
+lede: Mixed questions on containers, observability, disaster recovery, backups, migration and cost.
+
+rounds:
+  - title: Round 1. Pick and match
+    items:
+      - type: sort
+        q: Which tool answers each question?
+        rows:
+          - ["Which IAM user stopped the instance?", "CloudTrail"]
+          - ["Is the order API's p99 latency above 800 ms?", "CloudWatch"]
+          - ["Which teams spend the most on EC2?", "Cost Explorer with tags"]
+          - ["Is every bucket still blocking public access?", "AWS Config rule"]
+        opts: ["CloudTrail", "CloudWatch", "Cost Explorer with tags", "AWS Config rule"]
+        why: Each tool has its own question.
+      - type: sort
+        q: Which DR strategy fits?
+        rows:
+          - ["RTO 24 hours, smallest budget", "Backup and restore"]
+          - ["RTO 30 minutes, database already replicated, app started on failover", "Pilot light"]
+          - ["RTO near zero across two regions", "Multi site active active"]
+        opts: ["Backup and restore", "Pilot light", "Multi site active active"]
+        why: Match the strategy to the targets.
+  - title: Round 2. Spot it
+    items:
+      - q: Find the issue in this ECS task definition.
+        info: |
+          ```json
+          "containerDefinitions": [{"name": "api", "image": "myorg/api:latest",
+            "environment": [{"name": "STRIPE_KEY", "value": "sk_live_..."}]}]
+          ```
+        opts: ["A live secret in plain configuration, and a mutable latest tag", "JSON cannot hold containers", "Names must be uppercase"]
+        a: 0
+        why: Use Secrets Manager for secrets and pin image tags or digests.
+      - q: Identify the GRC issue. "Backups are in the same account and region, and no restore has ever been tested."
+        opts: ["Backups can be destroyed with production and may not even work", "Backups are fine anywhere", "Testing is optional for audits"]
+        a: 0
+        why: Isolate, lock and test backups.
+      - q: Find the cost issue. "Private subnets pull 2 TB a day from S3 through a NAT gateway."
+        opts: ["NAT data processing charges, use a free S3 gateway endpoint", "S3 is slow", "No issue"]
+        a: 0
+        why: Gateway endpoints avoid NAT charges for S3.
+  - title: Round 3. Benefits and workarounds
+    items:
+      - q: What is a benefit of Fargate for a small team?
+        opts: ["No servers to patch or scale", "Lowest possible price per CPU", "Supports every GPU"]
+        a: 0
+        why: Less operations work, at a higher unit price.
+      - type: open
+        q: The database must move to a new engine with almost no downtime. What tools and steps do you use?
+        a: "Use AWS Database Migration Service with an initial full load plus ongoing change data capture to keep the new database in sync. Test the app against the new database, then switch over in a short window by stopping writes, waiting for replication to catch up, and pointing the app to the new endpoint. Keep the old database for rollback for a while."
+card: |
+  - ECS or EKS, Fargate or EC2.
+  - CloudWatch, CloudTrail, Config, traces, Session Manager.
+  - RPO and RTO pick the DR strategy. Test restores.
+  - Backups in another account, locked.
+  - Inform, Optimize, Operate. Watch data transfer.

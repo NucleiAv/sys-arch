@@ -1,0 +1,216 @@
+short: Organizations and single sign on
+title: Many accounts, Organizations, SCPs and single sign on
+time: about 50 minutes
+tags: [Organizations, SCP, Control Tower, Identity Center, Cognito]
+lede: Real companies do not run everything in one AWS account. They use many accounts as walls between teams and environments, manage them together, and let people sign in once. Learn AWS Organizations, service control policies, Control Tower, IAM Identity Center, and where Cognito fits.
+
+idea: |
+  An **AWS account** is a hard boundary. Resources and permissions in one account are separate from another unless you connect them. So companies use **many accounts**, for example one per team and environment, such as payments-prod and payments-dev. A mistake or a breach in dev cannot touch prod.
+
+  **AWS Organizations** groups accounts under one **management account**. You arrange them in **organizational units**, OUs, such as Security, Prod and Dev, and you get one combined bill.
+
+  **Service control policies**, SCPs, set **guardrails** on whole OUs. An SCP can say "no account in Prod may use regions outside India" or "nobody may turn off CloudTrail". Even an account's admin cannot break these rules. SCPs never grant permissions. They only set the maximum.
+
+  **IAM Identity Center**, which used to be called AWS SSO, lets people sign in once, often with the company's existing login such as Microsoft Entra ID or Okta, and pick which account and **permission set** they need. Access is temporary and in one place, so when someone leaves, you remove them once.
+
+  **AWS Control Tower** sets all of this up for you as a **landing zone**, with log and audit accounts and ready made controls.
+
+  !eli5 A company is a block of flats. Each team gets its own flat with its own lock, so a fire in one does not spread. The building manager has rules that every flat must follow, like "no candles". And every resident has one key card that opens only their own flat and the shared gym.
+
+scenes:
+  - title: An SCP stops a risky action in a production account
+    stats: [Step, Account, Who, Result]
+    nodes:
+      idp: {label: Company login, x: 0, y: 1, kind: box, tag: Entra ID or Okta}
+      ic: {label: IAM Identity Center, x: 2, y: 1, kind: def}
+      org: {label: Organization, x: 4, y: 0, kind: def, tag: SCPs}
+      prod: {label: payments prod account, x: 6, y: 1, kind: raised}
+      log: {label: Log archive account, x: 4, y: 3, kind: raised, tag: CloudTrail copy}
+    links: [[idp, ic], [ic, prod], [org, prod], [prod, log]]
+    steps:
+      - title: Sign in once
+        text: Asha signs in with her company login and MFA. Identity Center shows the accounts and permission sets she is allowed to use.
+        on: [idp, ic]
+        flow: [[idp, ic, ink]]
+        stats: [Sign in, "-", Asha, temporary access]
+      - title: Enter production with an admin set
+        text: She picks payments-prod with the PaymentsAdmin permission set. She gets temporary credentials for that account only.
+        on: [ic, prod]
+        flow: [[ic, prod, def]]
+        stats: [Access, payments-prod, PaymentsAdmin, 1 hour session]
+      - title: Try to stop CloudTrail
+        text: To cut noise during debugging, she tries to stop the CloudTrail trail. Her permission set would allow it.
+        on: [prod, org]
+        flow: [[org, prod, atk]]
+        stats: [Request, payments-prod, PaymentsAdmin, checking]
+      - title: The SCP says no
+        text: An SCP on the Prod OU denies cloudtrail:StopLogging for everyone. Even admins in the account are blocked.
+        on: [org, prod]
+        mark: {org: ok}
+        stats: [SCP, payments-prod, PaymentsAdmin, denied]
+      - title: Logs are safe elsewhere
+        text: The organization trail also writes to a separate log archive account that production admins cannot change. The attempt is recorded there.
+        on: [prod, log]
+        flow: [[prod, log, def]]
+        mark: {log: ok}
+        stats: [Audit, log archive, security team, recorded]
+
+terms:
+  - [AWS Organizations, "A service to manage many AWS accounts together, with one bill and shared policies."]
+  - [Management account, "The account that owns the organization. Keep it for billing and organization tasks only."]
+  - [Organizational unit, "A folder of accounts, such as Prod or Dev, used to apply policies."]
+  - [SCP, "Service control policy. Sets the maximum permissions for accounts in an OU. It never grants."]
+  - [Landing zone, "A secure, multi account setup ready for teams to use."]
+  - [AWS Control Tower, "A service that builds and manages a landing zone with ready made controls."]
+  - [IAM Identity Center, "Single sign on for AWS accounts and apps, formerly called AWS SSO."]
+  - [Permission set, "A set of permissions in Identity Center that becomes a role in each assigned account."]
+  - [Amazon Cognito, "Sign in and user management for your own app's customers, not for your staff."]
+
+how: |
+  ### A common account layout
+
+  | OU | Accounts | Purpose |
+  | --- | --- | --- |
+  | Security | Log archive, Audit or security tooling | Central logs and security services, few people can access |
+  | Infrastructure | Network, shared services | Transit Gateway, DNS, CI runners |
+  | Workloads, Prod | payments-prod, web-prod | Live systems, strictest guardrails |
+  | Workloads, Dev | payments-dev, web-dev | Experiments, looser rules, budgets |
+  | Sandbox | One per engineer | Learning, auto clean up |
+
+  ### Useful SCP guardrails
+
+  ```json
+  {
+    "Effect": "Deny",
+    "Action": "*",
+    "Resource": "*",
+    "Condition": {"StringNotEquals": {"aws:RequestedRegion": ["ap-south-1", "ap-south-2"]}}
+  }
+  ```
+
+  Real region SCPs must exempt global services such as IAM, so use AWS's published examples as a start. Other common guardrails. Deny leaving the organization. Deny stopping CloudTrail or GuardDuty. Deny root user actions in member accounts. Deny creating IAM users with access keys.
+
+  ### Staff sign in versus customer sign in
+
+  | Need | Service |
+  | --- | --- |
+  | Engineers signing in to AWS accounts | IAM Identity Center, connected to your company login |
+  | Your app's customers signing in to your app | Amazon Cognito user pools, or another customer identity service |
+  | Your app's customers getting temporary AWS access, such as uploading to S3 | Cognito identity pools |
+
+  ### Control Tower
+
+  Control Tower creates the organization, a log archive account, an audit account, Identity Center, and a set of **controls**, preventive ones as SCPs and detective ones as AWS Config rules. New accounts come from an **account factory** with the baseline already applied.
+
+  !key Use accounts as walls, SCPs as rules nobody can break, and one sign in that you can revoke in one place.
+
+diagrams:
+  - type: layers
+    title: Layers that limit what anyone can do
+    attack: a request by an account admin
+    layers:
+      - ["SCP on the OU", "The ceiling for the whole account", "stop"]
+      - ["Permissions boundary", "The ceiling for one identity", "partial"]
+      - ["Permission set or role policy", "What the person is granted", "partial"]
+      - ["Resource policy", "What the resource allows", "partial"]
+    caption: An action must pass every layer. The SCP is the one that even account admins cannot change.
+
+life:
+  - ["Account per team at scale", "Large AWS customers often run hundreds or thousands of accounts. Separate accounts limit blast radius and make the bill easy to split, and Organizations plus Control Tower keeps the rules the same everywhere."]
+  - ["The leaver who still had keys", "A company found that a former contractor's IAM user still had working keys months after leaving. Moving staff to Identity Center connected to the company directory meant that disabling one account removed all AWS access."]
+  - ["Crypto miners in an unused region", "An attacker with stolen keys started servers in a region the company never used. An SCP that denies unused regions would have blocked it outright."]
+
+tradeoffs:
+  - ["Many accounts", "Strong isolation and clear cost per team.", "More to manage, needs automation."]
+  - ["One big account", "Simple at the start.", "Huge blast radius and messy permissions."]
+  - ["Strict SCPs", "Strong guardrails.", "Can block legitimate work if not tested."]
+  - ["Control Tower", "Fast, opinionated, well tested setup.", "Less flexible than building your own."]
+
+mistakes:
+  - Running workloads in the management account.
+  - Giving people IAM users in every account instead of single sign on.
+  - SCPs written without testing, which break deployments.
+  - Thinking an SCP grants permissions.
+  - Using Cognito for staff or Identity Center for customers.
+
+security: |
+  The management account is the most powerful account you own. Keep it nearly empty, lock its root user, restrict who can sign in, and alert on any use. Send organization CloudTrail logs to a separate log archive account with Object Lock, and deny members from changing security services with SCPs.
+
+quiz:
+  - q: An SCP on the Prod OU denies ec2:TerminateInstances. An admin in a prod account has AdministratorAccess. Can they terminate an instance?
+    opts: ["No, the SCP sets the maximum and denies it", "Yes, admins can do anything", "Only on weekends"]
+    a: 0
+    why: SCPs limit everyone in the account, including admins.
+  - type: fill
+    q: Single sign on to many AWS accounts is provided by IAM Identity ____.
+    a: ["center"]
+    why: It used to be called AWS SSO.
+  - type: sort
+    q: Which service fits each need?
+    rows:
+      - ["Engineers sign in to 40 AWS accounts", "IAM Identity Center"]
+      - ["Customers sign up for your mobile app", "Amazon Cognito"]
+      - ["Block every account from using unused regions", "Service control policy"]
+    opts: ["IAM Identity Center", "Amazon Cognito", "Service control policy"]
+    why: Staff, customers and guardrails need different tools.
+  - q: Identify the problem. "We run our production database in the management account to keep things simple."
+    opts: ["The management account should hold almost nothing, a breach there affects the whole organization", "Databases cannot run there", "Nothing"]
+    a: 0
+    why: Keep workloads in member accounts.
+  - q: Does an SCP that allows s3:* give users S3 access?
+    opts: ["No, SCPs never grant. Users still need an IAM policy that allows it", "Yes", "Only for the root user"]
+    a: 0
+    why: SCPs only limit the maximum.
+
+interview:
+  - q: How would you set up AWS accounts for a company with many teams?
+    keys:
+      - ["AWS Organizations with OUs and many accounts per team and environment", [organizations, ou, many accounts, per team, environment]]
+      - ["SCP guardrails", [scp, guardrail, deny, region]]
+      - ["Central log archive and security accounts", [log archive, security account, audit account, central]]
+      - ["IAM Identity Center with the company directory", [identity center, sso, directory, entra, okta]]
+      - ["Control Tower or account factory automation", [control tower, account factory, landing zone, automat]]
+    a: |
+      I would use AWS Organizations with a nearly empty management account and OUs for security, infrastructure, prod, dev and sandbox. Each team gets separate accounts per environment, created through Control Tower's account factory so they start with the same baseline. SCPs enforce guardrails, such as allowed regions, no disabling of CloudTrail or GuardDuty, and no leaving the organization. An organization trail sends logs to a log archive account that few people can touch, and security tools are delegated to a security account. People sign in through IAM Identity Center connected to the company directory, with permission sets per role, so access is temporary and removed in one place.
+    fb: The nearly empty management account and central logs are the details that show maturity.
+
+desk:
+  title: Ten teams, one account
+  lede: A company runs all ten teams in one AWS account. A developer accidentally deleted another team's database.
+  situation: |
+    Everyone has an IAM user with broad rights. Dev and prod resources sit side by side. There is one bill nobody can split.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What problem does each fact cause?
+          rows:
+            - ["All teams in one account", "Huge blast radius"]
+            - ["Dev next to prod", "Test mistakes hit live systems"]
+            - ["IAM users with broad rights", "Too much access and hard to remove"]
+          opts: ["Huge blast radius", "Test mistakes hit live systems", "Too much access and hard to remove"]
+          why: Accounts, environments and identity each need fixing.
+        - q: What is the biggest structural fix?
+          opts: ["Separate accounts per team and environment under AWS Organizations", "Add more IAM users", "Use bigger databases"]
+          a: 0
+          why: Accounts are the strongest boundary in AWS.
+    - title: Round 2. Plan and work around
+      items:
+        - type: open
+          q: Moving to many accounts takes months. What can you do this week?
+          a: "Tag every resource with team and environment. Use IAM policies with tag conditions so each team can only change its own resources. Turn on deletion protection for databases and require MFA for destructive actions. Start Organizations and create the log archive and security accounts first, then move the most critical prod workloads."
+        - q: What is a benefit of a separate log archive account?
+          opts: ["Admins in workload accounts cannot delete or change the audit logs", "Logs become free", "Logs load faster"]
+          a: 0
+          why: Separation of duties protects evidence.
+  card: |
+    - Accounts are walls. Many accounts, one organization.
+    - OUs and SCPs. SCPs only limit.
+    - Management account nearly empty.
+    - Identity Center for staff, Cognito for customers.
+    - Control Tower for a ready landing zone.
+
+refs:
+  - "AWS. [AWS Organizations](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_introduction.html) and [SCPs](https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html)."
+  - "AWS. [Organizing your AWS environment using multiple accounts](https://docs.aws.amazon.com/whitepapers/latest/organizing-your-aws-environment/organizing-your-aws-environment.html)."
+  - "AWS. [IAM Identity Center](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html)."

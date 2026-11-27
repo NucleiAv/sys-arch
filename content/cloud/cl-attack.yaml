@@ -1,0 +1,230 @@
+short: Cloud attacks and response
+title: How cloud accounts get attacked, and how to respond
+time: about 60 minutes
+tags: [attack paths, SSRF, IMDSv2, privilege escalation, incident response]
+lede: Attackers in the cloud rarely break encryption. They steal keys, abuse trust, and use your own APIs against you. Walk through the common attack paths with real breaches, learn how to block each step, and practise the incident response playbook for a compromised AWS account.
+
+idea: |
+  In the cloud, **the API is the attack surface**. Anyone with valid credentials can do anything those credentials allow, from anywhere on the internet. So most cloud attacks are about **getting credentials** and then **using permissions**.
+
+  A typical attack path has these steps.
+
+  1. **Initial access.** Leaked access keys in code, a server side request forgery bug that reads the instance metadata service, a phished SSO login, or a vulnerable public app.
+  2. **Discovery.** Calls like `sts:GetCallerIdentity` and listing buckets, roles and instances to see what the credentials can do.
+  3. **Privilege escalation.** Using a risky permission, such as creating a new policy version or passing an admin role to a new Lambda function, to become more powerful.
+  4. **Persistence.** Creating new access keys, new users, or roles that trust the attacker's own account.
+  5. **Defense evasion.** Stopping CloudTrail, deleting GuardDuty detectors, or working in unused regions.
+  6. **Impact.** Copying data out, mining crypto, or deleting resources and backups for ransom.
+
+  Defenders break this chain at every step. No long term keys, IMDSv2, least privilege, SCPs that protect logging, detection, and isolated backups.
+
+  !eli5 A thief does not need to break the bank vault if they can find a staff badge on the floor. In the cloud the badge is an access key. Once inside, the thief tries every door the badge opens, looks for a master key, hides from the cameras, and takes what they can. Good banks give each badge only a few doors, make badges expire fast, and keep cameras the thief cannot switch off.
+
+scenes:
+  - title: SSRF to the metadata service, the Capital One pattern
+    stats: [Step, Attack step, What stops it, Data at risk]
+    nodes:
+      atk: {label: Attacker, x: 0, y: 1, kind: atk}
+      waf: {label: Misconfigured proxy, x: 2, y: 1, kind: raised, tag: on EC2}
+      imds: {label: Metadata service, x: 4, y: 0, kind: box, tag: 169.254.169.254}
+      role: {label: Instance role, x: 4, y: 2, kind: raised, tag: too broad}
+      s3: {label: S3 buckets, x: 6, y: 1, kind: box, tag: customer data}
+    links: [[atk, waf], [waf, imds], [imds, role], [role, s3]]
+    steps:
+      - title: A request the server should not make
+        text: The attacker sends a request that tricks a misconfigured proxy on EC2 into fetching an internal address. This is server side request forgery, SSRF.
+        on: [atk, waf]
+        flow: [[atk, waf, atk]]
+        mark: {waf: warn}
+        stats: [Initial access, SSRF, fix the app and WAF rules, none yet]
+      - title: Reading the metadata service
+        text: With IMDSv1, a simple GET to the metadata address returns the instance role's temporary credentials. The proxy passes them back to the attacker.
+        on: [waf, imds]
+        flow: [[waf, imds, atk], [imds, waf, atk]]
+        mark: {imds: bad}
+        stats: [Credential theft, IMDSv1 allows GET, IMDSv2 needs a session token, none yet]
+      - title: The role can read too much
+        text: The role was allowed to list and read many buckets, far more than the proxy needed.
+        on: [role]
+        flow: [[imds, role, atk]]
+        mark: {role: bad}
+        stats: [Discovery, broad role, least privilege, many buckets]
+      - title: Data leaves
+        text: From outside AWS, the attacker uses the stolen credentials to copy data. In the 2019 Capital One case this exposed data on about 100 million people in the US and 6 million in Canada.
+        on: [role, s3]
+        flow: [[role, s3, atk]]
+        mark: {s3: bad}
+        stats: [Exfiltration, valid credentials, data perimeter and GuardDuty, about 106 million people]
+      - title: The fixed version
+        text: IMDSv2 is required, so the SSRF cannot get a token. The role can read one bucket only. A policy condition allows use of the credentials only from the company's network. GuardDuty alerts when instance credentials are used outside AWS.
+        on: [imds, role, s3]
+        mark: {imds: ok, role: ok, s3: ok, atk: bad}
+        stats: [Defense in depth, four controls, each step blocked, none]
+
+terms:
+  - [Attack path, "The chain of steps an attacker takes from first access to their goal."]
+  - [SSRF, "Server side request forgery. Tricking a server into making a request for the attacker."]
+  - [Instance metadata service, "An internal address on EC2 that gives the instance its settings and role credentials."]
+  - [IMDSv2, "Version 2 of the metadata service, which needs a session token from a PUT request first."]
+  - [Privilege escalation, "Using one permission to gain more permissions."]
+  - [Persistence, "Ways an attacker keeps access, such as new keys or trusted roles."]
+  - [Data perimeter, "Policies that allow access only from your identities, your resources and your networks."]
+  - [Containment, "Stopping an attack from spreading while you investigate."]
+  - [Forensics, "Collecting and studying evidence, such as disk snapshots and logs."]
+
+how: |
+  ### Common initial access, and the fix
+
+  | How attackers get in | Fix |
+  | --- | --- |
+  | Access keys in code, images or laptops | No long term keys. Roles, Identity Center, OIDC for CI. Secret scanning. |
+  | SSRF to the metadata service | Require IMDSv2, set hop limit 1 for containers, fix the app |
+  | Phished console or SSO login | Phishing resistant MFA, short sessions |
+  | Vulnerable public app or instance | Patching, Inspector, WAF, no public instances where not needed |
+  | Public buckets or snapshots | Block Public Access, Config rules, Macie |
+  | Third party with too much access | External ID, narrow roles, review trust policies |
+
+  ### Risky permissions that allow privilege escalation
+
+  - `iam:CreatePolicyVersion`, `iam:AttachUserPolicy`, `iam:PutRolePolicy`. Change your own permissions.
+  - `iam:PassRole` with `lambda:CreateFunction` or `ec2:RunInstances`. Run code as a more powerful role.
+  - `iam:CreateAccessKey` on other users. Become them.
+  - `sts:AssumeRole` on a role with a weak trust policy.
+
+  Use **permissions boundaries**, limit `iam:PassRole` to specific roles, and check with Access Analyzer and tools like Prowler.
+
+  ### Incident response for a compromised account
+
+  1. **Prepare.** Logs in a separate account, break glass access, a written playbook, contacts, and practice.
+  2. **Detect and analyse.** GuardDuty, alerts, CloudTrail. Which identity, from where, what did it call?
+  3. **Contain.** Deactivate the keys, revoke active role sessions, isolate instances with an empty security group, block the attacker's IPs. Do not delete evidence.
+  4. **Collect evidence.** Snapshot EBS volumes, save memory if needed, copy logs.
+  5. **Eradicate.** Remove new users, keys, roles, trust policies and resources the attacker created, in every region.
+  6. **Recover.** Rebuild from known good templates and clean backups. Rotate secrets.
+  7. **Learn.** Post incident review and new guardrails.
+
+  !key Assume keys will leak. Make them short lived, narrow and usable only from places you expect, and make sure you will see and stop their misuse quickly.
+
+diagrams:
+  - type: layers
+    title: Attack chain and the control that breaks each step
+    attack: a stolen credential
+    layers:
+      - ["Steal credentials", "No long term keys, IMDSv2, phishing resistant MFA", "stop"]
+      - ["Discover and escalate", "Least privilege, permissions boundaries, PassRole limits", "stop"]
+      - ["Hide and persist", "SCPs protect logging, alerts on new keys and users", "partial"]
+      - ["Steal or destroy data", "Data perimeter, isolated and locked backups", "stop"]
+      - ["Detect and respond", "GuardDuty, alerts, a practised playbook", "partial"]
+    caption: One control per step is good. Several per step is defense in depth.
+
+life:
+  - ["Capital One, 2019", "An attacker used SSRF through a misconfigured web application firewall on EC2 to get role credentials from the metadata service, then read S3 data on about 106 million people. US regulators fined the bank 80 million dollars. AWS released IMDSv2 later that year."]
+  - ["Code Spaces, 2014", "An attacker got into the company's AWS control panel and demanded a ransom. When staff tried to take back control, the attacker deleted servers, data and backups, which were in the same account. The company shut down within days."]
+  - ["Uber, 2016", "Attackers found AWS credentials in a private code repository used by Uber engineers and used them to download data on 57 million riders and drivers from S3."]
+
+tradeoffs:
+  - ["Strict data perimeter policies", "Stolen credentials are useless outside your network.", "Complex to set up, can block legitimate use."]
+  - ["Automatic containment", "Very fast response.", "False positives can disrupt production."]
+  - ["Deleting attacker resources fast", "Stops damage.", "May destroy evidence, snapshot first."]
+
+mistakes:
+  - Long term access keys for apps and CI.
+  - IMDSv1 still allowed.
+  - Roles with s3:* on all buckets "for convenience".
+  - Backups in the same account as production.
+  - Cleaning up in one region and missing the others.
+  - No practice before the real incident.
+
+security: |
+  Practise attacks only on systems you own or have written permission to test, or on purpose built labs such as flAWS, CloudGoat and CloudFoxable listed on the track page. AWS allows customers to test their own resources for many services without asking first, but some activities, such as DoS tests, have their own rules, so read the AWS penetration testing policy before you start.
+
+quiz:
+  - type: sort
+    q: Which attack step is each action?
+    rows:
+      - ["Finding an access key in a public repository", "Initial access"]
+      - ["Calling iam:CreatePolicyVersion to grant admin rights", "Privilege escalation"]
+      - ["Creating a new access key for another user", "Persistence"]
+      - ["Calling cloudtrail:StopLogging", "Defense evasion"]
+    opts: ["Initial access", "Privilege escalation", "Persistence", "Defense evasion"]
+    why: Each step needs a different control.
+  - q: Why does IMDSv2 stop many SSRF attacks?
+    opts: ["It needs a session token from a PUT request first, which simple SSRF usually cannot send", "It encrypts the disk", "It turns off roles"]
+    a: 0
+    why: Most SSRF bugs allow only simple GET requests.
+  - type: fill
+    q: Tricking a server into making a request on the attacker's behalf is called server side request ____.
+    a: ["forgery"]
+    why: SSRF.
+  - q: Spot the problem. "During the incident we deleted the attacker's instances immediately."
+    opts: ["Evidence was destroyed, snapshot and isolate first", "Deleting is always correct", "Instances cannot be deleted"]
+    a: 0
+    why: Contain and collect evidence before eradicating.
+  - q: What should you do first when an access key is confirmed stolen?
+    opts: ["Deactivate the key and check CloudTrail for what it did", "Email the attacker", "Delete the whole account"]
+    a: 0
+    why: Contain, then investigate.
+
+interview:
+  - q: Walk me through how you would respond to a GuardDuty alert that an EC2 instance's credentials are being used from outside AWS.
+    keys:
+      - ["Confirm with CloudTrail, which calls, from where", [cloudtrail, confirm, which calls, source ip]]
+      - ["Contain, revoke role sessions, isolate instance", [revoke, session, isolat, security group, contain]]
+      - ["Collect evidence, snapshot volumes, keep logs", [snapshot, evidence, forensic, memory]]
+      - ["Find root cause, often SSRF or IMDSv1", [ssrf, imdsv1, imdsv2, root cause, metadata]]
+      - ["Eradicate, rebuild, add guardrails", [eradicat, rebuild, remove, guardrail, least privilege]]
+    a: |
+      I confirm the finding in CloudTrail by filtering on the role session, to see which APIs were called, from which IP, and what data was touched. To contain, I revoke the role's active sessions, which adds a deny for tokens issued before now, and move the instance to an isolation security group with no traffic, without terminating it. I snapshot its EBS volumes and save logs for forensics. Then I look for the root cause, often SSRF through an app with IMDSv1 allowed, or malware on the box. I check every region for anything the attacker created, such as users, keys or roles, and remove them. I rebuild the instance from a clean image with IMDSv2 required and a narrower role, and add a data perimeter condition so its credentials only work from our network. Finally a post incident review.
+    fb: Revoking sessions and isolating, not terminating, is the detail that shows real incident experience.
+  - q: An engineer says "our role only has iam:PassRole and lambda:CreateFunction, it is safe". Is it?
+    keys:
+      - ["No, can pass a more powerful role to a new function", [pass, more powerful, admin role, new function]]
+      - ["Function runs as that role, privilege escalation", [escalat, runs as, execute]]
+      - ["Limit PassRole to specific role ARNs, permissions boundaries", [specific role, resource, arn, boundar, condition]]
+    a: |
+      Not necessarily. With those two permissions the user can create a Lambda function and pass it any role they are allowed to pass, including an admin role. The function then runs with that role's permissions, so the user can do anything the role can. This is a well known privilege escalation path. The fix is to restrict iam:PassRole to specific role ARNs, use the iam:PassedToService condition, and apply a permissions boundary so roles they create or pass cannot exceed a set limit.
+    fb: Naming the restriction on PassRole by resource ARN is the expected fix.
+
+desk:
+  title: Saturday night, strange instances
+  lede: A budget alert fires. Forty large GPU instances are running in a region your company never uses.
+  situation: |
+    The instances were launched by an IAM user called ci-deploy, whose access key was created two years ago. CloudTrail shows the same key also called ListBuckets and CreateUser in the last hour.
+  rounds:
+    - title: Round 1. Contain
+      items:
+        - type: sort
+          q: Put the first response steps in order.
+          rows:
+            - ["Deactivate the ci-deploy access key", "Step 1"]
+            - ["Check CloudTrail in all regions for everything the key and new user did", "Step 2"]
+            - ["Disable the new user and its keys", "Step 3"]
+            - ["Snapshot and stop the GPU instances", "Step 4"]
+          opts: ["Step 1", "Step 2", "Step 3", "Step 4"]
+          why: Cut off access, understand, remove persistence, then deal with resources.
+        - q: Why does the CreateUser call matter?
+          opts: ["The attacker may have created a new identity to keep access after the key is disabled", "It is a normal CI step", "It costs money"]
+          a: 0
+          why: Persistence.
+    - title: Round 2. Fix the cause
+      items:
+        - type: open
+          q: What changes stop this happening again?
+          a: "Replace the long term ci-deploy key with OIDC federation from the CI system to a narrow role. Run secret scanning on all repositories. Deny unused regions with an SCP. Limit expensive instance types. Protect CloudTrail and GuardDuty with SCPs, and add alerts for CreateUser and CreateAccessKey. Keep budgets and anomaly detection on."
+        - q: What is a benefit of an SCP that denies unused regions?
+          opts: ["Stolen credentials cannot launch resources in regions you do not watch", "It makes the bill smaller every month", "It turns on MFA"]
+          a: 0
+          why: Smaller blast radius and fewer blind spots.
+  card: |
+    - The API is the attack surface. Credentials are the prize.
+    - Access, discovery, escalation, persistence, evasion, impact.
+    - No long term keys, IMDSv2, least privilege, limit PassRole.
+    - Contain, collect evidence, eradicate in every region, recover, learn.
+    - Practise only on labs or systems you own and may test.
+
+refs:
+  - "AWS. [Use IMDSv2](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html)."
+  - "AWS. [Security incident response guide](https://docs.aws.amazon.com/security-ir/latest/userguide/security-incident-response-guide.html)."
+  - "AWS. [Penetration testing policy](https://aws.amazon.com/security/penetration-testing/)."
+  - "US Department of Justice. [Capital One hacking case](https://www.justice.gov/usao-wdwa/pr/former-seattle-tech-worker-convicted-wire-fraud-and-computer-intrusions)."
+  - "Rhino Security Labs. [AWS IAM privilege escalation methods](https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/)."

@@ -1,0 +1,68 @@
+kind: practice
+title: Cloud level 4 practice, compute, storage and data
+time: about 35 minutes
+lede: Mixed questions on EC2 and scaling, storage classes, managed databases and serverless integration.
+
+rounds:
+  - title: Round 1. Pick the service
+    items:
+      - type: sort
+        q: Which fits best?
+        rows:
+          - ["A shared folder for 30 Windows servers with Active Directory", "FSx for Windows File Server"]
+          - ["Archived records read once a year", "S3 Glacier Deep Archive"]
+          - ["Session store with microsecond reads", "ElastiCache"]
+          - ["Stateless API with very spiky traffic and short requests", "Lambda behind API Gateway"]
+        opts: ["FSx for Windows File Server", "S3 Glacier Deep Archive", "ElastiCache", "Lambda behind API Gateway"]
+        why: Match the access pattern to the service.
+      - type: sort
+        q: Availability or read scaling?
+        rows:
+          - ["RDS multi AZ", "Availability"]
+          - ["RDS read replica", "Read scaling"]
+          - ["Aurora Replica promoted on failure", "Availability"]
+        opts: ["Availability", "Read scaling"]
+        why: Do not confuse the two.
+      - type: num
+        q: An Auto Scaling group needs to survive the loss of one of 3 AZs and still have 6 instances. What is the minimum group size, spread evenly?
+        a: 9
+        tol: 0
+        why: 3 per AZ across 3 AZs. If one AZ fails, 6 remain.
+  - title: Round 2. Spot the bug
+    items:
+      - q: Find the issue.
+        info: |
+          ```yaml
+          # SQS queue for a job that takes 4 minutes
+          VisibilityTimeout: 30
+          RedrivePolicy: none
+          ```
+        opts: ["Messages reappear before the job ends, and there is no dead letter queue", "30 is in hours", "SQS has no visibility timeout"]
+        a: 0
+        why: Set the timeout above 4 minutes and add a DLQ.
+      - q: Find the issue. "Our web servers write uploads to /data on the instance store."
+        opts: ["Instance store is lost when the instance stops or fails", "Instance store is too slow", "No issue"]
+        a: 0
+        why: Store uploads in S3.
+      - q: Find the security issue. "A DynamoDB backup snapshot was shared publicly so a contractor could download it."
+        opts: ["Public snapshots expose all data to anyone", "Backups cannot be shared", "Contractors cannot use DynamoDB"]
+        a: 0
+        why: Share with a specific account and an encryption key it may use, never publicly.
+  - title: Round 3. Benefits, cost and workarounds
+    items:
+      - q: What is the main benefit of Spot for CI build agents?
+        opts: ["Large discounts, and a stopped build can simply restart", "Builds become faster", "No IAM needed"]
+        a: 0
+        why: Interruptible work fits Spot.
+      - q: Identify the GRC issue. "We keep audit logs in S3 Standard with no retention rule and no Object Lock."
+        opts: ["Logs can be deleted or altered, and costs grow forever, add Object Lock and lifecycle rules", "Audit logs need no protection", "S3 cannot hold logs"]
+        a: 0
+        why: Evidence must be protected and kept for the right time.
+      - type: open
+        q: A report query runs for 25 minutes in a Lambda and fails at 15 minutes. Give a quick workaround and a proper fix.
+        a: "Workaround, split the report into smaller date ranges and run them in parallel Lambdas, then merge. Proper fix, run the report as an ECS task on Fargate or an AWS Batch job, or orchestrate the chunks with Step Functions, and move the heavy query to a read replica or the data warehouse."
+card: |
+  - EC2 pricing mix. Auto Scaling across AZs.
+  - Block, file, object. S3 classes and lifecycle.
+  - Multi AZ for uptime, replicas for reads, PITR for mistakes.
+  - Lambda limits. SQS, SNS, EventBridge, Step Functions, Kinesis.

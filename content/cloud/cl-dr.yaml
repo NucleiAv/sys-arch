@@ -1,0 +1,222 @@
+short: Backup, DR and migration
+title: Backup, disaster recovery strategies and moving to the cloud
+time: about 55 minutes
+tags: [RTO, RPO, pilot light, warm standby, AWS Backup, migration]
+lede: Every system will fail one day. The question is how much data you may lose and how long you may be down. Learn RPO and RTO, the four AWS disaster recovery strategies from cheap to instant, how AWS Backup protects data, and the seven ways to migrate apps to the cloud.
+
+idea: |
+  Two numbers drive every disaster recovery plan, as in Concepts lesson 5.1.
+
+  - **RPO**, recovery point objective. How much **data** you can afford to lose, measured in time. RPO of 5 minutes means you may lose up to the last 5 minutes of writes.
+  - **RTO**, recovery time objective. How long you can afford to be **down**.
+
+  AWS describes four disaster recovery strategies, from cheapest and slowest to most expensive and fastest.
+
+  1. **Backup and restore.** Keep backups in another region. Rebuild everything when disaster strikes. Hours of RTO.
+  2. **Pilot light.** Keep the core, usually the database replica, running in the second region. Start the rest when needed. Tens of minutes.
+  3. **Warm standby.** A smaller but fully working copy runs all the time in the second region. Scale it up on failover. Minutes.
+  4. **Multi site active active.** Full capacity in two or more regions serving traffic all the time. Near zero RTO.
+
+  Faster recovery costs more. Pick by business impact, not by fear.
+
+  !eli5 Backup and restore is keeping spare house keys at a friend's place across town. Pilot light is a small heater kept on in a second house. Warm standby is a second house with the lights on and some food in the fridge. Active active is living in two houses at once.
+
+scenes:
+  - title: Warm standby fails over to a second region
+    stats: [Step, Primary, Standby, Users]
+    nodes:
+      r53: {label: Route 53, x: 0, y: 1, kind: def, tag: failover records}
+      p: {label: Mumbai, x: 3, y: 0, kind: raised, tag: full size}
+      s: {label: Hyderabad, x: 3, y: 2, kind: raised, tag: small copy}
+      pdb: {label: Aurora primary, x: 6, y: 0, kind: def}
+      sdb: {label: Aurora global replica, x: 6, y: 2, kind: def}
+    links: [[r53, p], [r53, s], [p, pdb], [s, sdb], [pdb, sdb]]
+    steps:
+      - title: Normal day
+        text: All users go to Mumbai. Aurora Global Database copies data to Hyderabad, usually with under a second of lag. A small app fleet runs in Hyderabad.
+        on: [r53, p, pdb, sdb]
+        flow: [[r53, p, ink], [p, pdb, ink], [pdb, sdb, def]]
+        stats: [Normal, serving, warm and small, Mumbai]
+      - title: Regional outage
+        text: Mumbai becomes unhealthy. Route 53 health checks fail for the primary.
+        on: [p, pdb]
+        mark: {p: bad, pdb: bad}
+        stats: [Outage, down, warm and small, errors]
+      - title: Promote the database
+        text: The team, or automation, promotes the Hyderabad replica to be the new primary. The last second of writes may be lost, which meets the RPO.
+        on: [sdb]
+        mark: {sdb: ok}
+        stats: [Promote, down, database writable, errors]
+      - title: Scale up and switch traffic
+        text: The Hyderabad Auto Scaling group grows to full size. Route 53 failover records send users there. Total RTO is about 15 minutes.
+        on: [r53, s, sdb]
+        flow: [[r53, s, def], [s, sdb, def]]
+        mark: {s: ok}
+        stats: [Failover, down, full size, Hyderabad]
+      - title: Fail back later
+        text: When Mumbai recovers, data is copied back and traffic returns in a planned window. The team writes up lessons learned.
+        on: [r53, p]
+        stats: [Fail back, recovering, serving, Hyderabad]
+
+terms:
+  - [RPO, "Recovery point objective. Maximum acceptable data loss, measured in time."]
+  - [RTO, "Recovery time objective. Maximum acceptable downtime."]
+  - [Backup and restore, "Restore from backups in another region. Cheapest, slowest."]
+  - [Pilot light, "Core data kept live in the recovery region. The rest is started on failover."]
+  - [Warm standby, "A scaled down, fully working copy always running in the recovery region."]
+  - [Multi site active active, "Full capacity serving in several regions at once."]
+  - [AWS Backup, "Central, policy based backups across many AWS services and accounts."]
+  - [Backup vault lock, "Write once protection for backups so they cannot be deleted early."]
+  - [AWS Elastic Disaster Recovery, "Continuously replicates servers so they can be recovered in AWS."]
+
+how: |
+  ### The four strategies compared
+
+  | Strategy | Typical RTO | Typical RPO | Cost |
+  | --- | --- | --- | --- |
+  | Backup and restore | Hours | Hours, depending on backup frequency | Lowest |
+  | Pilot light | Tens of minutes | Seconds to minutes | Low |
+  | Warm standby | Minutes | Seconds | Medium |
+  | Multi site active active | Near zero | Near zero | Highest |
+
+  These are typical, not fixed. Measure yours in drills.
+
+  ### Building blocks for each
+
+  - **Backups.** AWS Backup plans across EBS, RDS, DynamoDB, EFS, S3 and more, with copies to another region and another account.
+  - **Data replication.** S3 Cross Region Replication, Aurora Global Database, DynamoDB global tables, RDS cross region read replicas.
+  - **Infrastructure as code** so the recovery region can be built in minutes.
+  - **Traffic switching.** Route 53 failover or latency records, Global Accelerator.
+
+  ### Protect backups from attackers
+
+  - Copy backups to a **separate account** that the production account cannot change.
+  - Use **AWS Backup Vault Lock** or S3 Object Lock in compliance mode.
+  - Use different encryption keys and admins for backups.
+  - **Test restores** regularly. An untested backup is a hope.
+
+  ### Moving to the cloud, the seven Rs
+
+  | Strategy | Meaning |
+  | --- | --- |
+  | Rehost | Lift and shift servers as they are |
+  | Replatform | Small changes, such as moving a database to RDS |
+  | Refactor | Re-architect for cloud native services |
+  | Repurchase | Move to a SaaS product |
+  | Relocate | Move a whole platform, such as VMware, as is |
+  | Retain | Keep it where it is for now |
+  | Retire | Switch it off |
+
+  **AWS Application Migration Service** helps rehost servers, and **Database Migration Service** moves databases with little downtime.
+
+  !key Agree RPO and RTO with the business first. Then pick the cheapest strategy that meets them, and prove it with drills.
+
+diagrams:
+  - type: flow
+    title: From cheapest to fastest recovery
+    nodes: [["Backup and restore", "box", "hours"], ["Pilot light", "raised", "tens of minutes"], ["Warm standby", "def", "minutes"], ["Active active", "atk", "near zero"]]
+    edges: ["more cost", "more cost", "more cost"]
+    caption: Each step to the right shortens recovery and raises the monthly bill.
+
+life:
+  - ["OVHcloud fire, 2021", "A fire destroyed a data center building in Strasbourg in March 2021. Customers with backups only in the same site lost data. Customers with copies elsewhere recovered. Distance between copies matters."]
+  - ["The untested backup", "A company's nightly database backup had silently failed for months because a password changed. They found out during a real restore. Monthly automated restore tests now check every backup."]
+  - ["Game days", "Many teams run planned game days, deliberately failing over to the recovery region during business hours. Each drill finds a missing permission, a hard coded endpoint or an expired certificate before a real disaster does."]
+
+tradeoffs:
+  - ["Backup and restore", "Cheap and simple.", "Long downtime and more data loss."]
+  - ["Pilot light", "Low cost, data already copied.", "Must start and scale the app tier on failover."]
+  - ["Warm standby", "Fast recovery, tested daily by real traffic if you send some.", "Pays for a second smaller environment."]
+  - ["Active active", "Near zero downtime.", "Hardest data consistency and highest cost."]
+
+mistakes:
+  - No agreed RPO and RTO.
+  - Backups in the same account and region as production.
+  - Never testing restores or failover.
+  - Recovery regions with outdated templates or missing quotas.
+  - Treating replication as backup, so deletes replicate too.
+
+security: |
+  Backups are a ransomware target. Keep them in a separate account with vault lock or Object Lock, separate keys and separate admins, monitor for deletion attempts, and include "restore from clean backups" in your incident response plan, lesson 6.2. Also check the recovery region has the same security controls, logging and guardrails as the primary.
+
+quiz:
+  - type: sort
+    q: RPO or RTO?
+    rows:
+      - ["We can lose at most 5 minutes of orders", "RPO"]
+      - ["We must be back within 30 minutes", "RTO"]
+    opts: ["RPO", "RTO"]
+    why: RPO is data, RTO is time.
+  - type: sort
+    q: Which strategy fits each need?
+    rows:
+      - ["Internal wiki, can be down a day", "Backup and restore"]
+      - ["Online shop, back within 15 minutes, moderate budget", "Warm standby"]
+      - ["Payments, near zero downtime", "Multi site active active"]
+    opts: ["Backup and restore", "Warm standby", "Multi site active active"]
+    why: Pick the cheapest strategy that meets the targets.
+  - type: fill
+    q: Keeping only the core, such as the database replica, running in the recovery region is the pilot ____ strategy.
+    a: ["light"]
+    why: Like the small flame that lights a gas heater.
+  - q: Identify the risk. "Our backups are in the same account, and the same admins can delete them."
+    opts: ["Ransomware or a stolen admin account can delete production and backups together", "Backups are too small", "No risk"]
+    a: 0
+    why: Use a separate account with locked vaults.
+  - q: Which migration strategy moves a database to RDS with little code change?
+    opts: ["Replatform", "Retire", "Repurchase"]
+    a: 0
+    why: Small changes to use managed services.
+
+interview:
+  - q: Design disaster recovery for an online shop with an RPO of 1 minute and an RTO of 15 minutes.
+    keys:
+      - ["Warm standby or pilot light in a second region", [warm standby, pilot light, second region]]
+      - ["Continuous database replication meets RPO", [aurora global, replica, replicat, global table, seconds]]
+      - ["Infrastructure as code and scaling in the recovery region", [infrastructure as code, scale, auto scaling, template]]
+      - ["Route 53 failover with health checks", [route 53, failover, health check, dns]]
+      - ["Regular drills and protected backups", [drill, test, game day, backup, vault lock]]
+    a: |
+      An RPO of one minute needs continuous replication, so I use Aurora Global Database or DynamoDB global tables, plus S3 cross region replication for files. An RTO of 15 minutes fits warm standby. A small, fully working app fleet runs in the second region, defined with the same infrastructure as code, and scales up on failover. Route 53 failover records with health checks switch traffic, with short TTLs. Backups still go to a separate account with vault lock, because replication copies mistakes. We run a failover drill every quarter to prove the RTO and fix whatever breaks.
+    fb: Saying replication does not replace backups shows depth.
+
+desk:
+  title: The ransomware scare
+  lede: A logistics company's insurer asks for a disaster recovery plan after a competitor was hit by ransomware.
+  situation: |
+    Production runs in one region. Nightly database snapshots stay in the same account. No restore has been tested. Nobody has agreed RPO or RTO.
+  rounds:
+    - title: Round 1. Find the gaps
+      items:
+        - type: sort
+          q: What risk does each gap create?
+          rows:
+            - ["No agreed RPO and RTO", "No basis to choose a strategy or budget"]
+            - ["Snapshots in the same account", "Attackers can delete them with production"]
+            - ["No tested restore", "Backups may fail when needed"]
+          opts: ["No basis to choose a strategy or budget", "Attackers can delete them with production", "Backups may fail when needed"]
+          why: Targets, isolation and proof.
+        - q: What should happen first?
+          opts: ["Agree RPO and RTO with the business for each system", "Buy the most expensive setup", "Wait for an incident"]
+          a: 0
+          why: Targets drive every other choice.
+    - title: Round 2. Plan
+      items:
+        - type: open
+          q: Write a first year plan.
+          a: "Month 1, agree RPO and RTO per system. Month 2, AWS Backup plans for all data with copies to a separate backup account in another region, with Vault Lock. Month 3, first restore test, then monthly automated restore checks. For the most critical system, add a pilot light in the second region with database replication and infrastructure as code. Run a failover drill twice a year."
+        - q: What is a benefit of Vault Lock in compliance mode?
+          opts: ["Nobody, including attackers with admin rights, can delete backups before their retention ends", "Backups become free", "Restores are instant"]
+          a: 0
+          why: Immutable backups are the key ransomware defence.
+  card: |
+    - RPO is data, RTO is time.
+    - Backup and restore, pilot light, warm standby, active active.
+    - Replication is not backup.
+    - Backups in another account, locked.
+    - Test restores and run drills. Seven Rs for migration.
+
+refs:
+  - "AWS. [Disaster recovery of workloads on AWS](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)."
+  - "AWS. [AWS Backup Vault Lock](https://docs.aws.amazon.com/aws-backup/latest/devguide/vault-lock.html)."
+  - "AWS. [About the migration strategies](https://docs.aws.amazon.com/prescriptive-guidance/latest/large-migration-guide/migration-strategies.html)."

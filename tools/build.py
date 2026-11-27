@@ -21,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261127a"
+V = "20261127d"
 E = lambda s: html.escape(str(s), quote=True)
 
 
@@ -378,7 +378,7 @@ def checkbox(cid, label=""):
 
 
 # ---------------------------------------------------------------- sidebars
-DOTS = {"learn": "def", "infra": "pen", "design": "atk"}
+DOTS = {"learn": "def", "infra": "pen", "design": "atk", "cloud": "cl"}
 
 
 def side_wrap(track, label, inner):
@@ -403,6 +403,7 @@ LESSON_PARTS = [("idea", "The idea in one minute", "idea"), ("watch", "Watch it,
 PARTS = {
     "learn": LESSON_PARTS,
     "infra": LESSON_PARTS,
+    "cloud": LESSON_PARTS,
     "design": [("ask", "The ask", "ask"), ("reqs", "Pin down the requirements", "reqs"), ("estimate", "Do the math", "estimate"),
                ("api", "The API", "api"), ("data", "The data model", "data"), ("watch", "Watch it work", "scenes"),
                ("hld", "The big picture", "hld"), ("deep", "Deep dives", "deep"), ("trade", "Trade-offs you must name", "tradeoffs"),
@@ -478,6 +479,9 @@ TRACKS = {
     "infra": dict(label="Infra", crumb="Infra", kind="pen", eyebrow="Lesson",
                   ov_title="Infrastructure, from your first commit to the cloud",
                   ov_lede="Git, GitHub, GitHub Actions, Linux, Docker, Kubernetes, AWS, Terraform and safe deploys. Each lesson ends with practice that includes real commands and config files. Each level ends with a practice page."),
+    "cloud": dict(label="Cloud", crumb="Cloud", kind="cl", eyebrow="Lesson", home="../cloud-track.html",
+                  ov_title="AWS and cloud, from zero to architect",
+                  ov_lede="Eight levels. Cloud basics, identity, networking, compute, storage, databases, serverless, containers, operations, cost, security from both sides, multi-cloud and the SAA-C03 exam, then real designs for every tier of application."),
     "design": dict(label="Design it", crumb="Design it", kind="atk", eyebrow="Design",
                    ov_title="Design real systems, one at a time",
                    ov_lede="Each page is a full design task. You pin down the requirements, do the math, sketch the API and data, watch the system work, study the hard parts and then design it yourself with feedback."),
@@ -528,7 +532,7 @@ def track_side(lessons, levels, cur, track):
         if L.get("kind") == "practice":
             items = [(f"{base}#r{i + 1}", r["title"], "Q", False) for i, r in enumerate(L["rounds"])]
         else:
-            items = [(f"{base}#{a}", (L.get("headings") or {}).get(a, t), "#", False) for a, t, k in PARTS[track] if L.get(k) and k != "desk"]
+            items = [(f"{base}#{a}", (L.get("headings") or {}).get(a, t), "#", False) for a, t, k in PARTS["design" if L.get("kind") == "design" else track] if L.get(k) and k != "desk"]
         if L.get("desk"):
             items.append((f'{L["slug"]}-desk.html', "Practice desk", "Q", cur == L["slug"] + "-desk"))
         out.append(side_group(L["num"], L["short"], f'{L["slug"]}.html', "page" if cur == L["slug"] else here, items, f'{track}.{L["slug"]}'))
@@ -554,7 +558,7 @@ def build_track(track):
         prev = (f'{lessons[i - 1]["slug"]}.html', lessons[i - 1]["title"]) if i else ("index.html", "Track overview")
         nxt = (f'{lessons[i + 1]["slug"]}.html', lessons[i + 1]["title"]) if i + 1 < len(lessons) else None
         lvl = f'<span>{E(lvl_name(levels, L["level"]))}</span>' if L.get("level") else ""
-        crumbs = f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><a href="index.html">{crumb}</a><span>/</span><span>{E(L["num"])}</span></nav>'
+        crumbs = f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><a href="{T.get("home", "index.html")}">{crumb}</a><span>/</span><span>{E(L["num"])}</span></nav>'
         side = track_side(lessons, levels, sid, track)
         if L.get("kind") == "practice":
             body = (crumbs + f'<header class="doc-head"><div class="eyebrow"><span class="tag {kind}"><span class="dot {kind}"></span>{crumb} · Level {L["level"]} practice</span>{lvl}<span>{E(L.get("time", ""))}</span></div>'
@@ -564,19 +568,19 @@ def build_track(track):
             page(f"{track}/{sid}.html", jt(L["title"], f'{crumb} level {L["level"]} practice'), L["lede"][:155], track, side, body)
             continue
         parts, toc = [], []
-        for pid, title, k in PARTS[track]:
+        for pid, title, k in PARTS["design" if L.get("kind") == "design" else track]:
             inner = render_part(k, L, sid)
             if inner.strip():
                 title = (L.get("headings") or {}).get(pid, title)
                 toc.append((pid, title))
                 parts.append(section(pid, title, inner))
-        head = (crumbs + f'<header class="doc-head"><div class="eyebrow"><span class="tag {kind}"><span class="dot {kind}"></span>{crumb} · {T["eyebrow"]} {E(L["num"])}</span>{lvl}<span>{E(L.get("time", ""))}</span></div>'
+        head = (crumbs + f'<header class="doc-head"><div class="eyebrow"><span class="tag {kind}"><span class="dot {kind}"></span>{crumb} · {"Design" if L.get("kind") == "design" else T["eyebrow"]} {E(L["num"])}</span>{lvl}<span>{E(L.get("time", ""))}</span></div>'
                 f'<h1>{E(L["title"])}</h1><p class="lede">{inline(L["lede"])}</p></header>'
                 + '<nav class="doc-toc" aria-label="On this page">' + "".join(f'<a href="#{a}">{E(b)}</a>' for a, b in toc) + "</nav>")
         dnext = (f'{sid}-desk.html', f'{L["short"]}, practice desk') if L.get("desk") else nxt
-        page(f"{track}/{sid}.html", jt(L["title"], f'{T["eyebrow"]} {L["num"]}'), L["lede"][:155], track, side, head + "".join(parts) + donefoot(track, sid) + pager(prev, dnext))
+        page(f"{track}/{sid}.html", jt(L["title"], f'{"Design" if L.get("kind") == "design" else T["eyebrow"]} {L["num"]}'), L["lede"][:155], track, side, head + "".join(parts) + donefoot(track, sid) + pager(prev, dnext))
         if L.get("desk"):
-            dcr = f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><a href="index.html">{crumb}</a><span>/</span><a href="{sid}.html">{E(L["num"])}</a><span>/</span><span>Practice desk</span></nav>'
+            dcr = f'<nav class="crumbs"><a href="../index.html">Home</a><span>/</span><a href="{T.get("home", "index.html")}">{crumb}</a><span>/</span><a href="{sid}.html">{E(L["num"])}</a><span>/</span><span>Practice desk</span></nav>'
             page(f"{track}/{sid}-desk.html", jt(L["desk"]["title"], "Practice desk"), L["desk"]["lede"][:155], track,
                  track_side(lessons, levels, sid + "-desk", track),
                  desk_body(L["desk"], sid, dcr, f'{crumb} · {T["eyebrow"]} {L["num"]} · Practice desk', kind) + pager((f"{sid}.html", L["title"]), nxt))
@@ -835,6 +839,51 @@ def build_protocols():
     return out
 
 
+# ---------------------------------------------------------------- cloud landing
+def build_cloud_landing(lessons, levels):
+    C = load("content/cloud/_landing.yaml")
+    rows, last = "", None
+    for L in lessons:
+        if L.get("level") != last:
+            last = L.get("level")
+            lv = next(x for x in levels if x["n"] == last)
+            rows += f'<h3 class="lvl-h">{E(lvl_name(levels, last))}</h3><p class="lvl-d">{inline(lv.get("d", ""))}</p>'
+        if L.get("kind") == "practice":
+            tg = '<span class="tag new">practice</span>'
+        elif L.get("kind") == "design":
+            tg = '<span class="tag atk">design</span>'
+        else:
+            tg = "".join(f'<span class="tag">{E(t)}</span>' for t in L.get("tags", [])[:3])
+        rows += (f'<a class="lesson-row{" is-practice" if L.get("kind") == "practice" else ""}" href="cloud/{L["slug"]}.html" data-done="cloud.{L["slug"]}" data-lv="{L.get("level")}"><span class="mono">{L["num"]}</span>'
+                 f'<span><b>{E(L["title"])}</b><small>{inline(L["lede"])}</small></span><span class="tags">{tg}</span></a>')
+    n = len(lessons)
+    tracker = (f'<div class="trk" id="cl-trk" data-total="{n}"><div class="trk-top"><b id="cl-trk-n">0</b><span class="mono muted">of {n} pages done</span>'
+               f'<a class="btn btn-quiet btn-sm" id="cl-trk-next" href="cloud/{lessons[0]["slug"]}.html">Start the first lesson</a></div>'
+               f'<div class="trk-bar" aria-hidden="true"><i id="cl-trk-bar"></i></div>'
+               f'<div class="trk-lv">' + "".join(
+                   f'<span data-lv="{lv["n"]}"><b class="mono">L{lv["n"]}</b>{E(lv["t"])}<em class="mono" data-lvc="{lv["n"]}">0/{sum(1 for L in lessons if L.get("level") == lv["n"])}</em></span>'
+                   for lv in levels) + '</div></div>')
+    labs = ""
+    for g in C["labs"]:
+        cards = "".join(f'<a class="lab" href="{E(x["u"])}" target="_blank" rel="noopener"><span class="tag {E(x.get("kind", ""))}">{E(x["type"])}</span>'
+                        f'<b>{E(x["t"])}</b><small>{inline(x["n"])}</small></a>' for x in g["items"])
+        labs += f'<h3>{E(g["t"])}</h3><p class="small muted">{inline(g["d"])}</p><div class="labs">{cards}</div>'
+    res = "".join(f'<li><a href="{E(x["u"])}" target="_blank" rel="noopener">{E(x["t"])}</a>. {inline(x["n"])}</li>' for x in C["resources"])
+    main = (f'<main id="main"><section class="page-head"><div class="wrap"><div class="eyebrow"><span class="tag cl"><span class="dot cl"></span>Cloud track</span>'
+            f'<span>{n} pages · {len(levels)} levels</span></div><h1>{E(C["title"])}</h1><p class="lede">{inline(C["lede"])}</p>'
+            f'<div class="actions"><a class="btn btn-primary" href="cloud/{lessons[0]["slug"]}.html">Start lesson 1.1</a>'
+            f'<a class="btn btn-quiet" href="#route">See all levels</a><a class="btn btn-quiet" href="#labs">Hands on labs</a></div></div></section>'
+            f'<div class="wrap narrow doc">'
+            + section("tracker", "Your progress", f'<p class="small muted">{inline(C["tracker_note"])}</p>' + tracker)
+            + section("why", C["why_t"], md(C["why"]) + "".join(diagram(d) for d in C.get("diagrams", [])))
+            + section("how", "How this track works", md(C["how"]))
+            + section("route", "All levels and pages", f'<div class="lesson-list">{rows}</div>')
+            + section("labs", "Free hands on labs, building, defending and attacking", md(C["labs_intro"]) + labs)
+            + section("resources", "SAA-C03 study resources", md(C["resources_intro"]) + f'<ol class="reflist">{res}</ol>')
+            + "</div></main>")
+    write("cloud-track.html", "AWS and cloud track. From zero to architect", C["lede"][:155], "cloud", main)
+
+
 # ---------------------------------------------------------------- home
 def build_home(tracks, design, nb, niv, protos):
     H = load("content/home.yaml")
@@ -874,12 +923,13 @@ def build_home(tracks, design, nb, niv, protos):
 
 
 if __name__ == "__main__":
-    tracks = {"learn": build_track("learn"), "infra": build_track("infra")}
+    tracks = {"learn": build_track("learn"), "infra": build_track("infra"), "cloud": build_track("cloud")}
+    build_cloud_landing(*tracks["cloud"])
     design, _ = build_track("design")
     nb = build_basics()
     protos = build_protocols()
     niv = build_interview(tracks, design)
-    pages = {"basics.html": "Start here", "interview.html": "Interview questions", "protocols.html": "Protocols",
+    pages = {"basics.html": "Start here", "interview.html": "Interview questions", "protocols.html": "Protocols", "cloud-track.html": "Cloud track",
              "learn/index.html": "Concepts", "infra/index.html": "Infra", "design/index.html": "All designs"}
     for t, (ls, _) in list(tracks.items()) + [("design", (design, None))]:
         for L in ls:

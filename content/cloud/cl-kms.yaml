@@ -1,0 +1,222 @@
+short: Keys, encryption and secrets
+title: KMS, encryption and secrets on AWS
+time: about 50 minutes
+tags: [KMS, envelope encryption, Secrets Manager, Parameter Store, ACM]
+lede: Encryption on AWS is mostly a few clicks, but only if you understand who holds the keys and who may use them. Learn KMS and envelope encryption, the S3 encryption options, where to keep passwords and API keys, and how TLS certificates are managed.
+
+idea: |
+  Encryption turns data into unreadable bytes that only someone with the right **key** can turn back. On AWS, keys live in **AWS KMS**, the Key Management Service. KMS keeps keys inside hardware security modules, and the key material never leaves them unencrypted.
+
+  KMS does not encrypt your large files directly. It uses **envelope encryption**.
+
+  1. A service asks KMS for a **data key**.
+  2. KMS returns the data key twice, once in plain form and once encrypted under your **KMS key**.
+  3. The service encrypts your data with the plain data key, throws the plain key away, and stores the encrypted data key next to the data.
+  4. To read, it sends the encrypted data key to KMS. If the caller is allowed, KMS decrypts it, and the service decrypts the data.
+
+  The important part is **step 4**. Every decrypt needs permission to use the KMS key, and every use is logged in CloudTrail. So encryption with your own KMS key adds a second lock. Even someone who can read the S3 object cannot decrypt it without kms:Decrypt on that key.
+
+  Passwords, API keys and database credentials are **secrets**. Keep them in **Secrets Manager** or **Parameter Store**, never in code or plain environment variables.
+
+  !eli5 Your diary is locked with a small padlock. You put the padlock's key in a bank safety box. To open the diary, you must go to the bank, show your ID, and the bank writes down every visit. KMS is the bank.
+
+scenes:
+  - title: Envelope encryption for an S3 object with SSE-KMS
+    stats: [Step, Data key, Stored with object, Access check]
+    nodes:
+      app: {label: App, x: 0, y: 1, kind: box}
+      s3: {label: S3, x: 3, y: 1, kind: raised}
+      kms: {label: KMS key, x: 3, y: 3, kind: def, tag: never leaves KMS}
+      trail: {label: CloudTrail, x: 6, y: 3, kind: raised}
+      thief: {label: Reader without key access, x: 6, y: 0, kind: atk}
+    links: [[app, s3], [s3, kms], [kms, trail], [thief, s3]]
+    steps:
+      - title: Upload
+        text: The app uploads a file to a bucket set to encrypt with a customer managed KMS key.
+        on: [app, s3]
+        flow: [[app, s3, ink]]
+        stats: [Put, "-", "-", "-"]
+      - title: Get a data key
+        text: S3 asks KMS for a data key. KMS returns a plain copy and a copy encrypted under the KMS key. The request is logged.
+        on: [s3, kms, trail]
+        flow: [[s3, kms, ink], [kms, s3, def], [kms, trail, def]]
+        stats: [GenerateDataKey, plain and encrypted, "-", logged]
+      - title: Encrypt and forget the plain key
+        text: S3 encrypts the file with the plain data key, deletes the plain key from memory, and stores the encrypted data key with the object.
+        on: [s3]
+        mark: {s3: ok}
+        stats: [Encrypt, plain key deleted, encrypted data key, "-"]
+      - title: Someone with read but no key access
+        text: A user can read objects in the bucket but has no kms:Decrypt on the key. S3 asks KMS to decrypt the data key, and KMS refuses.
+        on: [thief, s3, kms]
+        flow: [[thief, s3, atk], [s3, kms, atk]]
+        mark: {thief: bad}
+        stats: [Get, refused, encrypted data key, denied and logged]
+      - title: Allowed reader
+        text: The app's role has kms:Decrypt. KMS decrypts the data key, S3 decrypts the file and returns it.
+        on: [app, s3, kms]
+        flow: [[s3, kms, def], [s3, app, def]]
+        stats: [Get, decrypted in KMS, encrypted data key, allowed and logged]
+
+terms:
+  - [KMS, "AWS Key Management Service. Creates and controls encryption keys, kept in hardware security modules."]
+  - [KMS key, "The main key in KMS, used to encrypt data keys. Its material never leaves KMS unencrypted."]
+  - [Data key, "A key used to encrypt the actual data, stored encrypted next to it."]
+  - [Envelope encryption, "Encrypting data with a data key and encrypting the data key with a master key."]
+  - [Key policy, "The resource policy on a KMS key that says who can use and manage it."]
+  - [CloudHSM, "Dedicated hardware security modules that you control, for strict key custody needs."]
+  - [Secrets Manager, "Stores secrets and can rotate them automatically."]
+  - [Parameter Store, "Part of Systems Manager. Stores configuration and secrets as SecureString values."]
+  - [ACM, "AWS Certificate Manager. Issues and renews TLS certificates for AWS services."]
+
+how: |
+  ### Three kinds of KMS keys
+
+  | Kind | Who manages | Use |
+  | --- | --- | --- |
+  | AWS owned | AWS, invisible to you | Default encryption in some services |
+  | AWS managed | AWS, in your account, named like aws/s3 | Easy encryption, you cannot change its policy |
+  | Customer managed | You | Your own key policy, rotation and audit. Best for sensitive data |
+
+  Customer managed keys can rotate automatically, by default once a year. Old versions stay available to decrypt old data.
+
+  ### S3 encryption options
+
+  | Option | Key | Notes |
+  | --- | --- | --- |
+  | SSE-S3 | Keys managed by S3 | Default for all new objects since January 2023 |
+  | SSE-KMS | A KMS key | Extra access control and audit through KMS |
+  | DSSE-KMS | Two layers with KMS | For rules that need dual layer encryption |
+  | SSE-C | A key you send with each request | AWS does not store your key |
+  | Client side | You encrypt before upload | AWS never sees plain data |
+
+  ### Where secrets go
+
+  | Need | Choice |
+  | --- | --- |
+  | Database password with automatic rotation | Secrets Manager |
+  | Simple config values and some secrets, low cost | Parameter Store SecureString |
+  | Keys used by many apps, with cross account sharing | Secrets Manager with a resource policy |
+
+  Apps read secrets at runtime using their role. Nothing is written in code, images or plain environment variables that many people can read.
+
+  ### Certificates
+
+  **ACM** gives free public TLS certificates for services such as load balancers, CloudFront and API Gateway, and renews them automatically. Private certificates for internal services come from AWS Private CA.
+
+  ### Data in transit
+
+  Use TLS everywhere. Many policies can require it, for example the S3 condition `aws:SecureTransport`.
+
+  !key Encryption with a customer managed key adds an access check and an audit log on every read. Who may decrypt is as important as who may read.
+
+diagrams:
+  - type: flow
+    title: Envelope encryption
+    nodes: [["Ask KMS for a data key", "box"], ["Encrypt data with plain data key", "def"], ["Delete plain key", "atk"], ["Store data plus encrypted data key", "raised"]]
+    edges: ["", "", ""]
+    caption: To read, the encrypted data key goes back to KMS, which checks permission and logs the request before decrypting it.
+
+life:
+  - ["Uber, 2016", "Attackers found AWS access keys in a private code repository and used them to download data on 57 million riders and drivers from S3. Secrets in code, even private code, are a classic path to a breach."]
+  - ["Keys that saved a leak", "A bucket was accidentally shared with another account. Because its objects used a customer managed KMS key that the other account could not use, the files could not be read."]
+  - ["Rotation without downtime", "A team moved database passwords to Secrets Manager with automatic rotation. Apps fetched the current value at start and on connection errors, so passwords changed every 30 days with no outage."]
+
+tradeoffs:
+  - ["AWS managed key", "No setup.", "No custom key policy, less control."]
+  - ["Customer managed key", "Your own policy, audit and rotation.", "Small cost per key and per request, more to manage."]
+  - ["CloudHSM", "Full control of the hardware module.", "You operate it, higher cost."]
+  - ["Secrets Manager", "Rotation and cross account sharing.", "Costs per secret."]
+  - ["Parameter Store", "Low cost, simple.", "Fewer rotation features."]
+
+mistakes:
+  - Secrets in code, Docker images or plain environment variables.
+  - Thinking encryption at rest protects against a user who is allowed to decrypt.
+  - Key policies that let everyone in the account use the key.
+  - Deleting a KMS key that still protects data. KMS enforces a waiting period of 7 to 30 days for this reason.
+  - No TLS between internal services.
+
+security: |
+  Treat kms:Decrypt as a sensitive permission. Separate key administrators from key users, keep key policies tight, alert on key deletion or disabling, and review CloudTrail for unusual decrypt calls. For backups, use keys in a separate account so a compromised workload account cannot destroy both the data and its keys.
+
+quiz:
+  - q: In envelope encryption, what does KMS encrypt directly?
+    opts: ["The data key", "The whole file", "Nothing"]
+    a: 0
+    why: Data is encrypted with the data key. KMS protects the data key.
+  - type: fill
+    q: Since January 2023, new S3 objects are encrypted by default with SSE-____.
+    a: ["s3"]
+    why: SSE-KMS adds control and audit on top.
+  - q: A user can read an S3 object but has no kms:Decrypt on its customer managed key. What happens?
+    opts: ["The read fails, because the data key cannot be decrypted", "The user gets the plain file", "The user gets an empty file"]
+    a: 0
+    why: Decrypt permission is a second lock.
+  - type: sort
+    q: Where should each secret live?
+    rows:
+      - ["Database password that must rotate every 30 days", "Secrets Manager"]
+      - ["A feature flag and a third party URL", "Parameter Store"]
+      - ["Public TLS certificate for a load balancer", "ACM"]
+    opts: ["Secrets Manager", "Parameter Store", "ACM"]
+    why: Pick by rotation needs, cost and type.
+  - q: Spot the problem in this task definition.
+    info: |
+      ```json
+      "environment": [{"name": "DB_PASSWORD", "value": "S3cr3t!2026"}]
+      ```
+    opts: ["A plain password in configuration that many people and tools can read", "Environment variables are not allowed", "The password is too short"]
+    a: 0
+    why: Reference a Secrets Manager secret instead, read with the task's role.
+
+interview:
+  - q: How does envelope encryption with KMS work, and why is it used?
+    keys:
+      - ["Data key encrypts data, KMS key encrypts data key", [data key, encrypts, kms key, envelope]]
+      - ["Plain data key discarded, encrypted data key stored with data", [discard, delete, stored with, alongside]]
+      - ["Decrypt requires permission on the KMS key and is logged", [permission, decrypt, logged, cloudtrail, key policy]]
+      - ["Efficient for large data, keys never leave KMS", [large, efficient, never leave, hsm, performance]]
+    a: |
+      KMS generates a data key and returns it in plain form and encrypted under a KMS key. The service encrypts the data locally with the plain data key, discards it, and stores the encrypted data key next to the data. To decrypt, it sends the encrypted data key to KMS, which checks the caller's permission in the key policy and IAM, logs the call in CloudTrail, and returns the plain data key. This is efficient, because large data never has to travel to KMS, and the KMS key itself never leaves the hardware modules. It also adds a separate access control and audit trail on every read.
+    fb: Pointing out that decrypt is a separate permission with its own audit is the key insight.
+
+desk:
+  title: Secrets in the container image
+  lede: A security scan found database passwords and an API key inside a team's Docker image.
+  situation: |
+    The image is in a shared registry. The same password is used in dev and prod. Data in S3 uses only default encryption.
+  rounds:
+    - title: Round 1. Spot the issues
+      items:
+        - type: sort
+          q: What risk does each fact create?
+          rows:
+            - ["Passwords baked into the image", "Anyone who can pull the image can read them"]
+            - ["Same password in dev and prod", "A dev leak opens prod"]
+            - ["Only default S3 encryption for sensitive data", "No separate decrypt permission or key audit"]
+          opts: ["Anyone who can pull the image can read them", "A dev leak opens prod", "No separate decrypt permission or key audit"]
+          why: Each needs a different control.
+        - q: What is the very first action?
+          opts: ["Rotate the exposed passwords and API key, then rebuild the image without them", "Make the registry private and do nothing else", "Delete the scan report"]
+          a: 0
+          why: Treat exposed secrets as compromised.
+    - title: Round 2. Fix
+      items:
+        - type: open
+          q: Describe the new setup.
+          a: "Store separate secrets for dev and prod in Secrets Manager with rotation for the database password. The task or pod reads them at runtime with its role. Images contain no secrets, and the build pipeline scans for secrets before pushing. Sensitive S3 data uses SSE-KMS with a customer managed key whose policy allows only the app roles to decrypt, and key use is monitored."
+        - q: What is the benefit of separate keys and secrets per environment?
+          opts: ["A breach in dev cannot be used to read or change prod", "It is cheaper", "It is faster"]
+          a: 0
+          why: Separation limits the blast radius.
+  card: |
+    - KMS holds keys. Envelope encryption protects data keys.
+    - Decrypt is a separate, logged permission.
+    - SSE-S3 by default. SSE-KMS for control and audit.
+    - Secrets Manager or Parameter Store, never code.
+    - ACM for TLS certificates.
+
+refs:
+  - "AWS. [AWS KMS concepts](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html)."
+  - "AWS. [Protecting data with server side encryption in S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/serv-side-encryption.html)."
+  - "AWS. [Choosing between Secrets Manager and Parameter Store](https://docs.aws.amazon.com/secretsmanager/latest/userguide/integrating_parameterstore.html)."

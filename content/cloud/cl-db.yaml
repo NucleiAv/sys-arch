@@ -1,0 +1,230 @@
+short: Managed databases and caches
+title: Managed databases, RDS, Aurora, DynamoDB, ElastiCache and friends
+time: about 60 minutes
+tags: [RDS, Aurora, DynamoDB, ElastiCache, Redshift, multi AZ]
+lede: AWS runs databases for you, backups, patching, replicas and failover included. Learn the difference between multi AZ and read replicas, when Aurora or DynamoDB fits, how caches cut load, and how to pick from AWS's many purpose built databases.
+
+idea: |
+  Running a database yourself means installing it, patching it, backing it up, copying it to standby servers and handling failover at 3 am. **Managed databases** do most of that for you.
+
+  - **Amazon RDS** runs familiar relational engines, such as PostgreSQL, MySQL, MariaDB, Oracle and SQL Server.
+  - **Amazon Aurora** is AWS's own engine, compatible with PostgreSQL and MySQL, built for the cloud. Its storage keeps **six copies across three AZs** and grows automatically.
+  - **Amazon DynamoDB** is a serverless **key value and document** database with single digit millisecond reads at any scale.
+  - **Amazon ElastiCache** runs Redis compatible engines, including Valkey, or Memcached, as an in memory **cache**.
+
+  Two words that people mix up.
+
+  - **Multi AZ** is for **availability**. A standby copy in another AZ takes over if the primary fails.
+  - **Read replicas** are for **read scaling**. Copies that serve read only queries, updated asynchronously, so they can be slightly behind.
+
+  !eli5 A managed database is like a library with full time staff. They fix the shelves, keep a spare copy of every book in another building, and can open extra reading rooms when the library gets busy. You just bring readers and books.
+
+scenes:
+  - title: RDS multi AZ failover and a read replica
+    stats: [Step, Writer, Readers, Downtime]
+    nodes:
+      app: {label: App servers, x: 0, y: 1, kind: box}
+      prim: {label: Primary, x: 3, y: 0, kind: def, tag: AZ a}
+      stby: {label: Standby, x: 3, y: 2, kind: raised, tag: "AZ b, synchronous"}
+      rep: {label: Read replica, x: 6, y: 1, kind: raised, tag: asynchronous}
+      cache: {label: ElastiCache, x: 0, y: 3, kind: raised}
+    links: [[app, prim], [prim, stby], [prim, rep], [app, rep], [app, cache], [app, stby]]
+    steps:
+      - title: Writes go to the primary
+        text: The app writes orders to the primary in AZ a. Each write is copied synchronously to the standby in AZ b before it is confirmed.
+        on: [app, prim, stby]
+        flow: [[app, prim, ink], [prim, stby, def]]
+        stats: [Write, primary, "-", none]
+      - title: Reads from a replica and the cache
+        text: Product pages read from the cache first, and on a miss from the read replica, which is updated asynchronously and may be a little behind.
+        on: [app, cache, rep]
+        flow: [[app, cache, ink], [app, rep, ink], [prim, rep, def]]
+        stats: [Read, primary, "replica and cache", none]
+      - title: The primary's AZ fails
+        text: AZ a goes down. RDS detects it and promotes the standby. The database's DNS name now points to the new primary.
+        on: [prim, stby]
+        mark: {prim: bad}
+        stats: [Failover, standby promoted, "replica and cache", "about 1 to 2 minutes"]
+      - title: Apps reconnect
+        text: Apps reconnect using the same endpoint name. No data is lost, because the standby had every committed write.
+        on: [app, stby]
+        flow: [[app, stby, def]]
+        mark: {stby: ok}
+        stats: [Recovered, new primary, "replica and cache", over]
+      - title: A new standby is built
+        text: RDS creates a new standby in a healthy AZ, so the database is protected again.
+        on: [stby]
+        stats: [Protected, new primary, "replica and cache", none]
+
+terms:
+  - [RDS, "Relational Database Service. Managed PostgreSQL, MySQL, MariaDB, Oracle and SQL Server."]
+  - [Aurora, "AWS's cloud native relational engine, compatible with MySQL and PostgreSQL."]
+  - [Multi AZ, "A standby in another AZ for automatic failover. For availability, not read scaling, in classic RDS."]
+  - [Read replica, "An asynchronous read only copy for scaling reads or reporting."]
+  - [DynamoDB, "Serverless key value and document database with predictable low latency at any scale."]
+  - [GSI, "Global secondary index in DynamoDB, for querying by another key."]
+  - [DAX, "DynamoDB Accelerator. An in memory cache in front of DynamoDB."]
+  - [ElastiCache, "Managed in memory cache with Redis compatible engines or Memcached."]
+  - [Redshift, "A columnar data warehouse for analytics over large data."]
+  - [Point in time recovery, "Restoring a database to any second within a retention window."]
+
+how: |
+  ### RDS, the key facts
+
+  | Feature | Purpose | Note |
+  | --- | --- | --- |
+  | Multi AZ instance deployment | Availability | Synchronous standby, automatic failover, standby does not serve reads |
+  | Multi AZ cluster deployment | Availability and some reads | Two readable standbys, for MySQL and PostgreSQL |
+  | Read replicas | Read scaling | Asynchronous, can be in another region, can be promoted |
+  | Automated backups | Recovery | Point in time recovery within the retention period, up to 35 days |
+  | RDS Proxy | Connection pooling | Helps Lambda and many clients share connections, Concepts lesson 2.8 |
+
+  ### Aurora in short
+
+  - Storage keeps 6 copies across 3 AZs and grows automatically.
+  - Up to 15 low lag **Aurora Replicas** share the same storage, and one is promoted on failure.
+  - **Aurora Global Database** copies to other regions, usually with under a second of lag, for disaster recovery and local reads.
+  - **Aurora Serverless v2** scales capacity up and down in small steps.
+
+  ### DynamoDB in short
+
+  - Pick a good **partition key**, as in Concepts lesson 2.4, so load spreads evenly.
+  - **On demand** capacity for unknown traffic, **provisioned** with auto scaling for steady traffic.
+  - **Global tables** for active active multi region.
+  - Items up to **400 KB**. Point in time recovery up to **35 days**.
+  - Design the table around your **access patterns**, not around entities.
+
+  ### Purpose built databases
+
+  | Need | AWS service |
+  | --- | --- |
+  | Relational, transactions | RDS, Aurora |
+  | Key value at massive scale | DynamoDB |
+  | Cache | ElastiCache, DAX |
+  | Analytics warehouse | Redshift |
+  | Query files in S3 with SQL | Athena |
+  | Search | OpenSearch Service |
+  | Graph | Neptune |
+  | Documents, MongoDB compatible | DocumentDB |
+  | Time series | Timestream |
+  | Wide column, Cassandra compatible | Keyspaces |
+
+  !key Multi AZ keeps you up. Read replicas spread reads. Backups and point in time recovery save you from mistakes. You usually need all three.
+
+diagrams:
+  - type: flow
+    title: Choosing a database on AWS
+    nodes: [["Need joins and transactions?", "box"], ["RDS or Aurora", "def"], ["Huge scale, simple key lookups?", "box"], ["DynamoDB", "def"], ["Analytics on big data?", "box", "Redshift or Athena"]]
+    edges: ["yes", "no", "yes", "no"]
+    caption: Start from the access patterns and consistency needs, then pick the engine.
+
+life:
+  - ["Amazon's Prime Day on DynamoDB", "AWS has reported that DynamoDB peaked at more than 100 million requests per second during recent Amazon Prime Day events, while keeping single digit millisecond latency."]
+  - ["Read replica as a backup", "A team thought its read replica was a backup. A bad migration dropped a table, and the drop replicated to the replica within seconds. Point in time recovery from automated backups saved them."]
+  - ["The hot partition", "A DynamoDB table used the date as its partition key, so every write of the day went to one partition and was throttled. A key with many values, such as the user id, spread the load."]
+
+tradeoffs:
+  - ["RDS", "Familiar engines, easy migration.", "Scaling writes needs bigger instances or sharding."]
+  - ["Aurora", "Fast failover, many replicas, automatic storage.", "Costs more than RDS for small loads, AWS specific engine."]
+  - ["DynamoDB", "Massive scale, serverless, predictable latency.", "Limited queries, design around access patterns."]
+  - ["Cache in front", "Huge read relief, lower latency.", "Stale data and invalidation to handle."]
+
+mistakes:
+  - Treating a read replica or multi AZ standby as a backup.
+  - Expecting the classic multi AZ standby to serve reads.
+  - A DynamoDB partition key with few distinct values.
+  - Running a database on EC2 by hand when a managed service fits.
+  - No tested restore.
+
+security: |
+  Keep databases in isolated subnets with security groups that allow only the app tier. Encrypt at rest with KMS and in transit with TLS. Use IAM database authentication or Secrets Manager with rotation instead of fixed passwords, turn on deletion protection, and copy backups to a separate account. Turn on database activity logs, and never make a snapshot public.
+
+quiz:
+  - q: What is the main purpose of RDS multi AZ?
+    opts: ["Automatic failover for availability", "Scaling reads", "Saving money"]
+    a: 0
+    why: Read replicas scale reads. Multi AZ keeps you up.
+  - type: sort
+    q: Pick the database.
+    rows:
+      - ["Shopping cart for 50 million users, key lookups", "DynamoDB"]
+      - ["Bank ledger with transactions and joins", "Aurora or RDS"]
+      - ["SQL queries over log files already in S3", "Athena"]
+      - ["Friend of friend recommendations", "Neptune"]
+    opts: ["DynamoDB", "Aurora or RDS", "Athena", "Neptune"]
+    why: Purpose built databases fit specific access patterns.
+  - type: fill
+    q: Aurora storage keeps ____ copies of your data across three AZs.
+    a: ["six", "6"]
+    why: Two copies in each of three AZs.
+  - type: num
+    q: What is the maximum DynamoDB item size, in KB?
+    a: 400
+    tol: 0
+    unit: KB
+    why: Store bigger things in S3 and keep a pointer in DynamoDB.
+  - q: A developer drops a table by mistake. How do you get it back?
+    opts: ["Point in time recovery from automated backups", "Promote the read replica", "Fail over to the standby"]
+    a: 0
+    why: Replicas and standbys copy the mistake too.
+
+interview:
+  - q: Explain the difference between RDS multi AZ and read replicas, and when you would use each.
+    keys:
+      - ["Multi AZ is a synchronous standby for failover and availability", [multi az, standby, synchronous, failover, availability]]
+      - ["Read replicas are asynchronous copies for read scaling", [read replica, asynchronous, read scaling, reporting]]
+      - ["Replicas can be cross region and promoted for DR", [cross region, promote, disaster]]
+      - ["Neither is a backup, use point in time recovery", [backup, point in time, pitr, snapshot]]
+    a: |
+      Multi AZ keeps a synchronous standby in another AZ. Every committed write is on both, so if the primary or its AZ fails, RDS promotes the standby, usually within a minute or two, with no data loss. In the classic setup the standby does not serve reads. Read replicas are asynchronous copies that serve read only traffic, such as reports or product pages, and may lag a little. They can be in other regions and promoted for disaster recovery. I use multi AZ for every production database and add replicas when reads are the bottleneck. Neither protects against a bad delete, so I also rely on automated backups with point in time recovery and copies in another account.
+    fb: Ending with "neither is a backup" shows you have seen real incidents.
+  - q: When would you choose DynamoDB over Aurora?
+    keys:
+      - ["Simple known access patterns by key", [key, access pattern, lookup, simple]]
+      - ["Massive or spiky scale with predictable latency", [scale, spiky, millisecond, predictable, serverless]]
+      - ["No complex joins or ad hoc queries", [join, ad hoc, relational, complex query]]
+      - ["Global tables for multi region active active", [global table, multi region, active active]]
+    a: |
+      I pick DynamoDB when the access patterns are known and mostly by key, such as sessions, carts or user profiles, when traffic is huge or very spiky, and when I want serverless operation with single digit millisecond latency at any scale. Global tables also make multi region active active simpler. I pick Aurora when I need joins, flexible queries, strong relational constraints or multi row transactions across many tables, such as a ledger or reporting on orders.
+    fb: Tying the choice to access patterns is exactly the right framing.
+
+desk:
+  title: The database that keeps falling over
+  lede: An online learning platform's single database instance struggles every evening.
+  situation: |
+    One RDS MySQL instance with no multi AZ. Reports run on it at 7 pm, the busiest hour. Backups are on but no restore was ever tested.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What risk does each fact create?
+          rows:
+            - ["No multi AZ", "An instance or AZ failure means a long outage"]
+            - ["Reports on the primary at peak", "Heavy reads slow down writes for users"]
+            - ["Restore never tested", "Backups may not work when needed"]
+          opts: ["An instance or AZ failure means a long outage", "Heavy reads slow down writes for users", "Backups may not work when needed"]
+          why: Availability, performance and recoverability.
+        - q: Which change helps the 7 pm slowdown most?
+          opts: ["Move reports to a read replica and cache popular course pages", "Turn off backups", "Use a smaller instance"]
+          a: 0
+          why: Take read load off the primary.
+    - title: Round 2. Plan and work around
+      items:
+        - type: open
+          q: Write the improvement plan.
+          a: "Turn on multi AZ. Add a read replica for reports and dashboards. Put ElastiCache in front of course catalogue reads. Add RDS Proxy for connection pooling. Test a point in time restore every quarter and copy snapshots to a second region. Consider Aurora later if read scale keeps growing."
+        - q: Multi AZ will be enabled next weekend. What is a workaround for tonight's peak?
+          opts: ["Move the 7 pm reports to run at 2 am", "Restart the database at 7 pm", "Add more app servers"]
+          a: 0
+          why: Shifting heavy batch work off peak is a quick, safe win.
+  card: |
+    - Managed beats self run for most databases.
+    - Multi AZ for availability, replicas for reads, backups for mistakes.
+    - Aurora, six copies in three AZs, fast failover.
+    - DynamoDB, design for access patterns and good keys.
+    - Purpose built databases for special needs.
+
+refs:
+  - "AWS. [Multi AZ deployments for RDS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html)."
+  - "AWS. [Amazon Aurora storage and reliability](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.Overview.StorageReliability.html)."
+  - "AWS. [Best practices for DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/best-practices.html)."

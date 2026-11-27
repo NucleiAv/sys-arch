@@ -1,0 +1,224 @@
+short: Accounts, tools and a safe start
+title: Your first AWS account, tools and a safe start
+time: about 45 minutes
+tags: [root user, MFA, CLI, ARN, tags, budgets, CloudFormation]
+lede: The first hour in a new cloud account decides a lot. Learn what the root user is and how to lock it away, the three ways to control AWS, how every resource is named, and how to stop a surprise bill before it happens.
+
+idea: |
+  When you create an AWS account, you get a **root user**, the email and password you signed up with. The root user can do **everything**, including closing the account and changing billing. It cannot be limited by normal permissions.
+
+  So the very first steps are always the same.
+
+  1. Turn on **MFA** for the root user.
+  2. Do **not** create access keys for the root user.
+  3. Create named identities for daily work, ideally with **IAM Identity Center** for single sign on, or an IAM user with MFA in a small personal account.
+  4. Set a **budget** with alerts, so you hear about cost early.
+  5. Turn on **CloudTrail** logging.
+
+  You control AWS in three ways. The **console**, a website. The **CLI**, a command line tool. And **SDKs** and **infrastructure as code**, where programs or files describe what to build. Every call, from every tool, goes to the same AWS APIs and is checked against the same permissions.
+
+  !eli5 The root user is the master key to a building. You lock it in a safe and give everyone their own key card for daily use. You also put a meter on the door that warns you if the electricity bill gets too high.
+
+scenes:
+  - title: The first hour in a new account
+    stats: [Step, Root user, Daily access, Cost alerts]
+    nodes:
+      root: {label: Root user, x: 0, y: 1, kind: atk, tag: can do everything}
+      mfa: {label: MFA device, x: 2, y: 0, kind: def}
+      sso: {label: Identity Center, x: 3, y: 2, kind: def, tag: named users}
+      budget: {label: AWS Budgets, x: 5, y: 0, kind: raised}
+      trail: {label: CloudTrail, x: 6, y: 2, kind: raised, tag: audit log}
+    links: [[root, mfa], [root, sso], [sso, budget], [sso, trail]]
+    steps:
+      - title: Sign up
+        text: The new account has only the root user. Anyone with its password controls everything.
+        on: [root]
+        mark: {root: warn}
+        stats: [Start, unprotected, none, none]
+      - title: Lock the root user
+        text: Turn on MFA for root, with a hardware key or an authenticator app. Store recovery details safely. Never create root access keys.
+        on: [root, mfa]
+        flow: [[root, mfa, def]]
+        mark: {root: ok}
+        stats: [MFA, locked away, none, none]
+      - title: Create named access
+        text: Set up IAM Identity Center with a named user and an admin permission set, also with MFA. Use this for daily work, never root.
+        on: [root, sso]
+        flow: [[root, sso, def]]
+        stats: [Users, locked away, named with MFA, none]
+      - title: Set a budget
+        text: Create a monthly budget, for example 10 dollars, with email alerts at 50, 80 and 100 percent of actual and forecast spend.
+        on: [sso, budget]
+        flow: [[sso, budget, ink]]
+        mark: {budget: ok}
+        stats: [Budget, locked away, named with MFA, "at 50, 80, 100 percent"]
+      - title: Turn on the audit log
+        text: Create a CloudTrail trail for all regions that writes to an S3 bucket. Now every API call is recorded with who, what and when.
+        on: [sso, trail]
+        flow: [[sso, trail, ink]]
+        mark: {trail: ok}
+        stats: [Audit, locked away, named with MFA, set]
+
+terms:
+  - [Root user, "The identity created with the account. It has full, unlimited access."]
+  - [MFA, "Multi factor authentication. A second proof, such as a code or a security key."]
+  - [Console, "The AWS website for managing resources."]
+  - [CLI, "The AWS command line interface, for scripts and quick tasks."]
+  - [SDK, "Libraries for programming languages that call AWS APIs."]
+  - [ARN, "Amazon Resource Name. A unique name for any AWS resource."]
+  - [Tag, "A key and value label on a resource, such as owner=payments or env=prod."]
+  - [CloudFormation, "AWS's infrastructure as code service, using YAML or JSON templates."]
+  - [AWS CDK, "Cloud Development Kit. Write infrastructure in a programming language, which becomes CloudFormation."]
+  - [Service quota, "A limit on how much of a resource you can use, many can be raised on request."]
+
+how: |
+  ### Every resource has an ARN
+
+  ```
+  arn:aws:s3:::my-report-bucket
+  arn:aws:iam::123456789012:role/app-reader
+  arn:aws:ec2:ap-south-1:123456789012:instance/i-0abc123
+  ```
+
+  The parts are partition, service, region, account id and resource. Some fields are empty for global resources, like S3 bucket names and IAM.
+
+  ### Three ways to control AWS
+
+  | Way | Good for | Watch out |
+  | --- | --- | --- |
+  | Console | Learning, looking around | Clicks are hard to repeat and review |
+  | CLI | Quick tasks, scripts | Long lived keys on laptops are risky. Use SSO login |
+  | Infrastructure as code | Everything in production | Learn one tool well, CloudFormation, CDK or Terraform |
+
+  With the CLI, `aws sso login` gives short lived credentials, so no permanent keys live on your laptop.
+
+  ### Tags make the bill readable
+
+  Tag every resource with at least an owner, an environment and a cost center. Turn on cost allocation tags in billing so the bill can be split by them. Lesson 5.4 builds on this.
+
+  ### Avoid the classic surprise bills
+
+  - Servers or databases left running after a test.
+  - NAT gateways, which charge per hour and per GB.
+  - Large GPU instances.
+  - Data transfer out to the internet.
+  - Logs kept forever.
+
+  The **Free Tier** covers some use of many services, but the rules differ by service and change over time. Always read them and always set a budget.
+
+  !key First hour checklist. Root MFA, no root keys, named users with MFA, budget alerts, CloudTrail on.
+
+diagrams:
+  - type: flow
+    title: The safe start checklist
+    nodes: [["Root MFA", "def"], ["No root keys", "def"], ["Named users with MFA", "def"], ["Budget alerts", "raised"], ["CloudTrail on", "raised"]]
+    edges: ["", "", "", ""]
+    caption: Five steps, under an hour, and most beginner disasters are avoided.
+
+life:
+  - ["Code Spaces, 2014", "Attackers got into the AWS console of Code Spaces, a code hosting company, and deleted most of its data and backups when the company would not pay. The company shut down. Backups in the same account, with no separate protection, could not save it."]
+  - ["The leaked key and the mining bill", "A student pushed an access key to a public GitHub repository. Within hours, bots used it to start many servers for crypto mining in several regions. GitHub secret scanning and AWS now often detect such leaks fast, but the bill can still be large."]
+  - ["Console clicks nobody could repeat", "A team built its first production setup by clicking in the console. When they needed a second region, nobody remembered every setting. They rebuilt it as code, which then took minutes to repeat."]
+
+tradeoffs:
+  - ["Console", "Easy to learn and explore.", "Hard to repeat, review or undo."]
+  - ["Infrastructure as code", "Repeatable, reviewable, versioned.", "Learning curve, needs a pipeline."]
+  - ["IAM Identity Center", "Short lived access, one place to manage people.", "A little setup at the start."]
+  - ["Long lived IAM user keys", "Simple for scripts.", "Leak risk. Prefer roles and short lived credentials."]
+
+mistakes:
+  - Using the root user for daily work.
+  - Creating access keys for the root user.
+  - Putting access keys in code or public repositories.
+  - No budget alert.
+  - Building production by clicking in the console.
+
+security: |
+  Treat account setup as a security task. Enable MFA everywhere, prefer short lived credentials from SSO and roles, enable CloudTrail in all regions with logs in a protected bucket, enable GuardDuty, and set alternate contacts for security and billing so AWS can reach the right people. Keep backups protected from the account they back up, lesson 5.3.
+
+quiz:
+  - q: What should you do with the root user after setup?
+    opts: ["Protect it with MFA, create no access keys, and use it only for the few tasks that need it", "Use it for daily work", "Share it with the team"]
+    a: 0
+    why: Root has unlimited power and cannot be restricted by IAM policies.
+  - type: fill
+    q: A unique name for any AWS resource, such as arn:aws:s3:::my-bucket, is an ____.
+    a: ["arn", "amazon resource name"]
+    why: ARNs appear in policies, logs and the CLI.
+  - type: sort
+    q: Pick the best tool for each job.
+    rows:
+      - ["Explore a new service for the first time", "Console"]
+      - ["Build the production network so it can be repeated", "Infrastructure as code"]
+      - ["List all buckets quickly in a script", "CLI"]
+    opts: ["Console", "Infrastructure as code", "CLI"]
+    why: Each way of controlling AWS has a sweet spot.
+  - q: Spot the security bug.
+    info: |
+      ```python
+      import boto3
+      s3 = boto3.client("s3",
+          aws_access_key_id="AKIA4EXAMPLE7Q",
+          aws_secret_access_key="wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLE")
+      ```
+    opts: ["Long lived access keys are hard coded in source code", "boto3 is the wrong library", "S3 needs no credentials"]
+    a: 0
+    why: Use roles, SSO or the default credential chain, never keys in code. Rotate any leaked key at once.
+  - q: Which is a common surprise cost to watch?
+    opts: ["NAT gateways charging per hour and per GB", "IAM users", "Tags"]
+    a: 0
+    why: NAT gateways, idle servers and data transfer out often surprise beginners.
+
+interview:
+  - q: What are the first things you do in a brand new AWS account?
+    keys:
+      - ["MFA on root and no root access keys", [root, mfa, no access key, lock]]
+      - ["Named users through IAM Identity Center or IAM with MFA", [identity center, sso, named user, iam user]]
+      - ["Budgets and billing alerts", [budget, billing, alert, cost]]
+      - ["CloudTrail and security monitoring on", [cloudtrail, guardduty, audit, logging]]
+      - ["Infrastructure as code from the start", [infrastructure as code, cloudformation, terraform, cdk]]
+    a: |
+      I secure the root user with MFA, make sure it has no access keys, and store its recovery details safely. I set up named access, ideally IAM Identity Center with MFA and permission sets, so nobody uses root day to day. I create a budget with alerts on actual and forecast spend, turn on a CloudTrail trail for all regions into a protected bucket, and enable GuardDuty. I also set security and billing alternate contacts. From then on I build resources with infrastructure as code and tag them with owner and environment. In a company, the account would be created inside AWS Organizations with these controls applied automatically.
+    fb: Mentioning that in a company accounts come from Organizations with guardrails shows you think beyond one account.
+
+desk:
+  title: The hackathon account
+  lede: After a weekend hackathon, a team finds a 2,400 dollar bill and access keys in their public repository.
+  situation: |
+    They used the root user, created root access keys for scripts, committed them to GitHub, and left four GPU servers running.
+  rounds:
+    - title: Round 1. Respond
+      items:
+        - q: What is the first thing to do?
+          opts: ["Deactivate and delete the leaked keys, then check CloudTrail for what they were used for", "Delete the repository and hope", "Wait for the next bill"]
+          a: 0
+          why: Stop the access, then investigate.
+        - type: sort
+          q: Problem or fix?
+          rows:
+            - ["Root access keys in scripts", "Problem"]
+            - ["MFA on root and named users for work", "Fix"]
+            - ["GPU servers left running", "Problem"]
+            - ["Budget alerts at 50, 80 and 100 percent", "Fix"]
+          opts: ["Problem", "Fix"]
+          why: Each problem has a simple control.
+    - title: Round 2. Prevent
+      items:
+        - type: open
+          q: Write a short setup guide for the next hackathon account.
+          a: "Create the account in the company organization with guardrails. Root has MFA and no keys. Each person signs in with SSO and MFA. A budget of 100 dollars alerts the team and the organizer. Resources are created with templates and tagged with team and event. A scheduled job stops servers at night, and everything is deleted on Monday. Secret scanning blocks keys in repositories."
+        - q: What is a benefit of short lived credentials from SSO over access keys?
+          opts: ["A leaked credential expires soon and is not stored for months on laptops or in code", "They are faster", "They cost less"]
+          a: 0
+          why: Short lived credentials shrink the window for misuse.
+  card: |
+    - Root has MFA, no keys, and stays locked away.
+    - Named users with MFA, ideally SSO.
+    - Budget alerts and CloudTrail from day one.
+    - ARNs name everything. Tags explain the bill.
+    - Production as code, not clicks.
+
+refs:
+  - "AWS. [Root user best practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/root-user-best-practices.html)."
+  - "AWS. [Amazon Resource Names](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference-arns.html)."
+  - "AWS. [Managing your costs with AWS Budgets](https://docs.aws.amazon.com/cost-management/latest/userguide/budgets-managing-costs.html)."

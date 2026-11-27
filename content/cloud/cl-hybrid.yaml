@@ -1,0 +1,207 @@
+short: Hybrid links and private endpoints
+title: Connecting networks, peering, Transit Gateway, VPN, Direct Connect and PrivateLink
+time: about 55 minutes
+tags: [peering, Transit Gateway, VPN, Direct Connect, VPC endpoints]
+lede: Real companies have many VPCs, an office or a data center, and partners. Learn the ways to connect them, which ones scale, how to reach AWS services and other companies' services without the internet, and how to choose.
+
+idea: |
+  Once you have more than one network, you must connect them. AWS gives several tools, each for a different job.
+
+  - **VPC peering.** A direct private link between two VPCs. Simple, but **not transitive**. If A peers with B and B with C, A cannot reach C through B.
+  - **Transit Gateway.** A **hub** that many VPCs and VPNs attach to. It replaces a web of peerings with a hub and spokes.
+  - **Site to Site VPN.** An encrypted tunnel over the internet from your office or data center to AWS. Quick to set up.
+  - **Direct Connect.** A private, dedicated network line from your data center to AWS. More consistent speed and latency than the internet, but it takes weeks to set up and is not encrypted by default.
+  - **VPC endpoints.** Private access from your VPC to AWS services, such as S3, without going through the internet or a NAT gateway.
+  - **PrivateLink.** Private access to one specific service in another VPC or another company, without connecting whole networks.
+
+  !eli5 Peering is a private bridge between two neighbouring estates. Transit Gateway is a central bus station that every estate connects to. VPN is a secure tunnel through a busy public road. Direct Connect is your own private road. PrivateLink is a hatch in the wall that opens to one shop only, not the whole estate.
+
+scenes:
+  - title: A company connects offices, VPCs and S3 privately
+    stats: [Step, Link, Path, Encrypted]
+    nodes:
+      dc: {label: Head office, x: 0, y: 2, kind: box}
+      tgw: {label: Transit Gateway, x: 3, y: 2, kind: def, tag: hub}
+      v1: {label: Prod VPC, x: 6, y: 0, kind: raised}
+      v2: {label: Shared services VPC, x: 6, y: 2, kind: raised}
+      v3: {label: Dev VPC, x: 6, y: 4, kind: raised}
+      s3: {label: S3, x: 4, y: 0, kind: raised, tag: via gateway endpoint}
+    links: [[dc, tgw], [tgw, v1], [tgw, v2], [tgw, v3], [v1, s3]]
+    steps:
+      - title: Office to AWS by VPN first
+        text: The office connects to the Transit Gateway with a Site to Site VPN, two encrypted tunnels over the internet for redundancy.
+        on: [dc, tgw]
+        flow: [[dc, tgw, ink]]
+        stats: [VPN, two IPsec tunnels, internet, yes]
+      - title: Hub and spokes
+        text: Prod, shared services and dev VPCs attach to the Transit Gateway. Route tables decide who can talk to whom.
+        on: [tgw, v1, v2, v3]
+        flow: [[tgw, v1, def], [tgw, v2, def], [tgw, v3, def]]
+        stats: [Hub, TGW attachments, AWS network, inside AWS]
+      - title: Keep dev away from prod
+        text: The Transit Gateway route tables let dev reach shared services, but not prod. Segmentation is enforced in the hub.
+        on: [tgw, v3, v1]
+        flow: [[v3, tgw, atk]]
+        mark: {v1: ok}
+        stats: [Segment, TGW route tables, blocked, "-"]
+      - title: Private path to S3
+        text: Prod servers read S3 through a gateway endpoint. Traffic never touches the internet or the NAT gateway, and the endpoint policy allows only the company's buckets.
+        on: [v1, s3]
+        flow: [[v1, s3, def]]
+        mark: {s3: ok}
+        stats: [Endpoint, S3 gateway endpoint, AWS network, TLS]
+      - title: Upgrade to Direct Connect
+        text: Traffic grows. The company adds a Direct Connect line for steady bandwidth and keeps the VPN as a backup. A VPN over Direct Connect, or MACsec where offered, adds encryption.
+        on: [dc, tgw]
+        flow: [[dc, tgw, def]]
+        stats: [Direct Connect, dedicated line, private, add VPN or MACsec]
+
+terms:
+  - [VPC peering, "A private connection between two VPCs. Not transitive."]
+  - [Transit Gateway, "A regional hub that connects many VPCs and on premises networks."]
+  - [Site to Site VPN, "Encrypted IPsec tunnels over the internet between your network and AWS."]
+  - [Direct Connect, "A dedicated private network connection from your premises to AWS."]
+  - [Gateway endpoint, "A free route table based endpoint for S3 and DynamoDB."]
+  - [Interface endpoint, "A network interface in your subnet that reaches an AWS or partner service privately, powered by PrivateLink."]
+  - [PrivateLink, "Exposes one service privately to other VPCs or accounts without connecting the networks."]
+  - [Client VPN, "A managed VPN for individual users' laptops."]
+
+how: |
+  ### Choosing a connection
+
+  | Need | Choose |
+  | --- | --- |
+  | Connect 2 or 3 VPCs simply | VPC peering |
+  | Connect many VPCs and on premises networks | Transit Gateway |
+  | Office to AWS, quickly, encrypted | Site to Site VPN |
+  | Large, steady, predictable traffic to a data center | Direct Connect, with VPN as backup |
+  | Reach S3 or DynamoDB privately and cheaply | Gateway endpoint |
+  | Reach other AWS services privately | Interface endpoint |
+  | Offer or use one service across accounts without network access | PrivateLink |
+
+  ### Facts that are easy to get wrong
+
+  - **Peering is not transitive** and does not allow overlapping IP ranges.
+  - A **Site to Site VPN** connection has **two tunnels** for redundancy. Configure both.
+  - **Direct Connect** does not encrypt traffic by default. Add an IPsec VPN over it, or use MACsec on supported connections.
+  - **Gateway endpoints** exist only for **S3 and DynamoDB**, and they have no hourly charge. Interface endpoints have hourly and data charges.
+  - Endpoint **policies** can limit which buckets or actions are reachable through the endpoint, a useful guard against data being copied to an attacker's bucket.
+
+  ### PrivateLink versus peering
+
+  Peering joins two whole networks, so both sides must trust each other and avoid overlapping ranges. PrivateLink exposes **one service** behind a Network Load Balancer, and the consumer sees only an endpoint in its own subnet. It is the usual way to offer a SaaS service privately to customers.
+
+  !key Choose the narrowest connection that does the job. PrivateLink for one service, peering for a few VPCs, Transit Gateway for many.
+
+diagrams:
+  - type: split
+    title: Ways out of a VPC
+    source: ["Your VPC", "def"]
+    targets:
+      - ["Internet gateway", "box", "the public internet"]
+      - ["VPC peering or Transit Gateway", "raised", "other VPCs"]
+      - ["VPN or Direct Connect", "raised", "your data center"]
+      - ["Gateway or interface endpoint", "def", "AWS services privately"]
+      - ["PrivateLink", "def", "one service in another account"]
+    caption: Each path has different cost, reach and trust. Draw them on every architecture diagram.
+
+life:
+  - ["The peering mesh", "A company connected 20 VPCs with peering. That needs 190 connections for every pair to talk, each with its own routes. Moving to a Transit Gateway turned it into 20 attachments."]
+  - ["Data out through the wrong door", "A security review found that private servers could copy data to any S3 bucket in the world through the NAT gateway. An S3 gateway endpoint with a policy that allows only the company's buckets, plus egress rules, closed that path."]
+  - ["SaaS over PrivateLink", "Many SaaS vendors, such as observability and database providers, let customers connect over PrivateLink, so customer data never crosses the public internet and no network peering is needed."]
+
+tradeoffs:
+  - ["VPC peering", "Simple, low latency, no hourly hub cost.", "Not transitive, becomes a mesh, no overlaps."]
+  - ["Transit Gateway", "Scales to many networks, central routing.", "Hourly and data processing charges."]
+  - ["Site to Site VPN", "Fast to set up, encrypted.", "Internet based, variable latency and throughput."]
+  - ["Direct Connect", "Consistent, high bandwidth.", "Weeks to set up, not encrypted by default, needs a backup."]
+  - ["PrivateLink", "Exposes only one service, overlaps allowed.", "Per endpoint cost, one direction."]
+
+mistakes:
+  - Expecting peering to be transitive.
+  - Only configuring one of the two VPN tunnels.
+  - Assuming Direct Connect is encrypted.
+  - Paying NAT gateway charges for S3 traffic instead of using a free gateway endpoint.
+  - Connecting whole networks when one service would do.
+
+security: |
+  Every connection is a path for attackers too. Segment with Transit Gateway route tables, so dev cannot reach prod. Use endpoint policies to stop data leaving to unknown buckets. Encrypt traffic over Direct Connect. Log VPN and Transit Gateway flows, and treat a connection to a partner as a trust boundary in your threat model.
+
+quiz:
+  - q: VPC A peers with B, and B peers with C. Can A reach C through B?
+    opts: ["No, peering is not transitive", "Yes, always", "Only with NAT"]
+    a: 0
+    why: Use a Transit Gateway or a direct peering between A and C.
+  - type: sort
+    q: Pick the connection.
+    rows:
+      - ["Connect 40 VPCs and two data centers", "Transit Gateway"]
+      - ["Private, free access from a VPC to S3", "Gateway endpoint"]
+      - ["Offer your API to customers' VPCs without peering", "PrivateLink"]
+    opts: ["Transit Gateway", "Gateway endpoint", "PrivateLink"]
+    why: Match the reach to the need.
+  - type: fill
+    q: Gateway endpoints exist only for S3 and ____.
+    a: ["dynamodb"]
+    why: Other services use interface endpoints.
+  - q: Identify the security issue. "Our Direct Connect line carries customer data, and we assume it is encrypted."
+    opts: ["Direct Connect is not encrypted by default, add an IPsec VPN or MACsec", "Direct Connect is always encrypted", "Customer data cannot use Direct Connect"]
+    a: 0
+    why: Private does not mean encrypted.
+  - q: What is the main benefit of a VPN as backup to Direct Connect?
+    opts: ["Connectivity continues if the dedicated line fails", "It is faster", "It removes routing"]
+    a: 0
+    why: A single Direct Connect line is a single point of failure.
+
+interview:
+  - q: How would you connect 30 VPCs across accounts and two on premises data centers?
+    keys:
+      - ["Transit Gateway as hub, shared across accounts", [transit gateway, hub, shared, resource access manager, ram]]
+      - ["Route tables for segmentation", [route table, segment, isolat, prod, dev]]
+      - ["Direct Connect with VPN backup to data centers", [direct connect, vpn, backup, redundan]]
+      - ["Non overlapping IPs and central IP planning", [overlap, ip plan, cidr, ipam]]
+      - ["Endpoints and PrivateLink for services", [endpoint, privatelink]]
+    a: |
+      I would place a Transit Gateway in a network account and share it with the other accounts using Resource Access Manager. Each VPC attaches to it, and Transit Gateway route tables separate prod, dev and shared services, so dev cannot reach prod. The data centers connect through Direct Connect for steady bandwidth, with Site to Site VPN as backup, and an encrypted layer over Direct Connect for sensitive data. IP ranges are planned centrally, for example with VPC IPAM, so nothing overlaps. AWS services are reached through VPC endpoints, and services shared with partners go over PrivateLink rather than connecting networks.
+    fb: Segmentation in the hub and planning IPs centrally are the strong points.
+
+desk:
+  title: The leaky data path
+  lede: A bank's audit asks how data could leave its AWS environment.
+  situation: |
+    Private servers reach S3 through a NAT gateway with no restrictions. Twelve VPCs are connected by peering. The data center link is one Direct Connect connection with no encryption and no backup.
+  rounds:
+    - title: Round 1. Find the issues
+      items:
+        - type: sort
+          q: What risk does each fact create?
+          rows:
+            - ["S3 through an open NAT gateway", "Data can be copied to any bucket on the internet"]
+            - ["One Direct Connect, no backup", "Single point of failure"]
+            - ["Direct Connect with no encryption", "Data readable on the line"]
+          opts: ["Data can be copied to any bucket on the internet", "Single point of failure", "Data readable on the line"]
+          why: Exfiltration, availability and confidentiality.
+        - q: Which control stops copying to outside buckets most directly?
+          opts: ["An S3 gateway endpoint with a policy allowing only the bank's buckets, plus blocking that traffic through NAT", "A bigger NAT gateway", "More peering"]
+          a: 0
+          why: Endpoint policies limit where S3 traffic can go.
+    - title: Round 2. Plan
+      items:
+        - type: open
+          q: Write the target design for the auditors.
+          a: "S3 and DynamoDB through gateway endpoints with policies limited to the bank's resources, and other AWS services through interface endpoints. Egress through NAT limited by a network firewall allow list. Twelve VPCs move to a shared Transit Gateway with separate route tables for prod and non prod. Two Direct Connect connections in different locations, with IPsec VPN over them and a Site to Site VPN as final backup. Flow logs on everywhere."
+        - q: What is a benefit of a Transit Gateway over peering here?
+          opts: ["Central routing and segmentation instead of a mesh of 66 peering links", "It is free", "It encrypts everything automatically"]
+          a: 0
+          why: 12 VPCs fully meshed need 66 peerings.
+  card: |
+    - Peering for a few, not transitive.
+    - Transit Gateway for many, with route tables for segments.
+    - VPN quick and encrypted. Direct Connect steady but not encrypted by default.
+    - Gateway endpoints for S3 and DynamoDB, interface endpoints for the rest.
+    - PrivateLink for one service across accounts.
+
+refs:
+  - "AWS. [Amazon VPC to Amazon VPC connectivity options](https://docs.aws.amazon.com/whitepapers/latest/aws-vpc-connectivity-options/amazon-vpc-to-amazon-vpc-connectivity-options.html)."
+  - "AWS. [Gateway endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/gateway-endpoints.html)."
+  - "AWS. [What is AWS PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/what-is-privatelink.html)."

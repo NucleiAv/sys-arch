@@ -1,0 +1,227 @@
+short: AWS, Azure and Google Cloud
+title: AWS, Azure and Google Cloud side by side
+time: about 45 minutes
+tags: [Azure, Google Cloud, multi cloud, service mapping]
+lede: The three big clouds offer the same kinds of building blocks with different names and a few real differences. Learn the service map, how each cloud organizes accounts and identity, where they truly differ, and when using more than one cloud is worth the cost.
+
+idea: |
+  If you understand one cloud well, you understand about 80 percent of the others. Each has virtual machines, object storage, managed databases, private networks, identity, keys, logs and serverless. The **names** differ, and a few **designs** differ.
+
+  The biggest real differences are these.
+
+  - **How resources are grouped.** AWS uses **accounts** inside an organization with OUs. Azure uses a **tenant** with **management groups**, **subscriptions** and **resource groups**. Google Cloud uses an **organization** with **folders** and **projects**.
+  - **Identity.** AWS IAM is built into each account. Azure uses **Microsoft Entra ID**, the same directory many companies already use for Microsoft 365, plus **Azure RBAC** for resources. Google Cloud uses **Cloud IAM** with Google identities and groups.
+  - **Networking.** An AWS VPC and an Azure virtual network belong to one region. A Google Cloud **VPC is global**, with regional subnets.
+
+  **Multi cloud** means using more than one provider. Most companies use one main cloud and a few services from others, often because of acquisitions, a specific service, or customer demand. Running the same app actively on two clouds is rare, because it doubles the skills, tooling and testing.
+
+  !eli5 Three big supermarket chains sell almost the same food. Each puts the milk in a different aisle and gives its house brand a different name. Once you can shop in one, you learn the others fast. Shopping at all three every week for the same meal is tiring, so most families pick one and pop into another for something special.
+
+scenes:
+  - title: The same three tier app on three clouds
+    stats: [Step, Layer, AWS, Azure and Google Cloud]
+    nodes:
+      u: {label: Users, x: 0, y: 1, kind: box}
+      edge: {label: CDN and WAF, x: 2, y: 1, kind: def}
+      lb: {label: Load balancer, x: 4, y: 1, kind: raised}
+      app: {label: App servers or containers, x: 6, y: 0, kind: raised}
+      db: {label: Managed SQL database, x: 6, y: 2, kind: raised}
+      obj: {label: Object storage, x: 4, y: 3, kind: box}
+    links: [[u, edge], [edge, lb], [lb, app], [app, db], [app, obj]]
+    steps:
+      - title: Edge
+        text: Users reach a CDN with a web firewall in front.
+        on: [u, edge]
+        flow: [[u, edge, ink]]
+        stats: [Edge, CDN and WAF, CloudFront and AWS WAF, Front Door and Cloud CDN with Cloud Armor]
+      - title: Load balancing
+        text: A layer 7 load balancer spreads requests across zones.
+        on: [edge, lb]
+        flow: [[edge, lb, ink]]
+        stats: [Balance, layer 7 load balancer, Application Load Balancer, Application Gateway and Cloud Load Balancing]
+      - title: Compute
+        text: The app runs on managed Kubernetes or serverless containers.
+        on: [lb, app]
+        flow: [[lb, app, ink]]
+        stats: [Compute, Kubernetes, EKS or Fargate, AKS and GKE or Cloud Run]
+      - title: Database
+        text: A managed relational database with a standby in another zone.
+        on: [app, db]
+        flow: [[app, db, ink]]
+        mark: {db: ok}
+        stats: [Data, managed SQL, RDS or Aurora, Azure SQL Database and Cloud SQL]
+      - title: Files
+        text: Images and backups go to object storage with lifecycle rules.
+        on: [app, obj]
+        flow: [[app, obj, ink]]
+        stats: [Storage, object storage, S3, Blob Storage and Cloud Storage]
+
+terms:
+  - [Multi cloud, "Using more than one cloud provider."]
+  - [Hybrid cloud, "Using cloud together with your own data centers."]
+  - [Azure subscription, "A billing and access boundary in Azure, close to an AWS account."]
+  - [Resource group, "An Azure container for related resources that share a life cycle."]
+  - [Google Cloud project, "The basic container for resources, billing and APIs in Google Cloud."]
+  - [Microsoft Entra ID, "Microsoft's cloud identity directory, formerly Azure Active Directory."]
+  - [Global VPC, "A Google Cloud network that spans all regions, with regional subnets."]
+  - [Lock in, "How hard and costly it is to move away from a provider."]
+
+how: |
+  ### Service map
+
+  | Need | AWS | Azure | Google Cloud |
+  | --- | --- | --- | --- |
+  | Virtual machines | EC2 | Virtual Machines | Compute Engine |
+  | Object storage | S3 | Blob Storage | Cloud Storage |
+  | Block storage | EBS | Managed Disks | Persistent Disk |
+  | Private network | VPC | Virtual Network | VPC, global |
+  | Managed Kubernetes | EKS | AKS | GKE |
+  | Serverless functions | Lambda | Azure Functions | Cloud Run functions |
+  | Serverless containers | Fargate, App Runner | Container Apps | Cloud Run |
+  | Managed SQL | RDS, Aurora | Azure SQL Database | Cloud SQL, AlloyDB |
+  | NoSQL | DynamoDB | Cosmos DB | Firestore, Bigtable |
+  | Data warehouse | Redshift | Synapse, Fabric | BigQuery |
+  | CDN | CloudFront | Front Door | Cloud CDN |
+  | DNS | Route 53 | Azure DNS | Cloud DNS |
+  | Private line | Direct Connect | ExpressRoute | Cloud Interconnect |
+  | Keys | KMS | Key Vault | Cloud KMS |
+  | Metrics and logs | CloudWatch | Azure Monitor | Cloud Monitoring and Logging |
+  | Audit log | CloudTrail | Activity Log | Cloud Audit Logs |
+  | Threat detection and posture | GuardDuty, Security Hub | Defender for Cloud | Security Command Center |
+  | Org guardrails | SCPs | Azure Policy | Organization Policy |
+
+  ### Grouping and identity
+
+  | | AWS | Azure | Google Cloud |
+  | --- | --- | --- | --- |
+  | Top | Organization | Entra tenant | Organization |
+  | Groups | OUs | Management groups | Folders |
+  | Main boundary | Account | Subscription | Project |
+  | Inside | Resources, tags | Resource groups | Resources, labels |
+  | People | Identity Center | Entra ID | Cloud Identity or Workspace |
+
+  ### When multi cloud makes sense
+
+  - A specific service is much better elsewhere, such as BigQuery for analytics.
+  - A merger brings a second cloud.
+  - Customers or regulators require it.
+  - A **backup copy of critical data** in a second provider, for extreme risk.
+
+  ### How to keep it manageable
+
+  - Pick a **primary cloud** and a clear reason for each exception.
+  - Use **portable layers** where they help, such as Kubernetes, Terraform, OpenTelemetry and a central identity provider.
+  - Use **one SIEM and one CSPM** across clouds, so security sees everything.
+
+  !key Learn one cloud deeply. The concepts carry over, only names and a few designs change. Use more than one cloud for a clear reason, not as a default.
+
+diagrams:
+  - type: split
+    title: How each cloud groups resources
+    source: ["Your company", "def"]
+    targets:
+      - ["AWS", "raised", "Organization, OUs, accounts"]
+      - ["Azure", "raised", "Tenant, management groups, subscriptions, resource groups"]
+      - ["Google Cloud", "raised", "Organization, folders, projects"]
+    caption: Policies attached higher up are inherited lower down in all three.
+
+life:
+  - ["Analytics on another cloud", "Many companies run their apps on AWS or Azure but use BigQuery on Google Cloud, or Snowflake across clouds, for analytics. Data transfer costs between clouds then become a real design concern."]
+  - ["Microsoft shops choose Azure", "Companies already deep in Microsoft 365 and Entra ID often choose Azure because identity, licences and support are already in place."]
+  - ["The cost of being everywhere", "Teams that tried to run every service on two clouds at once often fell back to one primary cloud. They found that the lowest common set of features and double testing cost more than the risk they removed."]
+
+tradeoffs:
+  - ["Single cloud", "Deep skills, best use of managed services, simpler security.", "Lock in and dependence on one provider."]
+  - ["Multi cloud for specific services", "Best tool for each job.", "Data transfer cost, more skills and tooling."]
+  - ["Active active across clouds", "Survives a whole provider failing.", "Very expensive and complex, rarely needed."]
+
+mistakes:
+  - Thinking all three clouds group and secure things the same way.
+  - Assuming a Google Cloud VPC is regional like AWS.
+  - Multi cloud "to avoid lock in" without counting the cost.
+  - Separate security tools per cloud, with no single view.
+
+security: |
+  Each cloud has its own identity and permission model, so least privilege must be designed three times. Use one central identity provider with SSO into all clouds, one place for logs and findings, and the same baseline controls, such as no public storage and MFA everywhere, written as policy in each cloud. Watch for cross cloud trust, such as workload identity federation between providers, which can become an attack path.
+
+quiz:
+  - type: sort
+    q: Match the service to its cloud.
+    rows:
+      - ["Compute Engine", "Google Cloud"]
+      - ["Blob Storage", "Azure"]
+      - ["DynamoDB", "AWS"]
+      - ["BigQuery", "Google Cloud"]
+    opts: ["Google Cloud", "Azure", "AWS"]
+    why: Learn the names in sets.
+  - q: Which cloud's VPC spans all regions?
+    opts: ["Google Cloud", "AWS", "Azure"]
+    a: 0
+    why: Google Cloud VPCs are global with regional subnets.
+  - type: fill
+    q: The Azure equivalent of AWS CloudTrail is the Azure ____ Log.
+    a: ["activity"]
+    why: It records control plane operations.
+  - q: What is the closest Azure match to an AWS account?
+    opts: ["Subscription", "Resource group", "Region"]
+    a: 0
+    why: A subscription is the main billing and access boundary.
+  - q: Spot the problem. "We run everything active active on AWS and Azure to avoid lock in."
+    opts: ["Very high cost and complexity, often more risk than it removes", "It is free", "It is required by law"]
+    a: 0
+    why: Use multi cloud for a clear, specific reason.
+
+interview:
+  - q: Your company runs on AWS and has just bought a company on Azure. How do you approach it?
+    keys:
+      - ["Central identity and SSO across both", [identity, sso, entra, identity center, federat]]
+      - ["One view for security, logs and findings", [siem, one view, central, cspm, findings]]
+      - ["Baseline guardrails in both, SCPs and Azure Policy", [scp, azure policy, guardrail, baseline]]
+      - ["Network link and data transfer cost", [network, interconnect, vpn, data transfer, egress]]
+      - ["Decide per workload, migrate or keep, with a reason", [migrat, keep, per workload, reason, primary]]
+    a: |
+      I would not rush to move everything. First identity, so people sign in once through a central provider into both clouds with least privilege roles. Then security visibility. Activity Log, Defender for Cloud and Azure Monitor data flow into the same SIEM as CloudTrail and GuardDuty, and one CSPM covers both. I apply the same baseline in both, with SCPs on AWS and Azure Policy on Azure, such as no public storage, encryption and allowed regions. If systems must talk, I connect them privately with VPN or interconnects and watch data transfer cost. Then I decide workload by workload whether to migrate, keep or retire, based on cost, skills and risk, with AWS as the primary platform.
+    fb: Identity, visibility and guardrails before migration is the mature order.
+
+desk:
+  title: Translate the architecture
+  lede: An AWS team must explain its design to an Azure team that will run a copy in another country.
+  situation: |
+    The design uses CloudFront with WAF, an ALB, EKS, Aurora PostgreSQL, S3, KMS, CloudWatch and CloudTrail, in one account per environment.
+  rounds:
+    - title: Round 1. Map the services
+      items:
+        - type: sort
+          q: What is the Azure match for each part?
+          rows:
+            - ["EKS", "AKS"]
+            - ["S3", "Blob Storage"]
+            - ["KMS", "Key Vault"]
+            - ["One account per environment", "One subscription per environment"]
+          opts: ["AKS", "Blob Storage", "Key Vault", "One subscription per environment"]
+          why: Same idea, different names.
+        - q: Which difference needs the most care?
+          opts: ["Identity and permissions, Entra ID and Azure RBAC work differently from IAM", "Service names", "Console colours"]
+          a: 0
+          why: Permission models differ most.
+    - title: Round 2. Keep it secure
+      items:
+        - type: open
+          q: What baseline controls must the Azure copy have from day one?
+          a: "Sign in through Entra ID with MFA and least privilege roles, no shared accounts. Azure Policy to block public storage, require encryption and limit regions. Defender for Cloud turned on. Activity Log and resource logs sent to the shared SIEM. Keys in Key Vault with access policies or RBAC. Private endpoints for the database and storage."
+        - q: What is a benefit of Terraform for this project?
+          opts: ["One tool and workflow to define resources in both clouds, with reviews and history", "It makes Azure identical to AWS", "It removes the need for security"]
+          a: 0
+          why: Portable workflow, not portable resources.
+  card: |
+    - Same building blocks, different names.
+    - AWS accounts, Azure subscriptions, Google projects.
+    - IAM, Entra ID plus Azure RBAC, Cloud IAM.
+    - Google Cloud VPC is global.
+    - One primary cloud. Multi cloud for a clear reason.
+    - One identity, one SIEM, same baseline everywhere.
+
+refs:
+  - "Microsoft. [AWS to Azure services comparison](https://learn.microsoft.com/en-us/azure/architecture/aws-professional/)."
+  - "Google Cloud. [Compare AWS and Azure services to Google Cloud](https://cloud.google.com/docs/get-started/aws-azure-gcp-service-comparison)."
+  - "Google Cloud. [VPC networks](https://cloud.google.com/vpc/docs/vpc)."
