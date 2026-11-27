@@ -116,6 +116,11 @@ diagrams:
     nodes: [["Ask KMS for a data key", "box"], ["Encrypt data with plain data key", "def"], ["Delete plain key", "atk"], ["Store data plus encrypted data key", "raised"]]
     edges: ["", "", ""]
     caption: To read, the encrypted data key goes back to KMS, which checks permission and logs the request before decrypting it.
+  - type: flow
+    title: Who can use a KMS key
+    nodes: [["Caller asks to decrypt", "box"], ["Key policy", "def", "must allow the account or role"], ["IAM policy", "raised", "must allow kms:Decrypt"], ["Grants and conditions", "raised", "service, context"], ["KMS decrypts", "def", "logged in CloudTrail"]]
+    edges: ["", "and", "and", "then"]
+    caption: Unlike most AWS resources, a KMS key needs its key policy to allow access. IAM alone is not enough.
 
 life:
   - ["Uber, 2016", "Attackers found AWS access keys in a private code repository and used them to download data on 57 million riders and drivers from S3. Secrets in code, even private code, are a classic path to a breach."]

@@ -117,6 +117,11 @@ diagrams:
     nodes: [["Backup and restore", "box", "hours"], ["Pilot light", "raised", "tens of minutes"], ["Warm standby", "def", "minutes"], ["Active active", "atk", "near zero"]]
     edges: ["more cost", "more cost", "more cost"]
     caption: Each step to the right shortens recovery and raises the monthly bill.
+  - type: flow
+    title: AWS Backup protects against ransomware
+    nodes: [["Production account", "raised"], ["AWS Backup plan", "def", "daily and continuous"], ["Vault in backup account", "def", "vault lock on"], ["Copy to second region", "raised"], ["Restore test", "box", "every quarter"]]
+    edges: ["schedule", "copy", "copy", "prove"]
+    caption: Backups in another account and region, locked so no admin can delete them early, and tested.
 
 life:
   - ["OVHcloud fire, 2021", "A fire destroyed a data center building in Strasbourg in March 2021. Customers with backups only in the same site lost data. Customers with copies elsewhere recovered. Distance between copies matters."]

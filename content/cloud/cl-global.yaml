@@ -109,6 +109,15 @@ diagrams:
       - ["Subnet", "A network slice inside one AZ", "partial"]
       - ["Instance", "Your server", "stop"]
     caption: Each layer is a different blast radius. Spread copies across the layer you want to survive.
+  - type: split
+    title: AWS global infrastructure, from big to small
+    source: ["AWS", "def"]
+    targets:
+      - ["Regions", "raised", "separate areas such as Mumbai, ap-south-1"]
+      - ["Availability Zones", "raised", "usually 3 or more per region, own power and network"]
+      - ["Local Zones", "box", "compute close to some big cities"]
+      - ["Edge locations", "box", "hundreds of CloudFront and Route 53 points"]
+    caption: Pick a region for law and latency, spread across AZs for failure, and use the edge for speed.
 
 life:
   - ["US East 1 in December 2021", "An AWS outage in the Northern Virginia region, us-east-1, caused problems for many large apps for hours. Teams that depended on one region, or on services whose control plane ran there, were hit. It is a common lesson in knowing your region dependencies."]

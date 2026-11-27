@@ -109,6 +109,16 @@ diagrams:
     nodes: [["GuardDuty, Inspector, Macie, Config, Access Analyzer", "def"], ["Security Hub", "raised", "one view"], ["EventBridge", "box"], ["Auto fix or ticket", "def"], ["Prevent with SCPs and pipeline checks", "raised"]]
     edges: ["findings", "rules", "route", "learn"]
     caption: Every finding should end in a fix and, where possible, a guardrail so it cannot happen again.
+  - type: split
+    title: AWS security services and what each one finds
+    source: ["Your accounts", "box"]
+    targets:
+      - ["GuardDuty", "atk", "threats, stolen keys, mining"]
+      - ["Inspector", "raised", "known CVEs in EC2, ECR, Lambda"]
+      - ["Macie", "raised", "sensitive data in S3"]
+      - ["IAM Access Analyzer", "raised", "access shared outside"]
+      - ["AWS Config", "def", "settings that break your rules"]
+    caption: All of them report into Security Hub in the delegated security account.
 
 life:
   - ["Leaked keys and crypto mining", "Leaked AWS keys in public code are found by bots within minutes and are often used to launch crypto mining instances. AWS also scans public GitHub for its keys and warns the account owner. GuardDuty has specific findings for this pattern."]

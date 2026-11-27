@@ -55,6 +55,42 @@ scenes:
         text: Even if an attacker copied the credentials, they stop working when they expire. A stored access key would work until someone noticed and deleted it.
         on: [sts]
         stats: [Expire, rotated, short, safer]
+  - title: A CI pipeline deploys into another account with a role
+    stats: [Step, IAM piece, Credential, Lives for]
+    nodes:
+      ci: {label: GitHub Actions, x: 0, y: 1, kind: box, tag: OIDC token}
+      sts: {label: AWS STS, x: 2, y: 1, kind: def}
+      trust: {label: Trust policy, x: 4, y: 0, kind: raised, tag: this repo only}
+      role: {label: Deploy role, x: 4, y: 2, kind: raised, tag: prod account}
+      cfn: {label: CloudFormation, x: 6, y: 1, kind: def}
+    links: [[ci, sts], [sts, trust], [sts, role], [role, cfn]]
+    steps:
+      - title: The pipeline proves who it is
+        text: GitHub gives the job a signed OIDC token that names the repository and branch. No AWS keys are stored in GitHub.
+        on: [ci]
+        stats: [Identity, OIDC token, none from AWS yet, minutes]
+      - title: Ask STS for the role
+        text: The job calls AssumeRoleWithWebIdentity on the deploy role in the prod account and sends the token.
+        on: [ci, sts]
+        flow: [[ci, sts, ink]]
+        stats: [Request, STS, none yet, minutes]
+      - title: The trust policy checks
+        text: The role's trust policy allows only this repository's main branch. A fork or another branch is refused.
+        on: [sts, trust]
+        flow: [[sts, trust, pen]]
+        mark: {trust: ok}
+        stats: [Check, trust policy, none yet, minutes]
+      - title: Short lived keys
+        text: STS returns temporary credentials for the deploy role. They expire in one hour.
+        on: [sts, role]
+        flow: [[sts, role, def]]
+        stats: [Issue, temporary credentials, deploy role, 1 hour]
+      - title: Deploy with least privilege
+        text: The job updates one CloudFormation stack. The role's permission policy allows nothing else, and CloudTrail logs every call with the role session name.
+        on: [role, cfn]
+        flow: [[role, cfn, def]]
+        mark: {cfn: ok}
+        stats: [Act, permission policy, deploy role, expires on its own]
 
 terms:
   - [IAM user, "An identity with long lived credentials, such as a password or access keys."]
@@ -123,6 +159,11 @@ diagrams:
     nodes: [["Request", "box"], ["Explicit deny anywhere?", "atk", "then deny"], ["SCPs and boundaries allow?", "def", "they only limit"], ["An identity or resource policy allows?", "def"], ["Allow", "raised"]]
     edges: ["no", "yes", "yes", ""]
     caption: Any "no" along the way ends in deny. Deny is the default.
+  - type: flow
+    title: How AWS decides allow or deny
+    nodes: [["Request arrives", "box"], ["Explicit deny?", "atk", "any deny wins"], ["SCP allows?", "raised", "organization limit"], ["Identity or resource policy allows?", "def"], ["Boundary and session allow?", "raised"]]
+    edges: ["", "no", "yes", "yes"]
+    caption: Every request starts as deny. It is allowed only if every layer says yes and nothing says no.
 
 life:
   - ["Capital One, 2019", "An attacker used a server side request forgery flaw in a web firewall to get the temporary credentials of the instance's role from the metadata service. The role could list and read far more S3 buckets than it needed. Data on over 100 million people was taken. Least privilege on that role would have limited the damage."]

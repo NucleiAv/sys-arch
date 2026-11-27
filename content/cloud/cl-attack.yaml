@@ -116,6 +116,11 @@ diagrams:
       - ["Steal or destroy data", "Data perimeter, isolated and locked backups", "stop"]
       - ["Detect and respond", "GuardDuty, alerts, a practised playbook", "partial"]
     caption: One control per step is good. Several per step is defense in depth.
+  - type: flow
+    title: First response to a compromised access key
+    nodes: [["Deactivate the key", "def"], ["Read CloudTrail", "raised", "all regions"], ["Remove persistence", "atk", "new users, keys, roles"], ["Snapshot, then clean up", "raised", "keep evidence"], ["Fix the cause", "def", "roles, not keys"]]
+    edges: ["contain", "scope", "evict", "recover"]
+    caption: Contain first, keep evidence, check every region, then close the hole that let the key leak.
 
 life:
   - ["Capital One, 2019", "An attacker used SSRF through a misconfigured web application firewall on EC2 to get role credentials from the metadata service, then read S3 data on about 106 million people. US regulators fined the bank 80 million dollars. AWS released IMDSv2 later that year."]

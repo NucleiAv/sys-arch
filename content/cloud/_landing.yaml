@@ -16,7 +16,7 @@ why: |
 diagrams:
   - type: flow
     title: How the track builds up
-    nodes: [["Foundations", "box", "what, where, who owns what"], ["Identity and networks", "def", "who can do what, how traffic flows"], ["Compute, storage, data", "def", "the building blocks"], ["Run, secure, pay", "raised", "operate, defend, control cost"], ["Design by tier", "atk", "tier 0 to tier 4"]]
+    nodes: [["Foundations", "box", "what, where, who owns what"], ["Identity and networks", "def", "who can do what, how traffic flows"], ["Compute, storage, data", "def", "the building blocks"], ["Run, secure, pay", "raised", "operate, defend, control cost"], ["Design by tier", "atk", "tiers 0 to 4"]]
     edges: ["", "", "", ""]
     caption: Each level uses the words from the one before. The designs at the end use every level.
 

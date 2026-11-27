@@ -128,6 +128,11 @@ diagrams:
       - ["Virtualization and servers", "The provider's", "partial"]
       - ["Network, buildings, power", "The provider's", "partial"]
     caption: Moving from IaaS to PaaS to SaaS hands more layers to the provider, but your data and who can access it stay your job.
+  - type: flow
+    title: What happens when you launch one EC2 instance
+    nodes: [["You, console or CLI", "box"], ["IAM checks the call", "def", "allowed?"], ["EC2 picks a host", "raised", "in your chosen AZ"], ["Instance in your VPC", "raised", "billed per second"], ["CloudTrail logs it", "def", "who, when, from where"]]
+    edges: ["RunInstances", "allow", "start", "record"]
+    caption: Every cloud action is an API call. IAM decides, the service acts, and CloudTrail remembers.
 
 life:
   - ["Amazon Web Services starts, 2006", "Amazon launched S3 storage and EC2 servers for rent in 2006. Developers could get a server with a credit card in minutes, which changed how startups were built."]

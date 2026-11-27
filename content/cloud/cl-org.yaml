@@ -114,6 +114,15 @@ diagrams:
       - ["Permission set or role policy", "What the person is granted", "partial"]
       - ["Resource policy", "What the resource allows", "partial"]
     caption: An action must pass every layer. The SCP is the one that even account admins cannot change.
+  - type: split
+    title: One AWS organization, many OUs
+    source: ["Management account", "atk"]
+    targets:
+      - ["Security OU", "def", "Log Archive and Audit accounts"]
+      - ["Infrastructure OU", "raised", "network hub, shared services"]
+      - ["Workloads OU", "raised", "prod and non prod accounts per team"]
+      - ["Sandbox OU", "box", "experiments with budgets and auto clean up"]
+    caption: SCPs attached to an OU apply to every account inside it. Keep the management account empty of workloads.
 
 life:
   - ["Account per team at scale", "Large AWS customers often run hundreds or thousands of accounts. Separate accounts limit blast radius and make the bill easy to split, and Organizations plus Control Tower keeps the rules the same everywhere."]

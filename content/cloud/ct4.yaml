@@ -120,6 +120,15 @@ diagrams:
     nodes: [["Exports", "box"], ["S3 raw", "box"], ["Spot transform", "raised", "retries"], ["S3 curated", "box"], ["Athena with Lake Formation", "def"]]
     edges: ["1 am", "read", "write partition", "query"]
     caption: Each arrow is a step that can be run again safely.
+  - type: split
+    title: Who sees what in the data lake
+    source: ["Lake Formation", "def"]
+    targets:
+      - ["Pipeline role", "raised", "raw, curated, shared zones"]
+      - ["Analysts", "raised", "curated tables, no personal columns"]
+      - ["Marketing", "box", "shared zone, masked file only"]
+      - ["Everyone else", "atk", "nothing"]
+    caption: Permissions are set once in Lake Formation, down to columns and rows, instead of in many bucket policies.
 
 deep:
   - ["Why Spot fits here", "Spot uses spare EC2 capacity at a large discount but can be reclaimed with two minutes notice. The job has no customers waiting and can retry, so interruptions cost minutes, not money or trust."]

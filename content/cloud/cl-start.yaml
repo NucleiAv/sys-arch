@@ -114,6 +114,11 @@ diagrams:
     nodes: [["Root MFA", "def"], ["No root keys", "def"], ["Named users with MFA", "def"], ["Budget alerts", "raised"], ["CloudTrail on", "raised"]]
     edges: ["", "", "", ""]
     caption: Five steps, under an hour, and most beginner disasters are avoided.
+  - type: flow
+    title: The first hour in a new AWS account
+    nodes: [["Root user", "atk", "MFA, then lock away"], ["AWS Budgets", "raised", "alert at a small amount"], ["IAM Identity Center", "def", "your daily admin login"], ["CloudTrail and GuardDuty", "def", "all regions"], ["Build with roles", "box", "no access keys"]]
+    edges: ["secure", "watch cost", "daily use", "start"]
+    caption: Do these before you launch anything. Each one closes a common way beginners get hurt.
 
 life:
   - ["Code Spaces, 2014", "Attackers got into the AWS console of Code Spaces, a code hosting company, and deleted most of its data and backups when the company would not pay. The company shut down. Backups in the same account, with no separate protection, could not save it."]

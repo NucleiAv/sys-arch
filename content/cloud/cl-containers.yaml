@@ -117,6 +117,11 @@ diagrams:
       - ["ECS or EKS on Fargate", "AWS runs the hosts too", "partial"]
       - ["Lambda", "You run only your function code", "stop"]
     caption: Each step down hands more work to AWS, and gives up some control and sometimes cost efficiency.
+  - type: flow
+    title: From code to a running container on AWS
+    nodes: [["Git push", "box"], ["CodeBuild or GitHub Actions", "raised", "build and scan"], ["Amazon ECR", "def", "image with a fixed tag"], ["ECS or EKS", "raised", "rolling deploy"], ["ALB health checks", "def", "old tasks stop"]]
+    edges: ["trigger", "push", "pull", "traffic"]
+    caption: The image is built once, scanned, stored with a fixed tag, and the same image runs in every environment.
 
 life:
   - ["Fargate for a small team", "A five person startup moved from hand managed Docker hosts to ECS on Fargate. They stopped patching servers entirely and deploys became one pipeline step."]

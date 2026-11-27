@@ -58,6 +58,44 @@ scenes:
         on: [sqs]
         mark: {sqs: warn}
         stats: [DLQ, dead letter queue, none, tiny]
+  - title: SQS retries a failing Lambda, then a dead letter queue catches it
+    stats: [Step, Part, Message state, Lost messages]
+    nodes:
+      prod: {label: Order service, x: 0, y: 1, kind: box}
+      q: {label: SQS queue, x: 2, y: 1, kind: def, tag: visibility timeout}
+      fn: {label: Lambda consumer, x: 4, y: 1, kind: raised}
+      dlq: {label: Dead letter queue, x: 6, y: 0, kind: atk}
+      al: {label: CloudWatch alarm, x: 6, y: 2, kind: def}
+    links: [[prod, q], [q, fn], [q, dlq], [dlq, al]]
+    steps:
+      - title: A message arrives
+        text: The order service sends an order message to the queue.
+        on: [prod, q]
+        flow: [[prod, q, ink]]
+        stats: [Send, SQS, waiting, none]
+      - title: Lambda fails
+        text: Lambda polls the queue and gets the message. A bug makes it fail. The message is hidden until the visibility timeout ends.
+        on: [q, fn]
+        flow: [[q, fn, ink]]
+        mark: {fn: bad}
+        stats: [Try 1, Lambda, hidden, none]
+      - title: Retries
+        text: The message comes back and Lambda tries again. Each failure adds to the receive count.
+        on: [q, fn]
+        flow: [[q, fn, ink]]
+        mark: {fn: warn}
+        stats: [Try 2 to 5, redrive policy, retried, none]
+      - title: Moved to the DLQ
+        text: After 5 receives, as set in the redrive policy, SQS moves the message to the dead letter queue. Good messages keep flowing.
+        on: [q, dlq]
+        flow: [[q, dlq, atk]]
+        stats: [Park, DLQ, parked, none]
+      - title: People are told
+        text: An alarm on the DLQ's message count alerts the team. After the fix, they redrive the message back to the main queue.
+        on: [dlq, al]
+        flow: [[dlq, al, def]]
+        mark: {al: ok}
+        stats: [Alert, CloudWatch alarm, fixed and redriven, none]
 
 terms:
   - [Lambda, "Runs functions on events with no servers to manage, billed per request and duration."]
@@ -122,6 +160,11 @@ diagrams:
       - ["SQS for analytics", "raised", "can lag"]
       - ["Lambda for fraud check", "box", "direct"]
     caption: Each consumer gets its own queue, so one slow or broken consumer does not affect the others.
+  - type: flow
+    title: A serverless API on AWS
+    nodes: [["Client", "box"], ["API Gateway", "def", "auth, throttling"], ["Lambda", "raised", "your code"], ["DynamoDB", "raised", "data"], ["EventBridge", "box", "events to others"]]
+    edges: ["HTTPS", "invoke", "read and write", "publish"]
+    caption: No servers to patch. You pay per request, and each part scales on its own.
 
 life:
   - ["iRobot on serverless", "iRobot has described running much of the cloud backend for its connected robot vacuums on serverless AWS services, so a small team could serve millions of devices without managing servers."]

@@ -119,6 +119,11 @@ diagrams:
     nodes: [["CloudFront and WAF", "def"], ["ALB, public subnets", "raised"], ["App tasks, private subnets", "raised", "3 AZs"], ["Aurora, cache, search", "box", "data subnets"], ["SQS and workers", "box"]]
     edges: ["HTTPS", "HTTPS", "SQL and cache", "jobs"]
     caption: Each tier sits in its own subnets with security groups that allow only the tier in front of it.
+  - type: flow
+    title: Failing over to the warm standby
+    nodes: [["Declare disaster", "atk"], ["Promote Aurora secondary", "def", "Hyderabad"], ["Scale up ECS", "raised", "10 to 40 tasks"], ["Switch Route 53", "def"], ["Check and open", "box", "under 1 hour"]]
+    edges: ["runbook", "writer", "capacity", "traffic"]
+    caption: The same steps every drill. Writing them down and timing them is what makes the 1 hour RTO real.
 
 deep:
   - ["Why warm standby and not active active", "The business accepts an hour of RTO. Warm standby gives that at about a quarter to a third of the cost of a second full region, and avoids multi writer data problems."]

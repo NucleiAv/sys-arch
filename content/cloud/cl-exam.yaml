@@ -118,6 +118,15 @@ diagrams:
     nodes: [["Need and constraint", "box"], ["Must haves", "raised", "security, availability, data"], ["Remove what breaks them", "atk"], ["Most managed that fits", "def"], ["Write the trade off", "raised"]]
     edges: ["", "", "", ""]
     caption: The same steps apply to an exam question and to a real architecture decision.
+  - type: split
+    title: The four SAA-C03 domains
+    source: ["SAA-C03", "def"]
+    targets:
+      - ["Secure, 30 percent", "def", "IAM, KMS, VPC security, data protection"]
+      - ["Resilient, 26 percent", "raised", "multi AZ, decoupling, DR"]
+      - ["High performing, 24 percent", "raised", "caching, scaling, right storage"]
+      - ["Cost optimized, 20 percent", "box", "pricing models, lifecycle, rightsizing"]
+    caption: Security is the largest domain, and it hides inside the other three too.
 
 life:
   - ["Why the exam leans on security", "Design secure architectures is the largest domain, at 30 percent. This matches real life, where most cloud incidents come from identity and configuration mistakes."]

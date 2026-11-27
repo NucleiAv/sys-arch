@@ -21,7 +21,7 @@ import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 os.chdir(ROOT)
-V = "20261127d"
+V = "20261127e"
 E = lambda s: html.escape(str(s), quote=True)
 
 
@@ -125,12 +125,24 @@ def text_block(x, cy, lines, cls="t-s", lh=16, anchor="middle"):
     return "".join(f'<text x="{x:.0f}" y="{y0 + i * lh:.0f}" text-anchor="{anchor}" class="{cls}">{E(l)}</text>' for i, l in enumerate(lines))
 
 
+def sub_lines(sub, w):
+    """mono caption under a node label, wrapped to the node width"""
+    return wrap(sub, w - 12, 11.8) if sub else []
+
+
+def node_h(w, label, sub=None, base=52):
+    return max(base, 20 + 16 * len(wrap(label, w - 16)) + 13 * len(sub_lines(sub, w)))
+
+
 def node(x, y, w, h, label, kind="box", sub=None):
     s = f'<rect x="{x:.0f}" y="{y:.0f}" width="{w:.0f}" height="{h:.0f}" rx="8" class="{KIND.get(kind, "box")}"/>'
     lines = wrap(label, w - 16)
-    if sub:
-        s += text_block(x + w / 2, y + h / 2 - 7, lines, "t-s")
-        s += f'<text x="{x + w / 2:.0f}" y="{y + h - 9:.0f}" text-anchor="middle" class="t-mono">{E(sub)}</text>'
+    subs = sub_lines(sub, w)
+    if subs:
+        sh = 13 * len(subs)
+        s += text_block(x + w / 2, y + (h - sh) / 2, lines, "t-s")
+        for j, l in enumerate(subs):
+            s += f'<text x="{x + w / 2:.0f}" y="{y + h - 9 - (len(subs) - 1 - j) * 13:.0f}" text-anchor="middle" class="t-mono">{E(l)}</text>'
     else:
         s += text_block(x + w / 2, y + h / 2, lines, "t-s")
     return s
@@ -151,7 +163,7 @@ def d_flow(d):
         if lane.get("label"):
             out.append(f'<text x="0" y="{y + 14}" class="t-mono {LCOL.get(lane.get("labelkind", "box"), "")}">{E(lane["label"])}</text>')
             y += 24
-        h = max(52, 18 + 16 * max(len(wrap(nd[0], w - 16)) for nd in nodes) + (14 if any(len(nd) > 2 for nd in nodes) else 0))
+        h = max(node_h(w, nd[0], nd[2] if len(nd) > 2 else None) for nd in nodes)
         col = lane.get("color", "ink")
         for i, nd in enumerate(nodes):
             x = x0 + i * (w + gap)
@@ -164,9 +176,9 @@ def d_flow(d):
                     lab, ec = lab[0], lab[1]
                 out.append(f'<path class="{LNC.get(ec, "ln")}" d="M{ax:.0f} {y + h / 2:.0f} H{bx:.0f}" marker-end="url(#a-{mk(ec)})"/>')
                 if lab:
-                    ws = wrap(lab, gap + 6, 11)[:3]
+                    ws = wrap(lab, gap + 6, 11.8)[:3]
                     for j, l in enumerate(ws):
-                        out.append(f'<text x="{(ax + bx) / 2:.0f}" y="{y + h / 2 - 8 - (len(ws) - 1 - j) * 12:.0f}" text-anchor="middle" class="t-mono">{E(l)}</text>')
+                        out.append(f'<text x="{(ax + bx) / 2:.0f}" y="{y + h / 2 - 8 - (len(ws) - 1 - j) * 14:.0f}" text-anchor="middle" class="t-mono">{E(l)}</text>')
         y += h + 28
     return W, y - 12, "".join(out)
 
@@ -174,9 +186,10 @@ def d_flow(d):
 def d_cycle(d):
     steps = d["nodes"]
     n = len(steps)
-    W, H = 680, 300 if n <= 4 else 340
-    cx, cy, rx, ry = W / 2, H / 2, 250, (H / 2 - 40)
-    w, h = 150, 52
+    w = 150
+    h = max(node_h(w, st[0], st[2] if len(st) > 2 else f"step {i + 1}") for i, st in enumerate(steps))
+    W, H = 680, (300 if n <= 4 else 340) + (h - 52)
+    cx, cy, rx, ry = W / 2, H / 2, 250, (H / 2 - 14 - h / 2)
     pts = [(cx + rx * math.cos(-math.pi / 2 + 2 * math.pi * i / n), cy + ry * math.sin(-math.pi / 2 + 2 * math.pi * i / n)) for i in range(n)]
     out = []
     col = d.get("color", "ink")
@@ -269,7 +282,7 @@ def scene(sc):
     for st in d["steps"]:
         st["flow"] = [list(f) for f in st.get("flow", [])]
         if "stats" in st:
-            st["stats"] = [str(v) for v in st["stats"]]
+            st["stats"] = ["yes" if v is True else "no" if v is False else str(v) for v in st["stats"]]
     js = json.dumps(d, ensure_ascii=False).replace("</", "<\\/")
     return f'<div class="scene"><script type="application/json">{js}</script><noscript>{E(sc.get("title", ""))}</noscript></div>'
 

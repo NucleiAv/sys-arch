@@ -131,6 +131,11 @@ diagrams:
       - ["One cell", "def", "Other cells unaffected, deploy cells one by one"]
       - ["One region", "def", "Routing control moves all cells to the other region"]
     caption: Tier 1 designs name every failure domain and the exact mechanism that contains it.
+  - type: flow
+    title: One payment, end to end, in its home region
+    nodes: [["Partner, mTLS", "box"], ["Route 53 and WAF", "def"], ["Payment cell", "raised", "EKS, 3 AZs"], ["DynamoDB global table", "def", "idempotency key"], ["Events", "raised", "ledger, settlement"]]
+    edges: ["HTTPS", "route", "write once", "publish"]
+    caption: The idempotency key is checked and stored with the result before any event goes out.
 
 deep:
   - ["Why not let both regions write the same customer", "With async replication, two regions could approve two payments from the same balance at the same moment. A home region per customer gives one writer at a time. The cost is a tiny window of unreplicated writes during a sudden region loss, handled by idempotency and reconciliation."]

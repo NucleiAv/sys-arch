@@ -106,6 +106,11 @@ diagrams:
       - ["Detective", "raised", "Config rules find it later"]
       - ["Proactive", "box", "CloudFormation hooks check before creation"]
     caption: Use preventive controls for things that must never happen, and detective controls for everything else you want to know about.
+  - type: flow
+    title: How a Control Tower control stops a bad change
+    nodes: [["Engineer deploys", "box"], ["Proactive hook", "def", "checks the template"], ["SCP", "def", "blocks forbidden API calls"], ["Resource created", "raised"], ["Config rule", "raised", "flags drift later"]]
+    edges: ["template", "allowed", "allowed", "watched"]
+    caption: Proactive, preventive and detective controls catch mistakes at three different moments.
 
 life:
   - ["Payment data stays in India", "In 2018 the Reserve Bank of India directed payment system operators to store payment data only in India. Companies running on AWS used the Mumbai region, and later Hyderabad, with SCPs to block other regions for those workloads."]

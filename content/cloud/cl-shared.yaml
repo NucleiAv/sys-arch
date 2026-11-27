@@ -118,6 +118,15 @@ diagrams:
       - ["Cost optimization", "raised", "no waste"]
       - ["Sustainability", "box", "less impact"]
     caption: The pillars often pull against each other. Good designs make the trade-offs on purpose.
+  - type: split
+    title: What you always own, whatever the AWS service
+    source: ["You, the customer", "atk"]
+    targets:
+      - ["Your data", "raised", "classification, encryption choice, backups"]
+      - ["Who can access it", "raised", "IAM users, roles, bucket policies"]
+      - ["Your settings", "raised", "security groups, public access, logging"]
+      - ["Your code", "raised", "app bugs, secrets, dependencies"]
+    caption: AWS secures the cloud itself. These four stay yours on EC2, RDS, Lambda and S3 alike.
 
 life:
   - ["Gartner's prediction", "Gartner predicted in 2019 that through 2025, 99 percent of cloud security failures would be the customer's fault. Whatever the exact number, most public cloud breaches come from configuration and identity mistakes."]

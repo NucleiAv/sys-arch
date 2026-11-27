@@ -113,6 +113,16 @@ diagrams:
     nodes: [["Route 53", "def", "which address"], ["CloudFront edge", "def", "cache, TLS"], ["WAF and Shield", "atk", "filter"], ["Origin", "raised", "ALB or private S3"]]
     edges: ["", "", "cache miss only"]
     caption: Most requests for static content end at the edge. Only misses and dynamic calls reach your region.
+  - type: layers
+    title: What stops a bad request at the AWS edge
+    attack: a bad request
+    layers:
+      - ["Shield Standard", "Absorbs common network floods for free", "stop"]
+      - ["AWS WAF rules", "SQL injection, bad bots, rate limits", "stop"]
+      - ["CloudFront with origin access control", "The S3 bucket is never public", "stop"]
+      - ["ALB accepts CloudFront only", "Managed prefix list in the security group", "stop"]
+      - ["App checks", "Input validation and auth", "partial"]
+    caption: Most attacks die at the edge, before they reach your region.
 
 life:
   - ["The 2.3 Tbps DDoS, 2020", "AWS reported that Shield mitigated a DDoS attack peaking at 2.3 terabits per second in February 2020, a reflection attack using CLDAP servers. Customers behind AWS's edge did not have to absorb it themselves."]

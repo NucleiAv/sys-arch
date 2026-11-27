@@ -124,6 +124,11 @@ diagrams:
       - ["Azure", "raised", "Tenant, management groups, subscriptions, resource groups"]
       - ["Google Cloud", "raised", "Organization, folders, projects"]
     caption: Policies attached higher up are inherited lower down in all three.
+  - type: flow
+    title: Learn AWS first, then map the names
+    nodes: [["EC2", "def", "Azure VMs, Compute Engine"], ["S3", "def", "Blob Storage, Cloud Storage"], ["IAM", "def", "Entra ID and RBAC, Cloud IAM"], ["VPC", "def", "VNet, global VPC"], ["CloudTrail", "def", "Activity Log, Audit Logs"]]
+    edges: ["", "", "", ""]
+    caption: The AWS name is on top. The Azure and Google Cloud matches are underneath.
 
 life:
   - ["Analytics on another cloud", "Many companies run their apps on AWS or Azure but use BigQuery on Google Cloud, or Snowflake across clouds, for analytics. Data transfer costs between clouds then become a real design concern."]

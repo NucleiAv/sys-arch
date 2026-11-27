@@ -107,6 +107,15 @@ diagrams:
     nodes: [["CloudWatch alarm", "atk"], ["Dashboard", "raised"], ["Traces", "def"], ["Logs", "def"], ["CloudTrail and Config", "raised", "who changed what"]]
     edges: ["", "", "", ""]
     caption: Each tool answers a different question. Link them with a request id and timestamps.
+  - type: split
+    title: Which AWS service answers which question
+    source: ["Something is wrong", "atk"]
+    targets:
+      - ["CloudWatch", "def", "how is it running? metrics, logs, alarms"]
+      - ["X-Ray", "raised", "where is the slow step? traces"]
+      - ["CloudTrail", "raised", "who did what? API calls"]
+      - ["AWS Config", "box", "what changed in the settings?"]
+    caption: Four tools, four questions. Link them with a request id and timestamps.
 
 life:
   - ["CloudTrail in breach investigations", "In most cloud incident investigations, CloudTrail is the first place responders look, to see which keys were used, from where, and what they called. Accounts without a long term trail often cannot answer those questions."]

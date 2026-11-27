@@ -145,6 +145,11 @@ diagrams:
       - ["Security tooling", "GuardDuty, Security Hub, Inspector, Macie", "partial"]
       - ["Keys and secrets", "KMS keys per app, Secrets Manager", "stop"]
     caption: An app team gets all of this without writing it. Their design then adds what their tier needs.
+  - type: flow
+    title: Traffic out of a workload VPC through the hub
+    nodes: [["Workload VPC", "raised", "private subnets"], ["Transit Gateway", "def"], ["Inspection VPC", "def", "Network Firewall"], ["Egress VPC", "raised", "NAT gateways"], ["Internet or partner", "box"]]
+    edges: ["attach", "route", "allowed", "out"]
+    caption: Workload VPCs have no internet gateway. All traffic leaves through one inspected, logged path.
 
 deep:
   - ["Why tier the apps at all", "Not every app needs multi region active active. Tiers let the bank spend money and effort where outages hurt most, and give each team a standard design and checklist instead of arguing from scratch."]

@@ -117,6 +117,16 @@ diagrams:
     nodes: [["Need joins and transactions?", "box"], ["RDS or Aurora", "def"], ["Huge scale, simple key lookups?", "box"], ["DynamoDB", "def"], ["Analytics on big data?", "box", "Redshift or Athena"]]
     edges: ["yes", "no", "yes", "no"]
     caption: Start from the access patterns and consistency needs, then pick the engine.
+  - type: split
+    title: Managed database choices on AWS
+    source: ["Your data", "box"]
+    targets:
+      - ["RDS or Aurora", "def", "SQL, joins, transactions"]
+      - ["DynamoDB", "raised", "key value at any scale, single digit ms"]
+      - ["ElastiCache", "raised", "in memory cache, sessions"]
+      - ["OpenSearch", "box", "full text search, log analytics"]
+      - ["Redshift", "box", "analytics warehouse"]
+    caption: Pick by access pattern, not by habit. Many apps use two or three of these together.
 
 life:
   - ["Amazon's Prime Day on DynamoDB", "AWS has reported that DynamoDB peaked at more than 100 million requests per second during recent Amazon Prime Day events, while keeping single digit millisecond latency."]

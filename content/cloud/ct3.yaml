@@ -124,6 +124,11 @@ diagrams:
       - ["KMS key policy", "Only the app role can decrypt", "stop"]
       - ["Audit log and alerts", "Unusual bulk views are flagged", "partial"]
     caption: Tier 3 does not mean low security. Personal data needs the same care as in tier 1.
+  - type: flow
+    title: How staff reach the private HR app
+    nodes: [["Company laptop", "box"], ["Verified Access", "def", "SSO, MFA, device check"], ["Internal ALB", "raised"], ["App on Fargate", "raised", "role and owner checks"], ["RDS and S3", "def", "KMS encrypted"]]
+    edges: ["HTTPS", "allowed", "route", "query"]
+    caption: Every request is checked for who, which device and which record. There is no public path.
 
 deep:
   - ["Why backup and restore is enough", "The business accepts a day of outage. Backup and restore costs very little compared with a standby, and AZ failures are already covered by Multi AZ. The trade is a slower, manual recovery after a rare regional disaster."]

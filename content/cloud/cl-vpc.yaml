@@ -60,6 +60,43 @@ scenes:
         flow: [[net, igw, atk]]
         mark: {app: ok, db: ok}
         stats: [Blocked, private tiers, no route, two layers]
+  - title: A private server reaches S3 without the internet
+    stats: [Step, Path, Leaves AWS network, Cost]
+    nodes:
+      app: {label: App in private subnet, x: 0, y: 1, kind: raised}
+      rt: {label: Route table, x: 2, y: 1, kind: def}
+      nat: {label: NAT gateway, x: 4, y: 0, kind: box, tag: per GB charge}
+      gw: {label: S3 gateway endpoint, x: 4, y: 2, kind: def, tag: free}
+      s3: {label: S3 bucket, x: 6, y: 1, kind: raised, tag: policy needs endpoint}
+    links: [[app, rt], [rt, nat], [rt, gw], [nat, s3], [gw, s3]]
+    steps:
+      - title: Before, through the NAT gateway
+        text: The app reads backups from S3. With no endpoint, the route table sends this traffic to the NAT gateway.
+        on: [app, rt, nat, s3]
+        flow: [[app, rt, ink], [rt, nat, ink], [nat, s3, ink]]
+        mark: {nat: warn}
+        stats: [Before, NAT gateway, no, per GB processing]
+      - title: Add a gateway endpoint
+        text: The team adds an S3 gateway endpoint and links it to the private route table. AWS adds a route for S3's prefix list.
+        on: [rt, gw]
+        flow: [[rt, gw, def]]
+        stats: [Change, endpoint route, no, free]
+      - title: Traffic takes the new route
+        text: The most specific route wins. S3 traffic now goes through the endpoint and never touches the NAT gateway.
+        on: [app, rt, gw, s3]
+        flow: [[app, rt, ink], [rt, gw, def], [gw, s3, def]]
+        mark: {gw: ok}
+        stats: [After, gateway endpoint, no, free]
+      - title: Lock the bucket to the endpoint
+        text: The bucket policy denies requests that do not come through this VPC endpoint, using the aws:SourceVpce condition.
+        on: [s3]
+        mark: {s3: ok}
+        stats: [Harden, bucket policy, no, free]
+      - title: Stolen keys from outside fail
+        text: Even with valid credentials, a request from the internet is denied, because it did not come through the endpoint.
+        on: [s3, nat]
+        mark: {nat: bad}
+        stats: [Result, data perimeter, no, lower bill]
 
 terms:
   - [VPC, "A logically isolated private network in one AWS region."]
@@ -119,6 +156,11 @@ diagrams:
       - ["App security group", "Only from the load balancer", "stop"]
       - ["Database security group in isolated subnets", "Only from the app tier", "stop"]
     caption: Each layer narrows who can talk to whom. The database is three hops from the internet and allows one source.
+  - type: flow
+    title: A request from the internet to a private database
+    nodes: [["Internet gateway", "box"], ["ALB, public subnet", "raised", "SG allows 443"], ["App, private subnet", "raised", "SG allows ALB only"], ["RDS, data subnet", "def", "SG allows app only"]]
+    edges: ["NACL", "SG to SG", "SG to SG"]
+    caption: Each tier's security group names the tier in front of it, so nothing can skip a step.
 
 life:
   - ["The open database", "Security researchers regularly find databases such as Elasticsearch and MongoDB on cloud servers with public IPs and open ports, holding millions of records. A private subnet and a tight security group would have prevented each one."]

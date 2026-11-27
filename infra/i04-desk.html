@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../assets/css/site.css?v=20261127d">
+<link rel="stylesheet" href="../assets/css/site.css?v=20261127e">
 </head>
 <body data-root="../" data-track="infra">
 <a class="skip" href="#main">Skip to content</a>
@@ -27,8 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: ./deploy.sh</code></pre><div class="qset" data-id="i04-desk-r1"></div><script type="application/json" data-for="i04-desk-r1">[{"q": "Why do tests not run on pull requests?", "opts": ["The runner is wrong", "The on section has only push to main, no pull_request event", "npm is missing"], "a": 1, "why": "Add pull_request under on.", "type": "mcq"}, {"q": "Why does npm test fail with &quot;no package.json&quot;?", "opts": ["The code was never checked out, a checkout step is missing", "Node is too new", "Tests are broken"], "a": 0, "why": "Runners start empty. Add actions/checkout first.", "type": "mcq"}, {"q": "Why can deploy run even when tests fail?", "opts": ["deploy has no needs test, so the jobs run in parallel", "deploy.sh ignores errors", "It cannot"], "a": 0, "why": "Without needs, jobs start at the same time.", "type": "mcq"}]</script></section><section class="block round" id="r2"><h2>Round 2. Write the fix</h2><div class="qset" data-id="i04-desk-r2"></div><script type="application/json" data-for="i04-desk-r2">[{"type": "fill", "q": "Add this line under the deploy job so it waits for tests. <code>needs: ____<\/code>", "a": ["test", "[test]"], "why": "needs takes the job id."}, {"type": "open", "q": "Deploy must also run only on main, not on pull requests. What line do you add?", "a": "<p>Add if github.ref == &#x27;refs/heads/main&#x27; to the deploy job, or put deploy in a separate workflow that runs only on push to main.<\/p>"}]</script></section><section class="block" id="card"><h2>Pocket card. Keep this</h2><ul><li>CI on every pull request, fast.</li><li>needs for order, if for conditions.</li><li>Build once, promote the same image.</li><li>OIDC instead of long lived keys.</li></ul></section><nav class="pager" aria-label="Lesson pages"><a class="pg prev" href="i04.html"><span class="mono">Previous</span>GitHub Actions, continuous integration and delivery</a><a class="pg next" href="ip1.html"><span class="mono">Next</span>Infra level 1 practice, Git, GitHub and Actions</a></nav></main></div><footer id="foot"></footer>
-<script src="../assets/js/site.js?v=20261127d"></script>
-<script src="../assets/js/learn.js?v=20261127d"></script>
-<script src="../assets/js/scene.js?v=20261127d"></script>
+<script src="../assets/js/site.js?v=20261127e"></script>
+<script src="../assets/js/learn.js?v=20261127e"></script>
+<script src="../assets/js/scene.js?v=20261127e"></script>
 </body>
 </html>

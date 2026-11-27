@@ -53,6 +53,43 @@ scenes:
         on: [ver]
         mark: {ver: ok}
         stats: [Protected, Object Lock, any, safe]
+  - title: Uploading a file straight to S3 with a presigned URL
+    stats: [Step, Who acts, Bucket public, App servers busy]
+    nodes:
+      user: {label: User browser, x: 0, y: 1, kind: box}
+      api: {label: Your API, x: 2, y: 0, kind: raised, tag: checks the user}
+      s3: {label: Private S3 bucket, x: 4, y: 1, kind: def}
+      ev: {label: S3 event, x: 6, y: 0, kind: box}
+      lam: {label: Lambda scanner, x: 6, y: 2, kind: raised, tag: type and malware}
+    links: [[user, api], [user, s3], [s3, ev], [ev, lam]]
+    steps:
+      - title: Ask to upload
+        text: The signed in user asks the API to upload a 200 MB video.
+        on: [user, api]
+        flow: [[user, api, ink]]
+        stats: [Ask, user, no, briefly]
+      - title: The API signs a URL
+        text: The API checks the user may upload, then creates a presigned PUT URL for one object key, valid for 5 minutes.
+        on: [api]
+        flow: [[api, user, def]]
+        mark: {api: ok}
+        stats: [Sign, API, no, briefly]
+      - title: Upload goes straight to S3
+        text: The browser sends the file directly to S3 with the URL. The big file never passes through your servers.
+        on: [user, s3]
+        flow: [[user, s3, ink]]
+        stats: [Upload, browser to S3, no, no]
+      - title: S3 starts a check
+        text: The new object fires an event that runs a Lambda function to check the file type and scan it.
+        on: [s3, ev, lam]
+        flow: [[s3, ev, ink], [ev, lam, ink]]
+        stats: [Check, S3 event and Lambda, no, no]
+      - title: Approved or quarantined
+        text: Safe files are tagged as approved. Bad files move to a quarantine prefix that only security can read.
+        on: [lam, s3]
+        flow: [[lam, s3, def]]
+        mark: {lam: ok, s3: ok}
+        stats: [Done, Lambda, no, no]
 
 terms:
   - [EBS, "Elastic Block Store. Network attached disks for EC2, in one AZ."]
@@ -121,6 +158,11 @@ diagrams:
       - ["File, EFS and FSx", "raised", "shared by many servers"]
       - ["Object, S3", "raised", "API, huge scale, classes"]
     caption: Pick by how the data is used, not by habit.
+  - type: flow
+    title: S3 lifecycle for a photo app
+    nodes: [["S3 Standard", "def", "day 0, hot"], ["Standard-IA", "raised", "after 30 days"], ["Glacier Flexible Retrieval", "raised", "after 180 days"], ["Glacier Deep Archive", "box", "after 2 years"], ["Delete", "atk", "after 7 years"]]
+    edges: ["30 d", "180 d", "2 y", "7 y"]
+    caption: Lifecycle rules move objects to cheaper classes on a schedule, with no code.
 
 life:
   - ["S3 strong consistency, 2020", "In December 2020 AWS made S3 strongly consistent for all reads after writes and lists, at no extra cost. Before that, a read right after an overwrite could return the old version, which caught many developers out."]

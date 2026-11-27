@@ -104,6 +104,11 @@ diagrams:
       - ["Gateway or interface endpoint", "def", "AWS services privately"]
       - ["PrivateLink", "def", "one service in another account"]
     caption: Each path has different cost, reach and trust. Draw them on every architecture diagram.
+  - type: flow
+    title: From your data center to many VPCs over Direct Connect
+    nodes: [["Data center router", "box"], ["Direct Connect location", "raised", "private fibre"], ["Direct Connect gateway", "def"], ["Transit Gateway", "def", "one hub per region"], ["Many VPCs", "raised"]]
+    edges: ["cross connect", "BGP", "attach", "routes"]
+    caption: Add a Site-to-Site VPN or a second connection as backup. One link is one failure away from an outage.
 
 life:
   - ["The peering mesh", "A company connected 20 VPCs with peering. That needs 190 connections for every pair to talk, each with its own routes. Moving to a Transit Gateway turned it into 20 attachments."]

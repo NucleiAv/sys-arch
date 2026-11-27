@@ -119,6 +119,15 @@ diagrams:
     nodes: [["Metric rises", "box", "CPU, requests, queue length"], ["CloudWatch alarm", "raised"], ["Scaling policy", "def"], ["Launch from template", "def", "in several AZs"], ["Pass health checks", "raised"], ["Load balancer sends traffic", "box"]]
     edges: ["", "", "", "", ""]
     caption: New instances take a few minutes to be ready. Warm up time and scheduled scaling help with sudden spikes.
+  - type: split
+    title: Pick EC2 pricing by the shape of the load
+    source: ["Your workload", "box"]
+    targets:
+      - ["Steady, always on", "def", "Savings Plans or Reserved Instances"]
+      - ["Spiky or new", "raised", "On Demand with Auto Scaling"]
+      - ["Can be stopped and retried", "raised", "Spot, up to 90 percent off"]
+      - ["Licence or compliance needs", "box", "Dedicated Hosts"]
+    caption: Most real fleets mix them. A Savings Plan base, On Demand on top, Spot for batch.
 
 life:
   - ["Spot for big batch jobs", "Many companies run CI builds, rendering and data processing on Spot, saving most of the On Demand price. Jobs save progress often, so an interruption only repeats a few minutes of work."]
